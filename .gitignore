@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# VS Code
+.vscode/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# SQLite DB and temporary DB files
+data/*.db
+data/*.db-*
+data/*.sqlite
+
+# Git large files produced by DB
+data/profin.db
+data/profin.db-shm
+data/profin.db-wal
+
+# Logs
+logs/
+*.log
+
+# Byte-compiled / caching
+.pytest_cache/
+.mypy_cache/
+
+# Build
+build/
+dist/
+
+# IDE
+.idea/
+
+# Wheels
+*.egg-info/
+
+# Coverage
+htmlcov/
+.coverage
+
+# Other common
+*.bak
+*.swp
