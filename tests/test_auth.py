@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base
 from app.auth.auth_service import create_user, verify_login
+from app.db.database import ensure_demo_users
 
 
 # ---------------------------------------------------------------------------
@@ -81,3 +82,12 @@ class TestVerifyLogin:
         create_user(db_session, "comun", "pass123")
         user = verify_login(db_session, "comun", "pass123")
         assert user.last_login is not None
+
+
+def test_ensure_demo_users_creates_default_credentials(db_session):
+    created = ensure_demo_users(db_session)
+    usernames = {user.username for user in created}
+
+    assert {"usuario", "admin"}.issubset(usernames)
+    assert verify_login(db_session, "usuario", "123456") is not None
+    assert verify_login(db_session, "admin", "123456") is not None

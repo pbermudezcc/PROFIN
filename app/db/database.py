@@ -7,7 +7,7 @@ Alembic is used for schema migrations (configured separately).
 from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
-from app.db.models import Base
+from app.db.models import Base, User
 
 # ---------------------------------------------------------------------------
 # Path configuration
@@ -52,6 +52,29 @@ def get_session() -> Session:
     return SessionLocal()
 
 
+DEFAULT_BOOTSTRAP_USERS = (
+    ("usuario", "123456"),
+    ("admin", "123456"),
+)
+
+
+def ensure_demo_users(session: Session) -> list[User]:
+    """Seed a default user for first login if the database is empty."""
+    if session.query(User).count() > 0:
+        return []
+
+    created: list[User] = []
+    for username, password in DEFAULT_BOOTSTRAP_USERS:
+        try:
+            from app.auth.auth_service import create_user
+            created.append(create_user(session, username, password))
+        except ValueError:
+            continue
+    return created
+
+
 def init_db() -> None:
-    """Create all tables if they do not exist (first-run bootstrap)."""
+    """Create all tables if they do not exist and seed an initial user if needed."""
     Base.metadata.create_all(bind=engine)
+    with SessionLocal() as session:
+        ensure_demo_users(session)
