@@ -26,6 +26,7 @@ import qtawesome as qta
 from app.config        import APP_NAME, APP_VERSION, THEMES
 from app.db.database   import get_session
 from app.auth.auth_service import verify_login
+from app.settings      import SettingsManager
 
 
 class LoginWindow(QWidget):
@@ -42,7 +43,12 @@ class LoginWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._settings = QSettings(self.SETTINGS_ORG, self.SETTINGS_APP)
-        self._theme    = self._settings.value(self.KEY_THEME, "light")
+        saved_settings = SettingsManager().load()
+        remember_theme = saved_settings.save_appearance_on_start
+        startup_theme = self._settings.value(self.KEY_THEME, saved_settings.theme if remember_theme else "light")
+        self._theme = startup_theme if startup_theme in THEMES else (saved_settings.theme if remember_theme else "light")
+        if not remember_theme:
+            self._settings.setValue(self.KEY_THEME, "light")
         self._session  = get_session()
 
         self.setWindowTitle(f"{APP_NAME}  v{APP_VERSION}")

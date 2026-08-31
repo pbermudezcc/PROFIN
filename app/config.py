@@ -5,7 +5,7 @@ PROFIN — Application configuration constants.
 """
 
 APP_NAME    = "PROFIN"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 
 # ---------------------------------------------------------------------------
 # Theme tokens — Light & Dark
@@ -14,16 +14,16 @@ APP_VERSION = "0.2.0"
 THEMES = {
     "light": {
         # Background layers
-        "bg_primary":    "#F8F9FA",   # main window background
-        "bg_secondary":  "#FFFFFF",   # cards, panels
-        "bg_sidebar":    "#1E2A3A",   # sidebar (always dark)
-        "bg_hover":      "#E9ECEF",   # hover state
+        "bg_primary":    "#F3F6FA",   # main window background
+        "bg_secondary":  "#FFFFFF",   # cards, panels, headers
+        "bg_sidebar":    "#1F2D3D",   # sidebar (always dark)
+        "bg_hover":      "#E2EAF5",   # hover state
 
         # Text
-        "text_primary":  "#212529",
-        "text_secondary":"#6C757D",
-        "text_sidebar":  "#ADB5BD",   # sidebar text (inactive)
-        "text_sidebar_active": "#FFFFFF",
+        "text_primary":  "#0F172A",
+        "text_secondary":"#475569",
+        "text_sidebar":  "#CBD5E1",   # sidebar text (inactive)
+        "text_sidebar_active": "#F8FAFC",
 
         # Accent
         "accent":        "#2563EB",   # primary blue
@@ -38,11 +38,11 @@ THEMES = {
         "neutral":       "#6B7280",
 
         # Borders
-        "border":        "#DEE2E6",
-        "border_strong": "#ADB5BD",
+        "border":        "#D9E2EC",
+        "border_strong": "#B7C4D6",
 
         # Cards
-        "card_shadow":   "rgba(0,0,0,0.06)",
+        "card_shadow":   "rgba(15,23,42,0.07)",
     },
     "dark": {
         "bg_primary":    "#0F172A",

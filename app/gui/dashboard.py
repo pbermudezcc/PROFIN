@@ -1134,4 +1134,31 @@ class DashboardView(QWidget):
                 color: {t["neutral"]};
                 font-size: 12px;
             }}
+            QTableWidget#recentTable {{
+                background-color: {t["bg_primary"]};
+                alternate-background-color: {t["bg_secondary"]};
+                border: 1px solid {t["border"]};
+                border-radius: 8px;
+                gridline-color: {t["border"]};
+                font-size: 12px;
+                selection-background-color: {t["accent"]};
+                selection-color: #FFFFFF;
+            }}
+            QTableWidget#recentTable::item {{
+                padding: 6px 8px;
+                border: none;
+            }}
+            QTableWidget#recentTable::item:alternate {{
+                background-color: {t["bg_secondary"]};
+            }}
+            QTableWidget#recentTable::item:selected {{
+                background-color: {t["accent"]};
+                color: #FFFFFF;
+            }}
+            QHeaderView::section {{
+                background-color: {t["bg_hover"]};
+                color: {t["text_secondary"]};
+                font-size: 11px; font-weight: 600;
+                border: none; padding: 5px 8px;
+            }}
         """)

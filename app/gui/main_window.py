@@ -29,6 +29,7 @@ import qtawesome as qta
 
 from app.config      import APP_NAME, APP_VERSION, THEMES, NAV_ITEMS, NAV_ITEMS_TOP, NAV_ITEMS_BOTTOM
 from app.db.models   import User
+from app.settings    import SettingsManager
 from sqlalchemy.orm  import Session
 
 
@@ -99,8 +100,11 @@ class MainWindow(QWidget):
         super().__init__()
         self._user    = user
         self._session = session
-        self._theme   = theme
-        self._t       = THEMES[theme]
+        stored_settings = SettingsManager().load()
+        default_theme = stored_settings.theme if stored_settings.save_appearance_on_start else "light"
+        selected_theme = theme if theme != "light" else default_theme
+        self._theme   = selected_theme if selected_theme in THEMES else "light"
+        self._t       = THEMES[self._theme]
         self._settings = QSettings(self.SETTINGS_ORG, self.SETTINGS_APP)
         self._nav_btns: dict[str, _NavButton] = {}
         self._current_view = ""
@@ -316,6 +320,7 @@ class MainWindow(QWidget):
 
         # User avatar area
         avatar_area = QFrame()
+        avatar_area.setObjectName("sidebarUserCard")
         avatar_area.setFixedHeight(72)
         avatar_layout = QHBoxLayout(avatar_area)
         avatar_layout.setContentsMargins(16, 8, 16, 8)
@@ -406,6 +411,8 @@ class MainWindow(QWidget):
         from app.gui.categories_view   import CategoriesView
         from app.gui.rules_view        import RulesView
         from app.gui.expenses_view     import ExpensesView
+        from app.gui.incomes_window    import IncomesWindow
+        from app.gui.settings_view      import SettingsView
 
         view_map = {
             "dashboard":    lambda: DashboardView(
@@ -414,8 +421,8 @@ class MainWindow(QWidget):
             "expenses":     lambda: ExpensesView(
                                 self._session, self._user, self._theme
                             ),
-            "income":       lambda: _PlaceholderView(
-                                "Ingresos", "mdi.trending-up", self._t
+            "income":       lambda: IncomesWindow(
+                                self._user, self._session, self._theme
                             ),
             "investments":  lambda: _PlaceholderView(
                                 "Inversiones", "mdi.chart-line", self._t
@@ -439,8 +446,8 @@ class MainWindow(QWidget):
             "export":       lambda: _PlaceholderView(
                                 "Exportar", "mdi.download-outline", self._t
                             ),
-            "settings":     lambda: _PlaceholderView(
-                                "Configuración", "mdi.cog-outline", self._t
+            "settings":     lambda: SettingsView(
+                                self._user, self._session, self._theme
                             ),
         }
 
@@ -572,8 +579,11 @@ class MainWindow(QWidget):
                 max-width: 1px;
             }}
             QFrame#topBar {{
-                background-color: {t["bg_secondary"]};
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {t["bg_secondary"]},
+                    stop:1 {t["bg_primary"]});
                 border-bottom: 1px solid {t["border"]};
+                border-top: 1px solid rgba(255,255,255,0.25);
             }}
             QLabel#topBarBrand {{
                 color: {t["text_primary"]};
@@ -581,12 +591,12 @@ class MainWindow(QWidget):
                 font-weight: 700;
             }}
             QLabel#topBarVersion {{
-                color: {t["text_secondary"]};
+                color: {"#475569" if self._theme == "light" else t["text_secondary"]};
                 font-size: 11px;
                 font-weight: 400;
             }}
             QLabel#breadcrumb {{
-                color: {t["text_secondary"]};
+                color: {"#475569" if self._theme == "light" else t["text_secondary"]};
                 font-size: 12px;
             }}
             QLabel#topBarAvatar {{
@@ -597,13 +607,20 @@ class MainWindow(QWidget):
                 font-weight: 700;
             }}
             QLabel#topBarUsername {{
-                color: {t["text_secondary"]};
+                color: {"#1E293B" if self._theme == "light" else t["text_primary"]};
                 font-size: 12px;
-                font-weight: 500;
+                font-weight: 600;
             }}
             QFrame#sidebar {{
-                background-color: {t["bg_sidebar"]};
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 {t["bg_sidebar"]},
+                    stop:1 {t["bg_secondary"]});
                 border-right: 1px solid {t["border"]};
+            }}
+            QFrame#sidebarUserCard {{
+                background-color: {t["bg_hover"]};
+                border: 1px solid {t["border"]};
+                border-radius: 12px;
             }}
             QLabel#avatarCircle {{
                 background-color: {t["accent"]};
@@ -613,12 +630,12 @@ class MainWindow(QWidget):
                 font-weight: 700;
             }}
             QLabel#sidebarUsername {{
-                color: {t["text_sidebar_active"]};
+                color: {"#E2E8F0" if self._theme == "light" else t["text_sidebar_active"]};
                 font-size: 13px;
-                font-weight: 600;
+                font-weight: 700;
             }}
             QLabel#sidebarRole {{
-                color: {t["text_sidebar"]};
+                color: {"#94A3B8" if self._theme == "light" else t["text_sidebar"]};
                 font-size: 11px;
             }}
             QFrame#sidebarSep {{
@@ -627,7 +644,7 @@ class MainWindow(QWidget):
                 max-height: 1px;
             }}
             QLabel#sidebarVersion {{
-                color: {t["text_sidebar"]};
+                color: {"#94A3B8" if self._theme == "light" else t["text_sidebar"]};
                 font-size: 11px;
             }}
         """)

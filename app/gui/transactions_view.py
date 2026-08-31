@@ -570,8 +570,24 @@ class TransactionsView(QWidget):
             .replace(",", "X").replace(".", ",").replace("X", ".")
         )
 
+    def apply_theme(self, theme_key: str) -> None:
+        self._theme = theme_key
+        self._t = THEMES[theme_key]
+        self._apply_theme()
+
     def _apply_theme(self) -> None:
         t = self._t
+        is_dark = self._theme == "dark"
+        selection_bg = (
+            f"background-color: {t['accent']}; color: #FFFFFF;"
+            if is_dark else
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #DDEBFF, stop:1 #CFE1FF); color: #1E3A8A;"
+        )
+        selection_hover = (
+            f"background-color: {t['accent_hover']}; color: #FFFFFF;"
+            if is_dark else
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #CFE1FF, stop:1 #BFD8FF); color: #1E3A8A;"
+        )
         self.setStyleSheet(f"""
             QFrame#dashTopBar {{
                 background-color: {t["bg_secondary"]};
@@ -630,9 +646,15 @@ class TransactionsView(QWidget):
                 padding: 6px 8px;
                 border-bottom: 1px solid {t["border"]};
             }}
+            QTableView::item:hover {{
+                background-color: {t["bg_hover"]};
+                color: {t["text_primary"]};
+            }}
             QTableView::item:selected {{
-                background-color: {t["accent_light"]};
-                color: {t["accent"]};
+                {selection_bg}
+            }}
+            QTableView::item:selected:hover {{
+                {selection_hover}
             }}
             QHeaderView::section {{
                 background-color: {t["bg_primary"]};

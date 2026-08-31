@@ -198,6 +198,101 @@ class _ComparisonChartWidget(QFrame):
 
 
 # ---------------------------------------------------------------------------
+# Monthly top-category chart — stacked bars by month
+# ---------------------------------------------------------------------------
+
+class _MonthlyCategoryChartWidget(QFrame):
+    """Stacked monthly bars showing the main expense categories in the selected period."""
+
+    def __init__(self, theme: dict) -> None:
+        super().__init__()
+        self._t = theme
+        self._data: List[Tuple[str, List[Tuple[str, float]]]] = []
+
+        self.setObjectName("chartCard")
+        self.setMinimumHeight(250)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                            QSizePolicy.Policy.Fixed)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 14, 20, 14)
+        root.setSpacing(8)
+
+        hdr = QHBoxLayout()
+        self._lbl_title = QLabel("Top categorías por mes")
+        self._lbl_title.setObjectName("chartTitle")
+        hdr.addWidget(self._lbl_title)
+        hdr.addStretch()
+        root.addLayout(hdr)
+
+        self._canvas = _PaintCanvas(self._paint_chart)
+        self._canvas.setMinimumHeight(180)
+        root.addWidget(self._canvas)
+
+    def set_data(self, data: List[Tuple[str, List[Tuple[str, float]]]]) -> None:
+        self._data = data
+        self._canvas.update()
+
+    def apply_theme(self, theme: dict) -> None:
+        self._t = theme
+        self._canvas.update()
+
+    def _paint_chart(self, painter: QPainter, rect: QRectF) -> None:
+        if not self._data:
+            painter.setPen(QColor(self._t.get("text_secondary", "#888")))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter,
+                             "Sin datos por mes")
+            return
+
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        n = len(self._data)
+        pad_l = 16
+        pad_r = 12
+        pad_top = 10
+        pad_bot = 28
+        usable_w = rect.width() - pad_l - pad_r
+        usable_h = rect.height() - pad_top - pad_bot
+        group_w = usable_w / max(n, 1)
+        bar_w = max(18.0, group_w * 0.72)
+        max_total = max(sum(value for _, value in cats) for _, cats in self._data) if self._data else 1.0
+        max_total = max_total or 1.0
+        color_grid = QColor(self._t.get("border", "#ddd"))
+        color_lbl = QColor(self._t.get("text_secondary", "#888"))
+
+        painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
+        for step in (0.25, 0.5, 0.75, 1.0):
+            gy = rect.y() + pad_top + usable_h * (1 - step)
+            painter.drawLine(QPointF(rect.x() + pad_l, gy), QPointF(rect.right() - pad_r, gy))
+
+        for i, (label, cats) in enumerate(self._data):
+            total = sum(value for _, value in cats)
+            month_x = rect.x() + pad_l + i * group_w + (group_w - bar_w) / 2
+            h = usable_h * total / max_total
+            base_y = rect.y() + pad_top + usable_h
+            covered = 0.0
+            stack_total = total or 1.0
+
+            for idx, (cat_name, value) in enumerate(cats):
+                seg_h = max(0.0, h * (value / stack_total))
+                if seg_h <= 0:
+                    continue
+                painter.setBrush(QBrush(_chart_color(idx, cat_name)))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(
+                    QRectF(month_x, base_y - covered - seg_h, bar_w, seg_h)
+                )
+                covered += seg_h
+
+            painter.setPen(color_lbl)
+            painter.setFont(QFont("Segoe UI", 7))
+            painter.drawText(
+                QRectF(month_x, rect.bottom() - pad_bot, bar_w, pad_bot),
+                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                label,
+            )
+
+# ---------------------------------------------------------------------------
 # Line chart — expenses over time (daily aggregated)
 # ---------------------------------------------------------------------------
 
@@ -221,15 +316,18 @@ class _LineChartWidget(QFrame):
         root.setSpacing(8)
 
         hdr = QHBoxLayout()
-        lbl = QLabel("Evolución diaria de gastos")
-        lbl.setObjectName("chartTitle")
-        hdr.addWidget(lbl)
+        self._lbl_title = QLabel("Evolución diaria")
+        self._lbl_title.setObjectName("chartTitle")
+        hdr.addWidget(self._lbl_title)
         hdr.addStretch()
         root.addLayout(hdr)
 
         self._canvas = _PaintCanvas(self._paint_chart)
         self._canvas.setMinimumHeight(200)
         root.addWidget(self._canvas)
+
+    def set_title(self, title: str) -> None:
+        self._lbl_title.setText(title)
 
     def set_data(self, data: List[Tuple[str, float]]) -> None:
         self._data = data
@@ -243,16 +341,16 @@ class _LineChartWidget(QFrame):
         if not self._data:
             painter.setPen(QColor(self._t.get("text_secondary", "#888")))
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter,
-                             "Sin datos para el período")
+                            "Sin datos para el período")
             return
 
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        pad_l   = 12
-        pad_r   = 8
+        pad_l   = 52
+        pad_r   = 10
         pad_top = 12
-        pad_bot = 20
-        uw      = rect.width()  - pad_l - pad_r
+        pad_bot = 24
+        uw      = rect.width() - pad_l - pad_r
         uh      = rect.height() - pad_top - pad_bot
 
         max_val = max((v for _, v in self._data), default=1.0) or 1.0
@@ -264,14 +362,23 @@ class _LineChartWidget(QFrame):
         color_grid = QColor(self._t.get("border", "#ddd"))
         color_lbl  = QColor(self._t.get("text_secondary", "#888"))
 
-        # Gridlines
-        painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
-        for step in (0.25, 0.5, 0.75, 1.0):
-            gy = rect.y() + pad_top + uh * (1 - step)
-            painter.drawLine(
-                QPointF(rect.x() + pad_l, gy),
-                QPointF(rect.right() - pad_r, gy),
+        painter.setFont(QFont("Segoe UI", 7))
+        painter.setPen(color_lbl)
+        for step in range(5):
+            ratio = step / 4
+            value = max_val * (1.0 - ratio)
+            y = rect.y() + pad_top + uh * ratio
+            painter.drawText(
+                QRectF(rect.x() + 4, y - 8, pad_l - 10, 16),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                _fmt_currency_short(value),
             )
+            painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
+            painter.drawLine(
+                QPointF(rect.x() + pad_l, y),
+                QPointF(rect.right() - pad_r, y),
+            )
+            painter.setPen(color_lbl)
 
         # Build points
         pts: List[QPointF] = []
@@ -305,8 +412,23 @@ class _LineChartWidget(QFrame):
             for p in pts:
                 painter.drawEllipse(p, 3, 3)
 
-        # X labels (show max 8 evenly spaced)
+        axis_x = rect.x() + pad_l
+        axis_y = rect.y() + pad_top
+        axis_bottom = rect.y() + pad_top + uh
+        axis_right = rect.right() - pad_r
+        painter.setPen(QPen(QColor(self._t.get("border_strong", "#9098A3")), 1.0, Qt.PenStyle.SolidLine))
+        painter.drawLine(QPointF(axis_x, axis_y), QPointF(axis_x, axis_bottom))
+        painter.drawLine(QPointF(axis_x, axis_bottom), QPointF(axis_right, axis_bottom))
+
+        painter.setFont(QFont("Segoe UI", 7, QFont.Weight.DemiBold))
         painter.setPen(color_lbl)
+        painter.drawText(
+            QRectF(rect.x() + 4, rect.y() + 8, 24, 18),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            "€",
+        )
+
+        # X labels (show max 8 evenly spaced)
         painter.setFont(QFont("Segoe UI", 7))
         step_lbl = max(1, n // 8)
         for i, (label, _) in enumerate(self._data):
@@ -435,6 +557,7 @@ class ExpensesView(QWidget):
     CHART_DIST   = "dist"
     CHART_COMP   = "comp"
     CHART_LINE   = "line"
+    CHART_TABLE  = "table"
 
     def __init__(self, session: Session, user, theme_key: str) -> None:
         super().__init__()
@@ -501,6 +624,7 @@ class ExpensesView(QWidget):
             (self.CHART_DIST, "mdi.chart-donut",   "Distribución por categoría"),
             (self.CHART_COMP, "mdi.chart-bar",      "Comparativa período anterior"),
             (self.CHART_LINE, "mdi.chart-line",     "Evolución diaria"),
+            (self.CHART_TABLE, "mdi.table-large",   "Vista en tabla"),
         ]:
             btn = QPushButton()
             btn.setFixedSize(32, 32)
@@ -555,6 +679,10 @@ class ExpensesView(QWidget):
         self._chart_comp = _ComparisonChartWidget(self._t)
         self._content.addWidget(self._chart_comp)
 
+        # Monthly category chart
+        self._chart_monthly_cat = _MonthlyCategoryChartWidget(self._t)
+        self._content.addWidget(self._chart_monthly_cat)
+
         # Line chart
         self._chart_line = _LineChartWidget(self._t)
         self._content.addWidget(self._chart_line)
@@ -581,11 +709,14 @@ class ExpensesView(QWidget):
         self._table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setShowGrid(False)
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
         self._table.setObjectName("expenseTable")
         self._table.setSortingEnabled(True)
+        self._table.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                  QSizePolicy.Policy.Expanding)
 
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -593,8 +724,7 @@ class ExpensesView(QWidget):
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
 
-        self._content.addWidget(self._table)
-        self._content.addStretch()
+        self._content.addWidget(self._table, 1)
 
         scroll.setWidget(content)
         root.addWidget(scroll)
@@ -708,6 +838,19 @@ class ExpensesView(QWidget):
                 label_b="Período anterior",
             )
 
+            # ── Monthly category breakdown ─────────────────────────────
+            month_totals: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+            for t in txns_cur:
+                month_key = t.transaction_date.strftime("%b %Y")
+                label = cat_map.get(t.category_id, "Sin categorizar")
+                month_totals[month_key][label] += abs(t.amount)
+
+            monthly_cat_data: List[Tuple[str, List[Tuple[str, float]]]] = []
+            for month_key in sorted(month_totals.keys(), key=lambda item: datetime.strptime(item, "%b %Y")):
+                cat_items = sorted(month_totals[month_key].items(), key=lambda x: x[1], reverse=True)[:4]
+                monthly_cat_data.append((month_key, cat_items))
+            self._chart_monthly_cat.set_data(monthly_cat_data)
+
             # ── Line chart — daily aggregation ────────────────────────
             daily: Dict[str, float] = defaultdict(float)
             for t in txns_cur:
@@ -715,6 +858,7 @@ class ExpensesView(QWidget):
                 daily[key] += abs(t.amount)
 
             line_data = sorted(daily.items())
+            self._chart_line.set_title(f"Evolución diaria de gastos · {period_label}")
             self._chart_line.set_data(line_data)
 
             # ── Detail table ──────────────────────────────────────────
@@ -773,6 +917,7 @@ class ExpensesView(QWidget):
         self._chart_dist.setVisible(self._chart_mode == self.CHART_DIST)
         self._chart_comp.setVisible(self._chart_mode == self.CHART_COMP)
         self._chart_line.setVisible(self._chart_mode == self.CHART_LINE)
+        self._table.setVisible(self._chart_mode == self.CHART_TABLE)
 
     def _update_toggle_icons(self) -> None:
         for btn in self._btn_group.buttons():
@@ -784,6 +929,7 @@ class ExpensesView(QWidget):
                 self.CHART_DIST: "mdi.chart-donut",
                 self.CHART_COMP: "mdi.chart-bar",
                 self.CHART_LINE: "mdi.chart-line",
+                self.CHART_TABLE: "mdi.table-large",
             }
             btn.setIcon(qta.icon(icon_map[mode], color=color))
 
@@ -807,6 +953,8 @@ class ExpensesView(QWidget):
             self._chart_dist.apply_theme(t)
         if hasattr(self, "_chart_comp"):
             self._chart_comp.apply_theme(t)
+        if hasattr(self, "_chart_monthly_cat"):
+            self._chart_monthly_cat.apply_theme(t)
         if hasattr(self, "_chart_line"):
             self._chart_line.apply_theme(t)
         for chip in self._kpis.values():
@@ -884,12 +1032,25 @@ class ExpensesView(QWidget):
                 padding: 0 10px;
             }}
             QTableWidget#expenseTable {{
-                background-color: transparent;
-                border: none;
+                background-color: {t["bg_primary"]};
+                alternate-background-color: {t["bg_secondary"]};
+                border: 1px solid {t["border"]};
+                border-radius: 8px;
+                gridline-color: {t["border"]};
                 font-size: 12px;
+                selection-background-color: {t["accent"]};
+                selection-color: #FFFFFF;
             }}
             QTableWidget#expenseTable::item {{
-                padding: 5px 8px;
+                padding: 6px 8px;
+                border: none;
+            }}
+            QTableWidget#expenseTable::item:alternate {{
+                background-color: {t["bg_secondary"]};
+            }}
+            QTableWidget#expenseTable::item:selected {{
+                background-color: {t["accent"]};
+                color: #FFFFFF;
             }}
             QHeaderView::section {{
                 background-color: {t["bg_hover"]};
