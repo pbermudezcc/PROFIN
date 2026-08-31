@@ -411,7 +411,7 @@ class MainWindow(QWidget):
         from app.gui.categories_view   import CategoriesView
         from app.gui.rules_view        import RulesView
         from app.gui.expenses_view     import ExpensesView
-        from app.gui.incomes_window     import IncomesWindow
+        from app.gui.incomes_window    import IncomesWindow
         from app.gui.settings_view      import SettingsView
 
         view_map = {
