@@ -180,20 +180,10 @@ def check_duplicates(
         # → This is a genuine repeated transaction. Import as clean, no flag.
         # (We do NOT add a needs_review here per spec rule D-2.)
 
-        # D-3: Partial intra-batch match → possible duplicate within file
-        # with different balance. Flag for user review.
-        if partial_key in intra_batch_partial and exact_key not in intra_batch_exact:
-            result.needs_review.append(idx)
-            result.review_reasons[idx] = (
-                f"Posible duplicado en el fichero (mismo concepto/importe, "
-                f"saldo diferente): "
-                f"{txn_date} | {conc_comun} | {amount:+.2f} € | "
-                f"Saldo {balance:.2f} €"
-            )
-            # Register in intra-batch sets before continuing
-            intra_batch_exact.add(exact_key)
-            intra_batch_partial.add(partial_key)
-            continue
+        # D-2: Partial match (same date + concepto + amount, diff balance)
+        # → This is a genuine repeated transaction and should be imported
+        # as a normal row (clean). No user flagging for intra-batch partial
+        # matches per spec. We therefore fall through to the 'clean' branch.
 
         # Clean row
         result.clean.append(idx)

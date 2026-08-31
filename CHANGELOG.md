@@ -5,6 +5,12 @@
 
 ---
 
+**Snapshot:** `PROFIN.B.0.2.3.md`  |  **Files:** 39  |  **Handler:** v1.0.0
+**Date:** 2026-09-01 01:42  |  **Type:** Beta
+**Description:** Consolidación 0.2.3: recuperación de ingresos analíticos, reparación de base SQLite y protección automática de integridad.
+
+---
+
 **Snapshot:** `PROFIN.B.0.2.1.md`  |  **Files:** 38  |  **Handler:** v1.0.0
 **Date:** 2026-09-01 00:57  |  **Type:** Beta
 **Description:** Añadida pantalla Ingresos y Ajustes. Mejoras genearles de visualización: Tema claro/oscuro pulido, mejor legibilidad, apariencia guardada al inicio, y nueva vista mensual de gastos por categoría.

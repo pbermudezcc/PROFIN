@@ -109,46 +109,30 @@ PRIORITY_FILES = [
     # -- GUI ------------------------------------------------------------------
     "app/gui/__init__.py",
     "app/gui/main_window.py",
-    "app/gui/login_screen.py",
     "app/gui/dashboard.py",
-    "app/gui/import_flow.py",
-    "app/gui/category_manager.py",
-    "app/gui/transaction_browser.py",
-    "app/gui/visualization_screen.py",
-    "app/gui/export_screen.py",
     "app/gui/expenses_view.py",
+    "app/gui/incomes_window.py",
     "app/gui/categories_view.py",
     "app/gui/import_view.py",
     "app/gui/login_window.py",
     "app/gui/rules_view.py",
+    "app/gui/settings_view.py",
     "app/gui/transactions_view.py",
 
-    # -- Visualization --------------------------------------------------------
-    "app/visualization/__init__.py",
-    "app/visualization/charts.py",
-
-    # -- Export ---------------------------------------------------------------
-    "app/export/__init__.py",
-
-    # -- Utilities ------------------------------------------------------------
-    "app/utils/__init__.py",
-    "app/utils/backup.py",
+    # -- Settings --------------------------------------------------------------
+    "app/settings/__init__.py",
+    "app/settings/settings_manager.py",
 
     # -- Tests ----------------------------------------------------------------
     "tests/__init__.py",
+    "tests/test_auth.py",
     "tests/test_duplicate_detector.py",
     "tests/test_validator.py",
     "tests/test_rules_engine.py",
-    "tests/test_integrity.py",
+    "tests/test_theme_views.py",
 
     # -- Alembic migration config ---------------------------------------------
-    "alembic/env.py",
-
-    # -- This tool itself -----------------------------------------------------
     "tools/ExportVersionHandler.py",
-
-    # -- VERSIONS -----------------------------------------------------
-    "versions/CHANGELOG.md",
 ]
 
 # -- Extra non-.py assets included in snapshots --------------------------------

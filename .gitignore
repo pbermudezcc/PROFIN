@@ -1,0 +1,14 @@
+# Local runtime data
+data/*
+logs/*
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local configuration and environments
+.env
+.venv/
+venv/

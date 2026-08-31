@@ -558,6 +558,16 @@ class ExpensesView(QWidget):
     CHART_COMP   = "comp"
     CHART_LINE   = "line"
     CHART_TABLE  = "table"
+    TRANSACTION_TYPE = TransactionType.expense
+    VIEW_TITLE = "Gastos"
+    TOTAL_LABEL = "Total gastos"
+    MAX_LABEL = "Mayor gasto"
+    TABLE_OBJECT_NAME = "expenseTable"
+    AMOUNT_COLOR_KEY = "expense"
+    AMOUNT_COLOR_FALLBACK = "#DC2626"
+    LINE_TITLE = "Evolución diaria de gastos"
+    LOG_NAME = "ExpensesView"
+    DETAIL_HEADER = "Detalle de transacciones"
 
     def __init__(self, session: Session, user, theme_key: str) -> None:
         super().__init__()
@@ -597,7 +607,7 @@ class ExpensesView(QWidget):
         tl.setContentsMargins(24, 0, 24, 0)
         tl.setSpacing(12)
 
-        lbl_title = QLabel("Gastos")
+        lbl_title = QLabel(self.VIEW_TITLE)
         lbl_title.setObjectName("dashTitle")
         tl.addWidget(lbl_title)
 
@@ -659,10 +669,10 @@ class ExpensesView(QWidget):
         kpi_row.setSpacing(12)
         self._kpis: Dict[str, _ExpenseKPI] = {}
         for key, label in [
-            ("total",     "Total gastos"),
+            ("total",     self.TOTAL_LABEL),
             ("count",     "Nº transacciones"),
             ("avg",       "Media / transacción"),
-            ("max_txn",   "Mayor gasto"),
+            ("max_txn",   self.MAX_LABEL),
             ("pct_cat",   "% categorizado"),
         ]:
             chip = _ExpenseKPI(label, self._t)
@@ -689,7 +699,7 @@ class ExpensesView(QWidget):
 
         # Detail table header
         tbl_hdr = QHBoxLayout()
-        lbl_tbl = QLabel("Detalle de transacciones")
+        lbl_tbl = QLabel(self.DETAIL_HEADER)
         lbl_tbl.setObjectName("sectionHeader")
         tbl_hdr.addWidget(lbl_tbl)
         tbl_hdr.addStretch()
@@ -713,7 +723,7 @@ class ExpensesView(QWidget):
         self._table.setShowGrid(False)
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
-        self._table.setObjectName("expenseTable")
+        self._table.setObjectName(self.TABLE_OBJECT_NAME)
         self._table.setSortingEnabled(True)
         self._table.setSizePolicy(QSizePolicy.Policy.Expanding,
                                   QSizePolicy.Policy.Expanding)
@@ -764,7 +774,7 @@ class ExpensesView(QWidget):
                     self._session.query(Transaction)
                     .filter(
                         Transaction.user_id          == self._user.id,
-                        Transaction.type             == TransactionType.expense,
+                        Transaction.type             == self.TRANSACTION_TYPE,
                         Transaction.transaction_date >= d_from,
                         Transaction.transaction_date <= d_to,
                     )
@@ -858,7 +868,7 @@ class ExpensesView(QWidget):
                 daily[key] += abs(t.amount)
 
             line_data = sorted(daily.items())
-            self._chart_line.set_title(f"Evolución diaria de gastos · {period_label}")
+            self._chart_line.set_title(f"{self.LINE_TITLE} · {period_label}")
             self._chart_line.set_data(line_data)
 
             # ── Detail table ──────────────────────────────────────────
@@ -891,7 +901,7 @@ class ExpensesView(QWidget):
                                   Qt.ItemFlag.ItemIsSelectable)
                     if col == 3:
                         item.setForeground(
-                            QColor(self._t.get("expense", "#DC2626"))
+                            QColor(                            self._t.get(self.AMOUNT_COLOR_KEY, self.AMOUNT_COLOR_FALLBACK))
                         )
                     self._table.setItem(r, col, item)
 
@@ -1031,7 +1041,7 @@ class ExpensesView(QWidget):
                 border-radius: 6px;
                 padding: 0 10px;
             }}
-            QTableWidget#expenseTable {{
+            QTableWidget#{self.TABLE_OBJECT_NAME} {{
                 background-color: {t["bg_primary"]};
                 alternate-background-color: {t["bg_secondary"]};
                 border: 1px solid {t["border"]};
@@ -1041,14 +1051,14 @@ class ExpensesView(QWidget):
                 selection-background-color: {t["accent"]};
                 selection-color: #FFFFFF;
             }}
-            QTableWidget#expenseTable::item {{
+            QTableWidget#{self.TABLE_OBJECT_NAME}::item {{
                 padding: 6px 8px;
                 border: none;
             }}
-            QTableWidget#expenseTable::item:alternate {{
+            QTableWidget#{self.TABLE_OBJECT_NAME}::item:alternate {{
                 background-color: {t["bg_secondary"]};
             }}
-            QTableWidget#expenseTable::item:selected {{
+            QTableWidget#{self.TABLE_OBJECT_NAME}::item:selected {{
                 background-color: {t["accent"]};
                 color: #FFFFFF;
             }}

@@ -163,12 +163,12 @@ class TestDuplicateDetector:
         assert result.auto_skip == []
         assert result.needs_review == []
 
-    def test_d3_intra_batch_partial_diff_balance(
+    def test_d2_intra_batch_partial_diff_balance_is_clean(
         self, db_session, user_and_account
     ):
         """
-        D-3: two rows in same file with same date+concepto+amount but
-        different running_balance → second row flagged for review.
+        D-2: same date+concepto+amount but different running_balance in the
+        same batch remains a valid import, not a false duplicate flag.
         """
         user_id, account_id = user_and_account
         df = _make_df([
@@ -177,11 +177,12 @@ class TestDuplicateDetector:
         ])
         result = check_duplicates(df, db_session, user_id, account_id)
         assert 0 in result.clean
-        assert 1 in result.needs_review
-        assert "Posible duplicado" in result.review_reasons[1]
+        assert 1 in result.clean
+        assert result.auto_skip == []
+        assert result.needs_review == []
 
     def test_mixed_batch(self, db_session, user_and_account):
-        """Mixed batch: clean + auto_skip + needs_review in one call."""
+        """Mixed batch: clean + auto_skip + normal repeated partial rows in one call."""
         user_id, account_id = user_and_account
         # Pre-seed one exact match
         _add_existing_txn(
@@ -204,4 +205,5 @@ class TestDuplicateDetector:
         result = check_duplicates(df, db_session, user_id, account_id)
         assert 0 in result.clean
         assert 1 in result.auto_skip
-        assert 2 in result.needs_review
+        assert 2 in result.clean
+        assert result.needs_review == []

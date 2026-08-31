@@ -84,10 +84,9 @@ class TestVerifyLogin:
         assert user.last_login is not None
 
 
-def test_ensure_demo_users_creates_default_credentials(db_session):
+def test_ensure_demo_users_does_not_create_automatic_credentials(db_session):
     created = ensure_demo_users(db_session)
-    usernames = {user.username for user in created}
 
-    assert {"usuario", "admin"}.issubset(usernames)
-    assert verify_login(db_session, "usuario", "123456") is not None
-    assert verify_login(db_session, "admin", "123456") is not None
+    assert created == []
+    assert verify_login(db_session, "usuario", "123456") is None
+    assert verify_login(db_session, "admin", "123456") is None
