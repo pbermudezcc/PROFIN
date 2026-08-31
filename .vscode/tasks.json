@@ -1,0 +1,23 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Export PROFIN version snapshot",
+            "type": "process",
+            "command": "py",
+            "args": [
+                "-3.11",
+                "${workspaceFolder}\\tools\\ExportVersionHandler.py"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": false
+            },
+            "problemMatcher": []
+        }
+    ]
+}

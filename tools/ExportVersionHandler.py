@@ -172,7 +172,7 @@ def _read_config_value(key: str, fallback: str) -> str:
     try:
         text = config_path.read_text(encoding="utf-8", errors="replace")
         m = re.search(
-            r'^' + re.escape(key) + r"""\s*=\s*[\"']([\"']+)[\"']""",
+            r'^\s*' + re.escape(key) + r"""\s*=\s*["']([^"']+)["']""",
             text,
             re.MULTILINE,
         )
@@ -193,6 +193,14 @@ CURRENT_APP_VERSION = _read_config_value("APP_VERSION", "0.0")
 
 def _sep(char: str = "─", width: int = 62) -> str:
     return char * width
+
+
+def _configure_console_encoding() -> None:
+    """Use UTF-8 for console output, including legacy Windows terminals."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def _ensure_dir(path: Path) -> None:
@@ -1211,6 +1219,7 @@ def main() -> None:
     Run from the project root:
         python tools/ExportVersionHandler.py
     """
+    _configure_console_encoding()
     print("\n  {}".format(_sep("=")))
     print("  PROFIN — Version Snapshot Handler  v{}".format(HANDLER_VERSION))
     print("  Personal & Project Finance Tracker")
