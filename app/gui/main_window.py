@@ -406,6 +406,7 @@ class MainWindow(QWidget):
         from app.gui.categories_view   import CategoriesView
         from app.gui.rules_view        import RulesView
         from app.gui.expenses_view     import ExpensesView
+        from app.gui.incomes_window    import IncomesWindow
 
         view_map = {
             "dashboard":    lambda: DashboardView(
@@ -414,8 +415,8 @@ class MainWindow(QWidget):
             "expenses":     lambda: ExpensesView(
                                 self._session, self._user, self._theme
                             ),
-            "income":       lambda: _PlaceholderView(
-                                "Ingresos", "mdi.trending-up", self._t
+            "income":       lambda: IncomesWindow(
+                                self._user, self._session, self._theme
                             ),
             "investments":  lambda: _PlaceholderView(
                                 "Inversiones", "mdi.chart-line", self._t
