@@ -6,9 +6,12 @@ Entry point. Initialises DB, runs auth flow, launches main window.
 import logging
 import sys
 import traceback
+from pathlib import Path
+
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
-from PySide6.QtCore import Qt, QCoreApplication
-from app.db.database import init_db
+
+from app.db.database import get_user_app_dir, init_db
 from app.gui.login_window import LoginWindow
 
 
@@ -20,21 +23,18 @@ def _setup_logging() -> None:
       - Rotating        : 1 MB max per file, 3 backups kept
       - Third-party     : sqlalchemy / PIL silenced at WARNING
     """
-    import os
     from logging.handlers import RotatingFileHandler
 
-    # ── Create logs/ directory next to main.py ────────────────────────
-    log_dir  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "profin.log")
+    app_root = get_user_app_dir()
+    log_dir = app_root / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "profin.log"
 
     root = logging.getLogger()
-    root.setLevel(logging.DEBUG)          # capture everything at root level
+    root.setLevel(logging.DEBUG)
 
-    # ── Remove any handlers added by basicConfig or Qt ────────────────
     root.handlers.clear()
 
-    # ── Console handler — INFO+ ───────────────────────────────────────
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(logging.INFO)
     console.setFormatter(logging.Formatter(
@@ -42,10 +42,9 @@ def _setup_logging() -> None:
         datefmt = "%H:%M:%S",
     ))
 
-    # ── File handler — DEBUG+, rotating 1 MB × 3 files ───────────────
     file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes    = 1_048_576,   # 1 MB
+        str(log_file),
+        maxBytes    = 1_048_576,
         backupCount = 3,
         encoding    = "utf-8",
     )
@@ -58,12 +57,10 @@ def _setup_logging() -> None:
     root.addHandler(console)
     root.addHandler(file_handler)
 
-    # ── Silence noisy third-party loggers ─────────────────────────────
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
     logging.getLogger("PIL").setLevel(logging.WARNING)
 
-    # ── Startup confirmation ──────────────────────────────────────────
     logging.getLogger(__name__).info(
         "Logging iniciado — consola: INFO | fichero DEBUG: %s", log_file
     )
