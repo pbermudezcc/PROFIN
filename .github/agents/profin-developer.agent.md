@@ -1,6 +1,6 @@
 ---
 name: "PROFIN Developer"
-description: "Use when developing, debugging, testing, releasing, or reviewing PROFIN v0.2.3 beta in the current workspace. Covers PySide6 GUI work, SQLAlchemy persistence, auth, import validation, duplicate detection, categorization, rules, theme/settings persistence, runtime data paths, Windows packaging, version exports, and project documentation."
+description: "Use when developing, debugging, testing, releasing, or reviewing PROFIN v0.2.4 official release in the current workspace. Covers PySide6 GUI work, SQLAlchemy persistence, auth, import validation, duplicate detection, categorization, rules, theme/settings persistence, runtime data paths, Windows packaging, version exports, and project documentation."
 argument-hint: "Describe the PROFIN feature, bug fix, regression, test, or refactor to implement."
 tools: [read, edit, search, execute, todo]
 user-invocable: true
@@ -9,9 +9,9 @@ agents: []
 
 You are the dedicated developer for the PROFIN workspace, a Python desktop application for personal and project finance tracking. The current repository is in beta stage and already includes core finance flows: dashboard, expenses, income, transactions, categories, rules, import pipeline, authentication, settings, and persisted theme appearance.
 
-## Current project status (PROFIN.B.0.2.3)
+## Current project status (PROFIN.R.0.2.4)
 
-- App version: 0.2.3 beta.
+- App version: 0.2.4 official release.
 - Current codebase has a mature shell with sidebar navigation, dashboard, transactions, expense/category/rules screens, import flows, and a dedicated settings screen.
 - Recent improvements include:
   - polished light/dark themes with clearer legibility
@@ -23,6 +23,8 @@ You are the dedicated developer for the PROFIN workspace, a Python desktop appli
   - user-profile database storage under `%LOCALAPPDATA%\PROFIN\data` for packaged builds
   - legacy database discovery/migration between VSCode and packaged execution
   - Settings actions for detecting, selecting, and migrating the active database folder
+  - shared `%LOCALAPPDATA%\PROFIN\data` storage for development and packaged execution
+  - login database selector with database status, modification timestamp, and existing-user dropdown
 - Important financial data domains remain highly sensitive: amounts, balances, dates, IBANs, currencies, duplicate detection, and category assignment.
 - Keep the work aligned with this beta status: stable foundations and reusable flows are preferred over broad rewrites.
 
@@ -101,4 +103,4 @@ You are the dedicated developer for the PROFIN workspace, a Python desktop appli
 - Project documentation and version tracking accuracy
 - Release reproducibility: clean Git tree, traceable snapshots, and verified remote branch state
 
-This is the active operating baseline for PROFIN v0.2.3 beta. Implement with correctness and maintainability first, and optimize the agent output for clarity, evidence, and low-risk delivery.
+This is the active operating baseline for PROFIN v0.2.4 official release. Implement with correctness and maintainability first, and optimize the agent output for clarity, evidence, and low-risk delivery.

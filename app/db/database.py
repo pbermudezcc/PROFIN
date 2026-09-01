@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_legacy_data_dir() -> Path:
-    """Resolve the repo-local data folder used by development builds.
+    """Resolve the historical repository data folder for one-time migration.
 
     In packaged builds the module is nested under a dist/_internal tree, so a
     simple parents[2] lookup points to a bundle-local folder instead of the real
@@ -29,10 +29,9 @@ def get_legacy_data_dir() -> Path:
     module_path = Path(__file__).resolve()
     candidates: list[Path] = []
 
-    for base in [module_path, module_path.parent, *module_path.parents]:
+    for base in [module_path.parent, *module_path.parents]:
         candidates.extend(
             [
-                base,
                 base / "data",
                 base / "PROFIN" / "data",
             ]
@@ -40,7 +39,6 @@ def get_legacy_data_dir() -> Path:
     for base in [Path.cwd(), Path.cwd().parent, *Path.cwd().parents]:
         candidates.extend(
             [
-                base,
                 base / "data",
                 base / "PROFIN" / "data",
             ]
@@ -49,7 +47,7 @@ def get_legacy_data_dir() -> Path:
         exe_dir = Path(sys.executable).resolve().parent if sys.executable else None
         if exe_dir is not None:
             for base in [exe_dir, *exe_dir.parents]:
-                candidates.extend([base, base / "data", base / "PROFIN" / "data"])
+                candidates.extend([base / "data", base / "PROFIN" / "data"])
 
     seen: set[Path] = set()
     for candidate in candidates:
@@ -66,12 +64,10 @@ def get_legacy_data_dir() -> Path:
 
 
 def get_default_data_dir() -> Path:
-    """Default writable location for the user profile on Windows."""
-    if getattr(sys, "frozen", False):
-        base_dir = os.environ.get("LOCALAPPDATA")
-        root = Path(base_dir) if base_dir else Path.home() / "AppData" / "Local"
-        return (root / "PROFIN" / "data").resolve()
-    return get_legacy_data_dir()
+    """Return the shared writable location used by development and frozen builds."""
+    base_dir = os.environ.get("LOCALAPPDATA")
+    root = Path(base_dir) if base_dir else Path.home() / "AppData" / "Local"
+    return (root / "PROFIN" / "data").resolve()
 
 
 def get_user_app_dir() -> Path:
@@ -139,21 +135,24 @@ def get_user_data_dir() -> Path:
     configured = settings.value("settings/data_folder", "", type=str)
     if configured:
         data_dir = Path(configured).expanduser().resolve()
-        if getattr(sys, "frozen", False):
-            if data_dir.resolve() == legacy_data_dir.resolve() or not _database_has_users(data_dir / "profin.db"):
-                if _database_has_users(default_data_dir / "profin.db") or _database_has_users(legacy_data_dir / "profin.db"):
-                    _migrate_legacy_database_if_needed(default_data_dir, legacy_data_dir)
-                    settings.setValue("settings/data_folder", str(default_data_dir))
-                    settings.sync()
-                    return default_data_dir
         data_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "Directorio de datos configurado: %s (frozen=%s)",
+            data_dir,
+            getattr(sys, "frozen", False),
+        )
         return data_dir
 
-    if getattr(sys, "frozen", False) and legacy_data_dir.exists() and legacy_data_dir != default_data_dir:
+    if legacy_data_dir.exists() and legacy_data_dir != default_data_dir:
         if _migrate_legacy_database_if_needed(default_data_dir, legacy_data_dir):
             settings.setValue("settings/data_folder", str(default_data_dir))
             settings.sync()
     default_data_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(
+        "Directorio de datos seleccionado: %s (frozen=%s)",
+        default_data_dir,
+        getattr(sys, "frozen", False),
+    )
     return default_data_dir
 
 
@@ -202,6 +201,26 @@ SessionLocal: sessionmaker[Session] = sessionmaker(
 def get_session() -> Session:
     """Return a new SQLAlchemy session. Caller is responsible for closing it."""
     return SessionLocal()
+
+
+def get_database_users(data_dir: Path) -> list[str]:
+    """Return usernames from a readable database, sorted case-insensitively."""
+    db_path = data_dir / "profin.db"
+    if not db_path.is_file():
+        return []
+
+    with sqlite3.connect(db_path) as connection:
+        if not connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone():
+            return []
+        return [
+            row[0]
+            for row in connection.execute(
+                "SELECT username FROM users ORDER BY username COLLATE NOCASE"
+            )
+            if row[0]
+        ]
 
 
 # New installations start with no accounts. Users are created explicitly from

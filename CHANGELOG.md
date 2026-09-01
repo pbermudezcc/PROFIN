@@ -5,6 +5,12 @@
 
 ---
 
+**Snapshot:** `PROFIN.R.0.2.4.md`  |  **Files:** 41  |  **Handler:** v1.0.0
+**Date:** 2026-09-02 01:09  |  **Type:** Release
+**Description:** Login database discovery, shared LOCALAPPDATA storage, and selectable existing users.
+
+---
+
 **Snapshot:** `PROFIN.R.0.2.3.md`  |  **Files:** 41  |  **Handler:** v1.0.0
 **Date:** 2026-09-02 00:04  |  **Type:** Release
 **Description:** Definitive release: portable Windows build, user-local database paths, legacy DB migration, and database discovery.

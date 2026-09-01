@@ -12,6 +12,9 @@ Features:
 """
 from __future__ import annotations
 
+import sqlite3
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore    import Qt, QSettings
@@ -19,12 +22,20 @@ from PySide6.QtGui     import QFont, QColor, QPalette, QIcon
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QCheckBox, QFrame,
-    QApplication, QMessageBox, QSizePolicy,
+    QApplication, QMessageBox, QSizePolicy, QFileDialog, QComboBox,
 )
 import qtawesome as qta
 
 from app.config        import APP_NAME, APP_VERSION, THEMES
-from app.db.database   import get_session
+from app.db import database as database_module
+from app.db.database   import (
+    Base,
+    get_database_users,
+    get_default_data_dir,
+    get_session,
+    get_user_data_dir,
+    refresh_runtime_paths,
+)
 from app.auth.auth_service import verify_login
 from app.settings      import SettingsManager
 
@@ -49,12 +60,14 @@ class LoginWindow(QWidget):
         self._theme = startup_theme if startup_theme in THEMES else (saved_settings.theme if remember_theme else "light")
         if not remember_theme:
             self._settings.setValue(self.KEY_THEME, "light")
+        self._data_dir = get_user_data_dir()
         self._session  = get_session()
 
         self.setWindowTitle(f"{APP_NAME}  v{APP_VERSION}")
 
         self._build_ui()
         self._apply_theme()
+        self._refresh_database_info()
         self._load_last_user()
 
         self.showMaximized()
@@ -134,11 +147,11 @@ class LoginWindow(QWidget):
         lbl_user.setObjectName("fieldLabel")
         card_layout.addWidget(lbl_user)
 
-        self._inp_user = QLineEdit()
-        self._inp_user.setPlaceholderText("Nombre de usuario")
-        self._inp_user.setFixedHeight(42)
-        self._inp_user.setObjectName("loginInput")
-        card_layout.addWidget(self._inp_user)
+        self._user_combo = QComboBox()
+        self._user_combo.setPlaceholderText("Selecciona un usuario")
+        self._user_combo.setFixedHeight(42)
+        self._user_combo.setObjectName("loginInput")
+        card_layout.addWidget(self._user_combo)
 
         # Password
         lbl_pass = QLabel("Contraseña")
@@ -152,6 +165,31 @@ class LoginWindow(QWidget):
         self._inp_pass.setObjectName("loginInput")
         self._inp_pass.returnPressed.connect(self._on_login)
         card_layout.addWidget(self._inp_pass)
+
+        # Database folder
+        lbl_data = QLabel("Base de datos")
+        lbl_data.setObjectName("fieldLabel")
+        card_layout.addWidget(lbl_data)
+
+        data_row = QHBoxLayout()
+        self._data_folder = QLineEdit(str(self._data_dir))
+        self._data_folder.setReadOnly(True)
+        self._data_folder.setToolTip("Carpeta que contiene profin.db")
+        self._data_folder.setObjectName("loginInput")
+        data_row.addWidget(self._data_folder)
+
+        self._btn_data_folder = QPushButton("Buscar BD")
+        self._btn_data_folder.setFixedHeight(42)
+        self._btn_data_folder.setObjectName("btnSecondary")
+        self._btn_data_folder.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_data_folder.clicked.connect(self._select_data_folder)
+        data_row.addWidget(self._btn_data_folder)
+        card_layout.addLayout(data_row)
+
+        self._database_status = QLabel()
+        self._database_status.setWordWrap(True)
+        self._database_status.setObjectName("databaseStatus")
+        card_layout.addWidget(self._database_status)
 
         # Error label (hidden by default)
         self._lbl_error = QLabel("")
@@ -200,8 +238,68 @@ class LoginWindow(QWidget):
     # Slots
     # ------------------------------------------------------------------
 
+    def _refresh_database_info(self) -> None:
+        """Show database status and populate users from the active directory."""
+        database_path = self._data_dir / "profin.db"
+        self._user_combo.clear()
+        if not database_path.is_file():
+            self._database_status.setText("BD no detectada en este directorio.")
+            self._database_status.setProperty("databaseState", "missing")
+            self._refresh_status_style()
+            return
+
+        try:
+            users = get_database_users(self._data_dir)
+            modified = datetime.fromtimestamp(
+                database_path.stat().st_mtime
+            ).strftime("%d/%m/%Y %H:%M:%S")
+        except (OSError, sqlite3.DatabaseError) as exc:
+            self._database_status.setText(f"No se pudo leer la BD: {exc}")
+            self._database_status.setProperty("databaseState", "invalid")
+            self._refresh_status_style()
+            return
+
+        self._database_status.setText(
+            f"BD encontrada. Última modificación: {modified}"
+        )
+        self._database_status.setProperty("databaseState", "found")
+        self._user_combo.addItems(users)
+        self._refresh_status_style()
+
+    def _refresh_status_style(self) -> None:
+        self._database_status.style().unpolish(self._database_status)
+        self._database_status.style().polish(self._database_status)
+
+    def _select_data_folder(self) -> None:
+        """Select a database folder, including an empty one for registration."""
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Seleccionar carpeta de la base de datos",
+            self._data_folder.text() or str(get_default_data_dir()),
+        )
+        if not selected:
+            return
+
+        data_dir = Path(selected).expanduser().resolve()
+        previous_value = self._settings.value("settings/data_folder", "", type=str)
+        try:
+            self._session.close()
+            self._settings.setValue("settings/data_folder", str(data_dir))
+            self._settings.sync()
+            self._data_dir = refresh_runtime_paths()
+            self._session = get_session()
+            self._data_folder.setText(str(self._data_dir))
+            self._refresh_database_info()
+            self._lbl_error.setVisible(False)
+        except (OSError, sqlite3.DatabaseError) as exc:
+            self._settings.setValue("settings/data_folder", previous_value)
+            self._settings.sync()
+            refresh_runtime_paths()
+            self._session = get_session()
+            self._show_error(f"No se pudo activar la base de datos:\n{exc}")
+
     def _on_login(self) -> None:
-        username = self._inp_user.text().strip()
+        username = self._user_combo.currentText().strip()
         password = self._inp_pass.text()
 
         if not username:
@@ -327,10 +425,13 @@ class LoginWindow(QWidget):
                 lbl_err.setVisible(True)
                 return
             try:
+                Base.metadata.create_all(bind=database_module.engine)
                 create_user(self._session, username, password)
                 dlg.accept()
                 # Auto-fill username after successful registration
-                self._inp_user.setText(username)
+                if self._user_combo.findText(username) < 0:
+                    self._user_combo.addItem(username)
+                self._user_combo.setCurrentText(username)
                 self._inp_pass.setFocus()
                 self._show_error(
                     f"✓ Cuenta '{username}' creada. Introduce tu contraseña para entrar."
@@ -362,11 +463,11 @@ class LoginWindow(QWidget):
 
     def _load_last_user(self) -> None:
         last = self._settings.value(self.KEY_LAST_USER, "")
-        if last:
-            self._inp_user.setText(last)
+        if last and self._user_combo.findText(last) >= 0:
+            self._user_combo.setCurrentText(last)
             self._inp_pass.setFocus()
         else:
-            self._inp_user.setFocus()
+            self._user_combo.setFocus()
 
     def _apply_theme(self) -> None:
         t = THEMES[self._theme]
@@ -415,6 +516,25 @@ class LoginWindow(QWidget):
             }}
             QLineEdit#loginInput:focus {{
                 border: 1.5px solid {t["accent"]};
+            }}
+            QComboBox#loginInput {{
+                background-color: {t["bg_primary"]};
+                border: 1.5px solid {t["border"]};
+                border-radius: 8px;
+                padding: 8px 12px;
+                color: {t["text_primary"]};
+                font-size: 13px;
+            }}
+            QLabel#databaseStatus {{
+                color: {t["text_secondary"]};
+                font-size: 11px;
+            }}
+            QLabel#databaseStatus[databaseState="found"] {{
+                color: {t["income"]};
+            }}
+            QLabel#databaseStatus[databaseState="missing"],
+            QLabel#databaseStatus[databaseState="invalid"] {{
+                color: {t["expense"]};
             }}
             QPushButton#btnPrimary {{
                 background-color: {t["accent"]};

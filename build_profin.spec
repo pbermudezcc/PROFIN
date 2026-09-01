@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path.cwd()
 APP_NAME = "PROFIN"
 APP_CHANNEL = os.environ.get("PROFIN_CHANNEL", "B").upper()
-APP_VERSION = "0.2.3"
+APP_VERSION = "0.2.4"
 ARTIFACT_NAME = f"{APP_NAME}.{APP_CHANNEL}.{APP_VERSION}"
 
 block_cipher = None

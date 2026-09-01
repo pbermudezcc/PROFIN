@@ -2,17 +2,17 @@ from PySide6.QtCore import QSettings
 import sys
 from pathlib import Path
 
-from app.db.database import get_user_app_dir, get_user_data_dir
+from app.db.database import get_database_users, get_user_app_dir, get_user_data_dir
 from app.settings import SettingsManager
 
 
-def test_get_user_data_dir_uses_repo_root_in_development(monkeypatch):
+def test_get_user_data_dir_uses_local_appdata_in_development(monkeypatch, tmp_path):
     QSettings("GEVernova", "PROFIN").clear()
     monkeypatch.setattr(sys, "frozen", False, raising=False)
-    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv("APPDATA", raising=False)
 
-    expected = (Path(__file__).resolve().parents[1] / "data").resolve()
+    expected = (tmp_path / "PROFIN" / "data").resolve()
     assert get_user_app_dir() == Path(__file__).resolve().parents[1].resolve()
     assert get_user_data_dir() == expected
     QSettings("GEVernova", "PROFIN").clear()
@@ -44,6 +44,18 @@ def test_get_user_data_dir_uses_local_appdata_when_frozen(monkeypatch, tmp_path)
     QSettings("GEVernova", "PROFIN").clear()
 
 
+def test_development_uses_packaged_data_folder_setting(monkeypatch, tmp_path):
+    settings = QSettings("GEVernova", "PROFIN")
+    settings.clear()
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    settings.setValue("settings/data_folder", str(tmp_path / "PROFIN" / "data"))
+
+    expected = (tmp_path / "PROFIN" / "data").resolve()
+    assert get_user_data_dir() == expected
+    settings.clear()
+
+
 def test_settings_manager_migrates_data_folder(tmp_path):
     import sqlite3
 
@@ -71,6 +83,26 @@ def test_settings_manager_migrates_data_folder(tmp_path):
         rows = conn.execute("SELECT name FROM items").fetchall()
     assert rows == [("alpha",)]
     qsettings.clear()
+
+
+def test_get_database_users_returns_sorted_users(tmp_path):
+    import sqlite3
+
+    with sqlite3.connect(tmp_path / "profin.db") as connection:
+        connection.execute(
+            "CREATE TABLE users (username TEXT, password_hash TEXT)"
+        )
+        connection.executemany(
+            "INSERT INTO users VALUES (?, ?)",
+            [("zeta", "hash"), ("ALFA", "hash"), ("beta", "hash")],
+        )
+        connection.commit()
+
+    assert get_database_users(tmp_path) == ["ALFA", "beta", "zeta"]
+
+
+def test_get_database_users_returns_empty_for_missing_database(tmp_path):
+    assert get_database_users(tmp_path) == []
 
 
 def test_get_user_data_dir_falls_back_to_legacy_repo_db(monkeypatch, tmp_path):

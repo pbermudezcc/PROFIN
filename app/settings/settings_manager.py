@@ -87,7 +87,7 @@ class SettingsManager:
                 "settings/export_folder", self._defaults.export_folder, type=str
             ),
             "data_folder": self._settings.value(
-                "settings/data_folder", str(get_default_data_dir()), type=str
+                "settings/data_folder", str(get_user_data_dir()), type=str
             ),
         }
         return AppSettings(**values)
