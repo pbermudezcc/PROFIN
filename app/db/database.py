@@ -1,20 +1,175 @@
 """Database initialisation, integrity checks, recovery, and session factory."""
 
-from datetime import datetime
-from pathlib import Path
+import gc
 import logging
+import os
 import shutil
 import sqlite3
+import sys
+from datetime import datetime
+from pathlib import Path
 
+from PySide6.QtCore import QSettings
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import Base, User
 
 logger = logging.getLogger(__name__)
 
-DB_DIR = Path(__file__).resolve().parents[2] / "data"
-DB_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_legacy_data_dir() -> Path:
+    """Resolve the historical repository data folder for one-time migration.
+
+    In packaged builds the module is nested under a dist/_internal tree, so a
+    simple parents[2] lookup points to a bundle-local folder instead of the real
+    repository checkout. Search the local ancestry for a data/ directory that
+    actually contains the PROFIN database so legacy user data can still be found.
+    """
+    module_path = Path(__file__).resolve()
+    candidates: list[Path] = []
+
+    for base in [module_path.parent, *module_path.parents]:
+        candidates.extend(
+            [
+                base / "data",
+                base / "PROFIN" / "data",
+            ]
+        )
+    for base in [Path.cwd(), Path.cwd().parent, *Path.cwd().parents]:
+        candidates.extend(
+            [
+                base / "data",
+                base / "PROFIN" / "data",
+            ]
+        )
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent if sys.executable else None
+        if exe_dir is not None:
+            for base in [exe_dir, *exe_dir.parents]:
+                candidates.extend([base / "data", base / "PROFIN" / "data"])
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve(strict=False)
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        db_file = resolved / "profin.db" if resolved.is_dir() else None
+        if db_file and db_file.exists():
+            return resolved
+
+    fallback = (module_path.parents[2] / "data").resolve()
+    return fallback
+
+
+def get_default_data_dir() -> Path:
+    """Return the shared writable location used by development and frozen builds."""
+    base_dir = os.environ.get("LOCALAPPDATA")
+    root = Path(base_dir) if base_dir else Path.home() / "AppData" / "Local"
+    return (root / "PROFIN" / "data").resolve()
+
+
+def get_user_app_dir() -> Path:
+    """Return the writable app directory for the current execution mode."""
+    if getattr(sys, "frozen", False):
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base_dir = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        return (base_dir / "PROFIN").resolve()
+    return Path(__file__).resolve().parents[2].resolve()
+
+
+def _database_has_users(db_path: Path) -> bool:
+    """Return True when the SQLite database contains at least one user row."""
+    if not db_path.exists():
+        return False
+    connection = None
+    try:
+        connection = sqlite3.connect(db_path)
+        table_exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        if not table_exists:
+            return False
+        count = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        return int(count or 0) > 0
+    except sqlite3.DatabaseError:
+        return False
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def _migrate_legacy_database_if_needed(default_data_dir: Path, legacy_data_dir: Path) -> bool:
+    """Copy a populated legacy DB into the packaged app folder if the current target is empty or stale."""
+    legacy_db = legacy_data_dir / "profin.db"
+    target_db = default_data_dir / "profin.db"
+    if not legacy_db.exists():
+        return False
+    if _database_has_users(target_db):
+        return False
+
+    if "engine" in globals():
+        engine.dispose()
+    if "SessionLocal" in globals():
+        SessionLocal.close_all()
+    gc.collect()
+
+    default_data_dir.mkdir(parents=True, exist_ok=True)
+    for suffix in ("", "-wal", "-shm"):
+        source = legacy_data_dir / f"profin.db{suffix}"
+        target = default_data_dir / f"profin.db{suffix}"
+        if source.exists():
+            if target.exists():
+                target.unlink(missing_ok=True)
+            shutil.copy2(source, target)
+    return True
+
+
+def get_user_data_dir() -> Path:
+    """Return the writable data directory, preferring the user-configured value when set."""
+    settings = QSettings("GEVernova", "PROFIN")
+    default_data_dir = get_default_data_dir()
+    legacy_data_dir = get_legacy_data_dir()
+
+    configured = settings.value("settings/data_folder", "", type=str)
+    if configured:
+        data_dir = Path(configured).expanduser().resolve()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "Directorio de datos configurado: %s (frozen=%s)",
+            data_dir,
+            getattr(sys, "frozen", False),
+        )
+        return data_dir
+
+    if legacy_data_dir.exists() and legacy_data_dir != default_data_dir:
+        if _migrate_legacy_database_if_needed(default_data_dir, legacy_data_dir):
+            settings.setValue("settings/data_folder", str(default_data_dir))
+            settings.sync()
+    default_data_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(
+        "Directorio de datos seleccionado: %s (frozen=%s)",
+        default_data_dir,
+        getattr(sys, "frozen", False),
+    )
+    return default_data_dir
+
+
+def refresh_runtime_paths() -> Path:
+    """Refresh the live DB location after a user moves or configures the data directory."""
+    global DB_DIR, DB_PATH, DATABASE_URL, engine
+    DB_DIR = get_user_data_dir()
+    DB_PATH = DB_DIR / "profin.db"
+    DATABASE_URL = f"sqlite:///{DB_PATH}"
+    if "engine" in globals():
+        engine.dispose()
+    engine = _build_engine(DATABASE_URL)
+    SessionLocal.configure(bind=engine)
+    return DB_DIR
+
+
+DB_DIR = get_user_data_dir()
 DB_PATH = DB_DIR / "profin.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
@@ -46,6 +201,26 @@ SessionLocal: sessionmaker[Session] = sessionmaker(
 def get_session() -> Session:
     """Return a new SQLAlchemy session. Caller is responsible for closing it."""
     return SessionLocal()
+
+
+def get_database_users(data_dir: Path) -> list[str]:
+    """Return usernames from a readable database, sorted case-insensitively."""
+    db_path = data_dir / "profin.db"
+    if not db_path.is_file():
+        return []
+
+    with sqlite3.connect(db_path) as connection:
+        if not connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone():
+            return []
+        return [
+            row[0]
+            for row in connection.execute(
+                "SELECT username FROM users ORDER BY username COLLATE NOCASE"
+            )
+            if row[0]
+        ]
 
 
 # New installations start with no accounts. Users are created explicitly from
@@ -181,6 +356,7 @@ def ensure_demo_users(session: Session) -> list[User]:
 
 def init_db() -> None:
     """Create tables, repair corruption, and seed first-run credentials."""
+    refresh_runtime_paths()
     if DB_PATH.exists():
         _ensure_database_integrity()
     Base.metadata.create_all(bind=engine)

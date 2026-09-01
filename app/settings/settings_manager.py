@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import shutil
 import zipfile
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QSettings
+
+from app.db.database import get_default_data_dir, get_user_data_dir, refresh_runtime_paths
 
 
 @dataclass
@@ -25,6 +28,7 @@ class AppSettings:
     protect_sensitive_data: bool = True
     import_folder: str = ""
     export_folder: str = ""
+    data_folder: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -82,6 +86,9 @@ class SettingsManager:
             "export_folder": self._settings.value(
                 "settings/export_folder", self._defaults.export_folder, type=str
             ),
+            "data_folder": self._settings.value(
+                "settings/data_folder", str(get_user_data_dir()), type=str
+            ),
         }
         return AppSettings(**values)
 
@@ -100,13 +107,47 @@ class SettingsManager:
         self._settings.setValue("settings/protect_sensitive_data", settings.protect_sensitive_data)
         self._settings.setValue("settings/import_folder", settings.import_folder)
         self._settings.setValue("settings/export_folder", settings.export_folder)
+        self._settings.setValue("settings/data_folder", settings.data_folder or str(get_default_data_dir()))
         self._settings.sync()
 
     def ensure_dirs(self, settings: AppSettings) -> None:
-        for folder_key in ("import_folder", "export_folder", "backup_folder"):
+        for folder_key in ("import_folder", "export_folder", "backup_folder", "data_folder"):
             folder = getattr(settings, folder_key)
             if folder:
                 Path(folder).mkdir(parents=True, exist_ok=True)
+
+    def apply_data_folder(self, folder: str) -> Path:
+        """Copy the current user database to a new data directory and persist the new path for the next app launch."""
+        target_dir = Path(folder).expanduser().resolve() if folder else get_default_data_dir()
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        current_dir = get_user_data_dir()
+        if current_dir.resolve() == target_dir.resolve():
+            self._settings.setValue("settings/data_folder", str(target_dir))
+            self._settings.sync()
+            return target_dir
+
+        source_db = current_dir / "profin.db"
+        target_db = target_dir / "profin.db"
+        if source_db.exists() and (
+            not target_db.exists() or target_db.stat().st_size == 0
+        ):
+            for suffix in ("", "-wal", "-shm"):
+                source_file = current_dir / f"profin.db{suffix}"
+                target_file = target_dir / f"profin.db{suffix}"
+                if source_file.exists():
+                    if target_file.exists():
+                        target_file.unlink()
+                    shutil.copy2(source_file, target_file)
+        else:
+            for suffix in ("", "-wal", "-shm"):
+                source_file = current_dir / f"profin.db{suffix}"
+                if source_file.exists():
+                    shutil.copy2(source_file, target_dir / source_file.name)
+
+        self._settings.setValue("settings/data_folder", str(target_dir))
+        self._settings.sync()
+        return target_dir
 
     def backup_all_data(self, backup_dir: str, user_name: str | None = None) -> Path:
         if not backup_dir:
@@ -115,7 +156,7 @@ class SettingsManager:
         backup_root = Path(backup_dir)
         backup_root.mkdir(parents=True, exist_ok=True)
 
-        db_dir = Path(__file__).resolve().parents[2] / "data"
+        db_dir = get_user_data_dir()
         db_path = db_dir / "profin.db"
         db_files = [db_path]
         for suffix in ("-wal", "-shm"):
@@ -150,8 +191,7 @@ class SettingsManager:
         if not archive_path.exists():
             return False
 
-        db_dir = Path(__file__).resolve().parents[2] / "data"
-        db_dir.mkdir(parents=True, exist_ok=True)
+        db_dir = get_user_data_dir()
         db_path = db_dir / "profin.db"
 
         with zipfile.ZipFile(archive_path, "r") as archive:

@@ -17,3 +17,4 @@ xlrd>=2.0.1
 
 # Fase 5 (próximamente):
 # pyqtgraph>=0.13.0
+pyinstaller>=6.11.0

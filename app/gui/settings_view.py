@@ -20,9 +20,12 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
+import sqlite3
+
 import qtawesome as qta
 
 from app.config import THEMES
+from app.db.database import get_default_data_dir, get_legacy_data_dir
 from app.settings import SettingsManager
 
 
@@ -198,6 +201,21 @@ class SettingsView(QWidget):
         export_row.addWidget(export_btn)
         form.addRow("Carpeta de exportación", export_row)
 
+        self._data_folder_edit = QLineEdit()
+        self._data_folder_edit.setPlaceholderText("Ruta de datos del usuario")
+        data_row = QHBoxLayout()
+        data_row.addWidget(self._data_folder_edit)
+        data_btn = QPushButton("Explorar")
+        data_btn.clicked.connect(lambda: self._browse_folder(self._data_folder_edit))
+        data_row.addWidget(data_btn)
+        self._btn_detect_data = QPushButton("Detectar BD")
+        self._btn_detect_data.clicked.connect(self._detect_data_folder)
+        data_row.addWidget(self._btn_detect_data)
+        self._btn_move_data = QPushButton("Migrar aquí")
+        self._btn_move_data.clicked.connect(self._migrate_data_folder)
+        data_row.addWidget(self._btn_move_data)
+        form.addRow("Carpeta de datos del usuario", data_row)
+
         layout.addWidget(group)
         return page
 
@@ -272,6 +290,7 @@ class SettingsView(QWidget):
         self._show_hints_cb.setChecked(self._settings.enable_hints)
         self._import_folder_edit.setText(self._settings.import_folder)
         self._export_folder_edit.setText(self._settings.export_folder)
+        self._data_folder_edit.setText(self._settings.data_folder or str(get_default_data_dir()))
         self._backup_folder_edit.setText(self._settings.backup_folder)
         self._require_password_cb.setChecked(self._settings.require_password_on_start)
         self._protect_data_cb.setChecked(self._settings.protect_sensitive_data)
@@ -293,6 +312,7 @@ class SettingsView(QWidget):
         settings.enable_hints = self._show_hints_cb.isChecked()
         settings.import_folder = self._import_folder_edit.text().strip()
         settings.export_folder = self._export_folder_edit.text().strip()
+        settings.data_folder = self._data_folder_edit.text().strip()
         settings.backup_folder = self._backup_folder_edit.text().strip()
         settings.require_password_on_start = self._require_password_cb.isChecked()
         settings.protect_sensitive_data = self._protect_data_cb.isChecked()
@@ -306,10 +326,46 @@ class SettingsView(QWidget):
         if folder:
             field.setText(folder)
 
+    def _detect_data_folder(self) -> None:
+        candidates = []
+        for folder in (get_legacy_data_dir(), get_default_data_dir()):
+            db_path = folder / "profin.db"
+            if not db_path.exists():
+                continue
+            try:
+                with sqlite3.connect(db_path) as connection:
+                    has_users = connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
+                    ).fetchone()
+                    if has_users:
+                        count = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+                        if int(count or 0) > 0:
+                            candidates.append(folder)
+            except sqlite3.DatabaseError:
+                continue
+
+        if not candidates:
+            QMessageBox.information(
+                self,
+                "Base de datos no encontrada",
+                "No se encontró una base de datos con usuarios válidos en las rutas conocidas del proyecto ni del usuario local.",
+            )
+            return
+
+        chosen = sorted(candidates, key=lambda path: len(str(path))) [0]
+        self._data_folder_edit.setText(str(chosen))
+        QMessageBox.information(
+            self,
+            "Base de datos detectada",
+            f"Se ha localizado la base de datos actual en:\n{chosen}",
+        )
+
     def _save_settings(self) -> None:
         self._collect_from_form()
         self._settings_manager.ensure_dirs(self._settings)
         self._settings_manager.save(self._settings)
+        if self._settings.data_folder:
+            self._settings_manager.apply_data_folder(self._settings.data_folder)
 
         qsettings = QSettings("GEVernova", "PROFIN")
         qsettings.setValue("ui/theme", self._settings.theme if self._settings.save_appearance_on_start else "light")
@@ -330,6 +386,18 @@ class SettingsView(QWidget):
                     elif hasattr(view, "refresh_theme"):
                         view.refresh_theme(self._settings.theme)
         self.apply_theme(self._settings.theme)
+
+    def _migrate_data_folder(self) -> None:
+        target = self._data_folder_edit.text().strip()
+        if not target:
+            QMessageBox.warning(self, "Ubicación no válida", "Selecciona una carpeta para la ubicación de datos del usuario.")
+            return
+        try:
+            self._settings_manager.apply_data_folder(target)
+            self._settings.data_folder = target
+            QMessageBox.information(self, "Ubicación de datos actualizada", f"La base de datos y los datos del usuario ahora se guardan en:\n{target}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Error al migrar datos", str(exc))
 
     def _create_backup(self) -> None:
         self._collect_from_form()

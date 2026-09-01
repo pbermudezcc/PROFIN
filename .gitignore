@@ -1,12 +1,17 @@
 # Local runtime data
 data/*
 logs/*
+build/
+dist/
 
 # Python generated files
 __pycache__/
+**/__pycache__/
 *.py[cod]
+**/*.py[cod]
 *$py.class
 .pytest_cache/
+**/.pytest_cache/
 
 # Local configuration and environments
 .env
