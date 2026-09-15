@@ -35,6 +35,7 @@ from app.db.models   import (
 from app.categorization.category_manager import (
     assign_transaction_category, get_all_categories
 )
+from app.gui._style_utils import apply_card_shadow
 
 
 PAGE_SIZE = 100
@@ -71,7 +72,8 @@ class TransactionsView(QWidget):
         root.addWidget(self._make_topbar())
 
         # Filter bar
-        root.addWidget(self._make_filter_bar())
+        self._filter_bar = self._make_filter_bar()
+        root.addWidget(self._filter_bar)
 
         # Table
         self._table = QTableView()
@@ -107,7 +109,8 @@ class TransactionsView(QWidget):
         root.addWidget(self._table)
 
         # Pagination bar
-        root.addWidget(self._make_pagination_bar())
+        self._pagination_bar = self._make_pagination_bar()
+        root.addWidget(self._pagination_bar)
 
     def _make_topbar(self) -> QFrame:
         bar = QFrame()
@@ -581,12 +584,16 @@ class TransactionsView(QWidget):
         selection_bg = (
             f"background-color: {t['accent']}; color: #FFFFFF;"
             if is_dark else
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #DDEBFF, stop:1 #CFE1FF); color: #1E3A8A;"
+            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            f"stop:0 {t['selection_grad_start']}, stop:1 {t['selection_grad_end']}); "
+            f"color: {t['selection_text']};"
         )
         selection_hover = (
             f"background-color: {t['accent_hover']}; color: #FFFFFF;"
             if is_dark else
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #CFE1FF, stop:1 #BFD8FF); color: #1E3A8A;"
+            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            f"stop:0 {t['selection_hover_start']}, stop:1 {t['selection_hover_end']}); "
+            f"color: {t['selection_text']};"
         )
         self.setStyleSheet(f"""
             QFrame#dashTopBar {{
@@ -673,3 +680,5 @@ class TransactionsView(QWidget):
                 font-size: 12px;
             }}
         """)
+        apply_card_shadow(self._filter_bar, t, blur_radius=12, y_offset=2)
+        apply_card_shadow(self._pagination_bar, t, blur_radius=12, y_offset=-2)

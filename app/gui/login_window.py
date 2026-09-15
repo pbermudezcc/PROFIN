@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore    import Qt, QSettings
-from PySide6.QtGui     import QFont, QColor, QPalette, QIcon
+from PySide6.QtGui     import QFont, QColor, QPalette, QIcon, QFontMetrics
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QCheckBox, QFrame,
@@ -38,6 +38,41 @@ from app.db.database   import (
 )
 from app.auth.auth_service import verify_login
 from app.settings      import SettingsManager
+
+
+class _ElidedPathLabel(QLabel):
+    """
+    Non-interactive display for a filesystem path: elides from the front
+    (…\\…\\data) to fit the available width instead of clipping, keeps the
+    full path in the tooltip, and re-elides on resize.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._full_text = ""
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Fixed)
+
+    def set_path(self, text: str) -> None:
+        self._full_text = text
+        self.setToolTip(text)
+        self._update_elided_text()
+
+    def full_path(self) -> str:
+        return self._full_text
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_elided_text()
+
+    def _update_elided_text(self) -> None:
+        if not self._full_text:
+            return
+        fm = QFontMetrics(self.font())
+        elided = fm.elidedText(
+            self._full_text, Qt.TextElideMode.ElideLeft, self.width()
+        )
+        super().setText(elided)
 
 
 class LoginWindow(QWidget):
@@ -172,10 +207,10 @@ class LoginWindow(QWidget):
         card_layout.addWidget(lbl_data)
 
         data_row = QHBoxLayout()
-        self._data_folder = QLineEdit(str(self._data_dir))
-        self._data_folder.setReadOnly(True)
-        self._data_folder.setToolTip("Carpeta que contiene profin.db")
-        self._data_folder.setObjectName("loginInput")
+        self._data_folder = _ElidedPathLabel()
+        self._data_folder.setFixedHeight(42)
+        self._data_folder.set_path(str(self._data_dir))
+        self._data_folder.setObjectName("loginPathDisplay")
         data_row.addWidget(self._data_folder)
 
         self._btn_data_folder = QPushButton("Buscar BD")
@@ -275,7 +310,7 @@ class LoginWindow(QWidget):
         selected = QFileDialog.getExistingDirectory(
             self,
             "Seleccionar carpeta de la base de datos",
-            self._data_folder.text() or str(get_default_data_dir()),
+            self._data_folder.full_path() or str(get_default_data_dir()),
         )
         if not selected:
             return
@@ -288,7 +323,7 @@ class LoginWindow(QWidget):
             self._settings.sync()
             self._data_dir = refresh_runtime_paths()
             self._session = get_session()
-            self._data_folder.setText(str(self._data_dir))
+            self._data_folder.set_path(str(self._data_dir))
             self._refresh_database_info()
             self._lbl_error.setVisible(False)
         except (OSError, sqlite3.DatabaseError) as exc:
@@ -524,6 +559,14 @@ class LoginWindow(QWidget):
                 padding: 8px 12px;
                 color: {t["text_primary"]};
                 font-size: 13px;
+            }}
+            QLabel#loginPathDisplay {{
+                background-color: {t["bg_primary"]};
+                border: 1.5px solid {t["border"]};
+                border-radius: 8px;
+                padding: 8px 12px;
+                color: {t["text_secondary"]};
+                font-size: 12px;
             }}
             QLabel#databaseStatus {{
                 color: {t["text_secondary"]};

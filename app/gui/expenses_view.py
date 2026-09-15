@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.config    import THEMES
 from app.db.models import Transaction, TransactionType, Category, User
+from app.gui._style_utils import apply_card_shadow
 
 # Reuse chart palette and helpers from dashboard
 from app.gui.dashboard import (
@@ -90,9 +91,22 @@ class _ComparisonChartWidget(QFrame):
             hdr.addSpacing(2)
         root.addLayout(hdr)
 
+        # Canvas grows wide with many categories — wrap in a horizontal
+        # scroll area so groups stay readable instead of squeezing.
         self._canvas = _PaintCanvas(self._paint_chart)
         self._canvas.setMinimumHeight(220)
-        root.addWidget(self._canvas)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._scroll.setWidget(self._canvas)
+        root.addWidget(self._scroll)
+        apply_card_shadow(self, self._t)
 
     def set_data(
         self,
@@ -110,11 +124,16 @@ class _ComparisonChartWidget(QFrame):
         self._data_b  = [(c, map_b.get(c, 0.0)) for c in cats]
         self._label_a = label_a
         self._label_b = label_b
+        # Keep each category group at least 70px wide; beyond that the
+        # scroll area exposes the remainder instead of squeezing labels.
+        n = max(len(cats), 1)
+        self._canvas.setMinimumWidth(max(400, n * 70))
         self._canvas.update()
 
     def apply_theme(self, theme: dict) -> None:
         self._t = theme
         self._canvas.update()
+        apply_card_shadow(self, theme)
 
     def _paint_chart(self, painter: QPainter, rect: QRectF) -> None:
         if not self._data_a and not self._data_b:
@@ -129,7 +148,7 @@ class _ComparisonChartWidget(QFrame):
         if n == 0:
             return
 
-        pad_l    = 12
+        pad_l    = 44       # space for Y-axis value labels
         pad_r    = 8
         pad_top  = 8
         pad_bot  = 28
@@ -148,15 +167,30 @@ class _ComparisonChartWidget(QFrame):
         color_b   = QColor("#94A3B8")
         color_lbl = QColor(self._t.get("text_secondary", "#888"))
         color_grid = QColor(self._t.get("border", "#ddd"))
+        color_axis = QColor(self._t.get("border_strong", "#9098A3"))
 
-        # Gridlines
-        painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
+        # Gridlines + Y-axis value labels
+        painter.setFont(QFont("Segoe UI", 7))
         for step in (0.25, 0.5, 0.75, 1.0):
             gy = rect.y() + pad_top + usable_h * (1 - step)
+            painter.setPen(color_lbl)
+            painter.drawText(
+                QRectF(rect.x(), gy - 8, pad_l - 10, 16),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                _fmt_currency_short(max_val * step),
+            )
+            painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
             painter.drawLine(
                 QPointF(rect.x() + pad_l, gy),
                 QPointF(rect.right() - pad_r, gy),
             )
+
+        # Left axis line
+        painter.setPen(QPen(color_axis, 1.0, Qt.PenStyle.SolidLine))
+        painter.drawLine(
+            QPointF(rect.x() + pad_l, rect.y() + pad_top),
+            QPointF(rect.x() + pad_l, rect.y() + pad_top + usable_h),
+        )
 
         painter.setFont(QFont("Segoe UI", 7))
 
@@ -187,13 +221,15 @@ class _ComparisonChartWidget(QFrame):
                 2, 2,
             )
 
-            # Category label (rotated or truncated)
+            # Category label — elide dynamically to the group's width
             painter.setPen(color_lbl)
-            short = label[:10] + "…" if len(label) > 10 else label
+            fm = painter.fontMetrics()
+            elided = fm.elidedText(label, Qt.TextElideMode.ElideRight,
+                                   int(group_w))
             painter.drawText(
                 QRectF(gx, rect.bottom() - pad_bot, group_w, pad_bot),
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
-                short,
+                elided,
             )
 
 
@@ -225,17 +261,35 @@ class _MonthlyCategoryChartWidget(QFrame):
         hdr.addStretch()
         root.addLayout(hdr)
 
+        # Canvas grows wide with many months — wrap in a horizontal
+        # scroll area so bars stay readable instead of squeezing.
         self._canvas = _PaintCanvas(self._paint_chart)
         self._canvas.setMinimumHeight(180)
-        root.addWidget(self._canvas)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._scroll.setWidget(self._canvas)
+        root.addWidget(self._scroll)
+        apply_card_shadow(self, self._t)
 
     def set_data(self, data: List[Tuple[str, List[Tuple[str, float]]]]) -> None:
         self._data = data
+        # Keep each month at least 56px wide; beyond that the scroll area
+        # exposes the remainder instead of squeezing bars/labels.
+        n = max(len(data), 1)
+        self._canvas.setMinimumWidth(max(400, n * 56))
         self._canvas.update()
 
     def apply_theme(self, theme: dict) -> None:
         self._t = theme
         self._canvas.update()
+        apply_card_shadow(self, theme)
 
     def _paint_chart(self, painter: QPainter, rect: QRectF) -> None:
         if not self._data:
@@ -247,7 +301,7 @@ class _MonthlyCategoryChartWidget(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         n = len(self._data)
-        pad_l = 16
+        pad_l = 44        # space for Y-axis value labels
         pad_r = 12
         pad_top = 10
         pad_bot = 28
@@ -259,11 +313,25 @@ class _MonthlyCategoryChartWidget(QFrame):
         max_total = max_total or 1.0
         color_grid = QColor(self._t.get("border", "#ddd"))
         color_lbl = QColor(self._t.get("text_secondary", "#888"))
+        color_axis = QColor(self._t.get("border_strong", "#9098A3"))
 
-        painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
+        painter.setFont(QFont("Segoe UI", 7))
         for step in (0.25, 0.5, 0.75, 1.0):
             gy = rect.y() + pad_top + usable_h * (1 - step)
+            painter.setPen(color_lbl)
+            painter.drawText(
+                QRectF(rect.x(), gy - 8, pad_l - 10, 16),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                _fmt_currency_short(max_total * step),
+            )
+            painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
             painter.drawLine(QPointF(rect.x() + pad_l, gy), QPointF(rect.right() - pad_r, gy))
+
+        painter.setPen(QPen(color_axis, 1.0, Qt.PenStyle.SolidLine))
+        painter.drawLine(
+            QPointF(rect.x() + pad_l, rect.y() + pad_top),
+            QPointF(rect.x() + pad_l, rect.y() + pad_top + usable_h),
+        )
 
         for i, (label, cats) in enumerate(self._data):
             total = sum(value for _, value in cats)
@@ -325,6 +393,7 @@ class _LineChartWidget(QFrame):
         self._canvas = _PaintCanvas(self._paint_chart)
         self._canvas.setMinimumHeight(200)
         root.addWidget(self._canvas)
+        apply_card_shadow(self, self._t)
 
     def set_title(self, title: str) -> None:
         self._lbl_title.setText(title)
@@ -336,6 +405,7 @@ class _LineChartWidget(QFrame):
     def apply_theme(self, theme: dict) -> None:
         self._t = theme
         self._canvas.update()
+        apply_card_shadow(self, theme)
 
     def _paint_chart(self, painter: QPainter, rect: QRectF) -> None:
         if not self._data:
@@ -473,6 +543,7 @@ class _ExpenseKPI(QFrame):
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Fixed)
+        apply_card_shadow(self, self._t, blur_radius=14, y_offset=3)
 
     def set_value(self, value: str,
                   delta: Optional[str] = None,
@@ -488,6 +559,7 @@ class _ExpenseKPI(QFrame):
 
     def apply_theme(self, t: dict) -> None:
         self._t = t
+        apply_card_shadow(self, t, blur_radius=14, y_offset=3)
 
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,17 @@ There is also a legacy GitHub Copilot agent definition at
 conventions in more detail (Windows packaging, version export, release
 process) — read it if the task touches packaging or releases.
 
+## Releases
+
+When the user asks to release, publish a version, or tag a new version,
+invoke the `release` skill (`.claude/skills/release/SKILL.md`) rather than
+improvising a git/GitHub workflow. It asks whether this is a stable `main`
+release or a branch pre-release, proposes a semver bump from commit
+history, drafts release notes, drives `tools/ExportVersionHandler.py`
+non-interactively to update `APP_VERSION`/`CHANGELOG.md`, then tags, pushes,
+and publishes via `gh release create`. Never tag, push a tag, or run
+`gh release create` outside that skill's confirm-before-publish steps.
+
 ## Memory: learn from bugs
 
 Before investigating any bug, regression, or unexpected behavior, read

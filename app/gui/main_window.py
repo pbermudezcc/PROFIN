@@ -254,7 +254,7 @@ class MainWindow(QWidget):
         btn_min.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_min.setToolTip("Minimizar")
         btn_min.setObjectName("wctrlMin")
-        btn_min.setIcon(qta.icon("mdi.minus", color="#94A3B8"))
+        btn_min.setIcon(qta.icon("mdi.minus", color=self._t["text_secondary"]))
         btn_min.clicked.connect(self.showMinimized)
         layout.addWidget(btn_min)
 
@@ -264,7 +264,7 @@ class MainWindow(QWidget):
         self._btn_maximize.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_maximize.setToolTip("Restaurar / Maximizar")
         self._btn_maximize.setObjectName("wctrlMax")
-        self._btn_maximize.setIcon(qta.icon("mdi.crop-square", color="#94A3B8"))
+        self._btn_maximize.setIcon(qta.icon("mdi.crop-square", color=self._t["text_secondary"]))
         self._btn_maximize.clicked.connect(self._toggle_maximize)
         layout.addWidget(self._btn_maximize)
 
@@ -274,7 +274,7 @@ class MainWindow(QWidget):
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.setToolTip("Cerrar aplicación")
         btn_close.setObjectName("wctrlClose")
-        btn_close.setIcon(qta.icon("mdi.close", color="#94A3B8"))
+        btn_close.setIcon(qta.icon("mdi.close", color=self._t["text_secondary"]))
         btn_close.clicked.connect(self.close)
         layout.addWidget(btn_close)
 
@@ -484,13 +484,13 @@ class MainWindow(QWidget):
         if self.isMaximized():
             self.showNormal()
             self._btn_maximize.setIcon(
-                qta.icon("mdi.crop-square", color="#94A3B8")
+                qta.icon("mdi.crop-square", color=self._t["text_secondary"])
             )
             self._btn_maximize.setToolTip("Maximizar")
         else:
             self.showMaximized()
             self._btn_maximize.setIcon(
-                qta.icon("mdi.window-restore", color="#94A3B8")
+                qta.icon("mdi.window-restore", color=self._t["text_secondary"])
             )
             self._btn_maximize.setToolTip("Restaurar")
 
@@ -590,12 +590,12 @@ class MainWindow(QWidget):
                 font-weight: 700;
             }}
             QLabel#topBarVersion {{
-                color: {"#475569" if self._theme == "light" else t["text_secondary"]};
+                color: {t["text_secondary"]};
                 font-size: 11px;
                 font-weight: 400;
             }}
             QLabel#breadcrumb {{
-                color: {"#475569" if self._theme == "light" else t["text_secondary"]};
+                color: {t["text_secondary"]};
                 font-size: 12px;
             }}
             QLabel#topBarAvatar {{
@@ -606,7 +606,7 @@ class MainWindow(QWidget):
                 font-weight: 700;
             }}
             QLabel#topBarUsername {{
-                color: {"#1E293B" if self._theme == "light" else t["text_primary"]};
+                color: {t["text_primary"]};
                 font-size: 12px;
                 font-weight: 600;
             }}

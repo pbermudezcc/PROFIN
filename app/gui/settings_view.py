@@ -27,6 +27,7 @@ import qtawesome as qta
 from app.config import THEMES
 from app.db.database import get_default_data_dir, get_legacy_data_dir
 from app.settings import SettingsManager
+from app.gui._style_utils import apply_card_shadow
 
 
 class SettingsView(QWidget):
@@ -84,6 +85,7 @@ class SettingsView(QWidget):
         nav = QFrame()
         nav.setObjectName("settingsSidebar")
         nav.setFixedWidth(220)
+        self._nav_panel = nav
         nav_layout = QVBoxLayout(nav)
         nav_layout.setContentsMargins(12, 12, 12, 12)
         nav_layout.setSpacing(6)
@@ -507,3 +509,4 @@ class SettingsView(QWidget):
                 color: {t["text_primary"]};
             }}
         """)
+        apply_card_shadow(self._nav_panel, t)

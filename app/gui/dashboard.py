@@ -39,6 +39,7 @@ from sqlalchemy.orm import Session
 
 from app.config    import THEMES
 from app.db.models import Transaction, TransactionType, Category, User
+from app.gui._style_utils import apply_card_shadow
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,7 @@ class _KPICard(QFrame):
                 font-size: 11px;
             }}
         """)
+        apply_card_shadow(self, theme)
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +234,7 @@ class _CategoryChartWidget(QFrame):
         root.addWidget(self._scroll)
 
         self._update_toggle_icon()
+        apply_card_shadow(self, self._t)
 
     def _toggle_mode(self) -> None:
         self._mode = (self.MODE_HBAR
@@ -271,6 +274,7 @@ class _CategoryChartWidget(QFrame):
         self._t = theme
         self._update_toggle_icon()
         self._canvas.update()
+        apply_card_shadow(self, theme)
 
     def _paint_chart(self, painter: QPainter,
                      rect: QRectF) -> None:
@@ -343,13 +347,17 @@ class _CategoryChartWidget(QFrame):
             painter.drawEllipse(
                 QRectF(lx, ly + i * line_h + 4, 8, 8)
             )
-            # Text
+            # Text — elide dynamically to the space actually available
             painter.setPen(QColor(self._t.get("text_secondary", "#666")))
-            short = label[:18] + "…" if len(label) > 18 else label
+            fm = painter.fontMetrics()
+            pct_str  = f"  {pct:.1f}%"
+            avail_w  = max(0.0, legend_w - 14 - fm.horizontalAdvance(pct_str))
+            elided   = fm.elidedText(label, Qt.TextElideMode.ElideRight,
+                                     int(avail_w))
             painter.drawText(
                 QRectF(lx + 13, ly + i * line_h, legend_w - 14, line_h),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                f"{short}  {pct:.1f}%",
+                f"{elided}{pct_str}",
             )
 
     def _paint_hbar(self, painter: QPainter, rect: QRectF) -> None:
@@ -368,13 +376,15 @@ class _CategoryChartWidget(QFrame):
             y      = rect.y() + i * (bar_h + 6)
             color  = _chart_color(i, label)
 
-            # Label
+            # Label — elide dynamically based on available column width
             painter.setPen(QColor(self._t.get("text_secondary", "#666")))
-            short = label[:18] + "…" if len(label) > 18 else label
+            fm = painter.fontMetrics()
+            elided = fm.elidedText(label, Qt.TextElideMode.ElideRight,
+                                   int(label_w))
             painter.drawText(
                 QRectF(rect.x(), y, label_w, bar_h),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                short,
+                elided,
             )
 
             # Bar background
@@ -450,6 +460,7 @@ class _MonthlyChartWidget(QFrame):
         self._canvas = _PaintCanvas(self._paint_chart)
         self._canvas.setMinimumHeight(200)
         root.addWidget(self._canvas)
+        apply_card_shadow(self, self._t)
 
     def set_data(self,
                  data: List[Tuple[str, float, float]]) -> None:
@@ -460,6 +471,7 @@ class _MonthlyChartWidget(QFrame):
     def apply_theme(self, theme: dict) -> None:
         self._t = theme
         self._canvas.update()
+        apply_card_shadow(self, theme)
 
     def _paint_chart(self, painter: QPainter,
                      rect: QRectF) -> None:
@@ -472,7 +484,7 @@ class _MonthlyChartWidget(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         n        = len(self._data)
-        pad_l    = 12
+        pad_l    = 44       # space for Y-axis value labels
         pad_r    = 8
         pad_top  = 8
         pad_bot  = 24       # space for month labels
@@ -492,15 +504,30 @@ class _MonthlyChartWidget(QFrame):
         color_exp = QColor("#DC2626")
         color_lbl = QColor(self._t.get("text_secondary", "#888"))
         color_grid = QColor(self._t.get("border", "#ddd"))
+        color_axis = QColor(self._t.get("border_strong", "#9098A3"))
 
-        # ── Gridlines (3 horizontal) ─────────────────────────────────
-        painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
+        # ── Gridlines + Y-axis value labels ────────────────────────────
+        painter.setFont(QFont("Segoe UI", 7))
         for step in (0.25, 0.5, 0.75, 1.0):
             gy = rect.y() + pad_top + usable_h * (1 - step)
+            painter.setPen(color_lbl)
+            painter.drawText(
+                QRectF(rect.x(), gy - 8, pad_l - 10, 16),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                _fmt_currency_short(max_val * step),
+            )
+            painter.setPen(QPen(color_grid, 0.5, Qt.PenStyle.DashLine))
             painter.drawLine(
                 QPointF(rect.x() + pad_l, gy),
                 QPointF(rect.right() - pad_r, gy),
             )
+
+        # ── Left axis line ──────────────────────────────────────────────
+        painter.setPen(QPen(color_axis, 1.0, Qt.PenStyle.SolidLine))
+        painter.drawLine(
+            QPointF(rect.x() + pad_l, rect.y() + pad_top),
+            QPointF(rect.x() + pad_l, rect.y() + pad_top + usable_h),
+        )
 
         # ── Bars ─────────────────────────────────────────────────────
         painter.setFont(QFont("Segoe UI", 7))
@@ -605,6 +632,7 @@ class _RecentTransactionsWidget(QFrame):
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
 
         root.addWidget(self._table)
+        apply_card_shadow(self, self._t)
 
     def set_data(self, rows: List[dict]) -> None:
         """
@@ -646,6 +674,7 @@ class _RecentTransactionsWidget(QFrame):
 
     def apply_theme(self, theme: dict) -> None:
         self._t = theme
+        apply_card_shadow(self, theme)
 
 
 # ---------------------------------------------------------------------------

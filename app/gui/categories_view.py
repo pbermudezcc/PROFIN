@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.config      import THEMES
 from app.db.models   import Category, CategoryLevel, User
+from app.gui._style_utils import apply_card_shadow
 from app.categorization.category_manager import (
     get_all_categories, create_category,
     update_category_name, delete_category,
@@ -371,12 +372,16 @@ class CategoriesView(QWidget):
         selection_bg = (
             f"background-color: {t['accent']}; color: #FFFFFF;"
             if is_dark else
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #DDEBFF, stop:1 #CFE1FF); color: #1E3A8A;"
+            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            f"stop:0 {t['selection_grad_start']}, stop:1 {t['selection_grad_end']}); "
+            f"color: {t['selection_text']};"
         )
         selection_hover = (
             f"background-color: {t['accent_hover']}; color: #FFFFFF;"
             if is_dark else
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #CFE1FF, stop:1 #BFD8FF); color: #1E3A8A;"
+            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            f"stop:0 {t['selection_hover_start']}, stop:1 {t['selection_hover_end']}); "
+            f"color: {t['selection_text']};"
         )
         self.setStyleSheet(f"""
             QFrame#dashTopBar {{
@@ -457,3 +462,4 @@ class CategoriesView(QWidget):
                 max-height: 1px;
             }}
         """)
+        apply_card_shadow(self._action_panel, t)

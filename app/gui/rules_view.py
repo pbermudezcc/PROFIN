@@ -35,6 +35,7 @@ from app.categorization.rules_engine  import (
     apply_rules, create_rule, delete_rule, get_all_rules, update_rule
 )
 from app.categorization.category_manager import get_all_categories
+from app.gui._style_utils import apply_card_shadow
 
 
 class RulesView(QWidget):
@@ -99,6 +100,7 @@ class RulesView(QWidget):
 
         # Bottom bar
         bottom = QFrame()
+        self._bottom_bar = bottom
         bottom.setObjectName("rulesBottom")
         bottom.setFixedHeight(52)
         bl = QHBoxLayout(bottom)
@@ -685,12 +687,16 @@ class RulesView(QWidget):
         selection_bg = (
             f"background-color: {t['accent']}; color: #FFFFFF;"
             if is_dark else
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #DDEBFF, stop:1 #CFE1FF); color: #1E3A8A;"
+            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            f"stop:0 {t['selection_grad_start']}, stop:1 {t['selection_grad_end']}); "
+            f"color: {t['selection_text']};"
         )
         selection_hover = (
             f"background-color: {t['accent_hover']}; color: #FFFFFF;"
             if is_dark else
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #CFE1FF, stop:1 #BFD8FF); color: #1E3A8A;"
+            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            f"stop:0 {t['selection_hover_start']}, stop:1 {t['selection_hover_end']}); "
+            f"color: {t['selection_text']};"
         )
         self.setStyleSheet(f"""
             QFrame#dashTopBar {{
@@ -738,7 +744,7 @@ class RulesView(QWidget):
                 padding: 0 16px;
             }}
             QPushButton#btnAccent:hover {{
-                background-color: #15803D;
+                background-color: {t["income_hover"]};
             }}
             QTableView {{
                 background-color: {t["bg_secondary"]};
@@ -777,6 +783,7 @@ class RulesView(QWidget):
                 font-size: 12px;
             }}
         """)
+        apply_card_shadow(self._bottom_bar, t, blur_radius=12, y_offset=-2)
 
 
 def _format_amount(value: float) -> str:

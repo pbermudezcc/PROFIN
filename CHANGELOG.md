@@ -5,6 +5,12 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.3.0.md`  |  **Files:** 43  |  **Handler:** v1.0.0
+**Date:** 2026-09-16 01:19  |  **Type:** Release
+**Description:** This release adds a /release skill to automate future version publishing, and delivers a UI polish pass across the desktop app: refreshed theme colors, consistent card drop-shadows, chart axis labels, scrollable category/month charts, and a cleaner login screen. All changes are backward compatible -- no data or schema migration required.
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.2.5.md`  |  **Files:** 42  |  **Handler:** v1.0.0
 **Date:** 2026-09-16 00:17  |  **Type:** Release
 **Description:** Rebranded PROFIN to FAMILYFIN (window titles, QSettings identity, default data folder) with automatic one-time migration for existing installs; fixed a rules-engine bug where a passive Transactions tab visit silently overwrote manually-corrected categories; reduced rules matching overhead; refined the dedicated engineer agent's operating rules with guardrails learned from this session.
