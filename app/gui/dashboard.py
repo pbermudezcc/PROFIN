@@ -1,7 +1,7 @@
 """
 app/gui/dashboard.py
 =====================
-PROFIN — Dashboard View (Posición Global)
+FAMILYFIN — Dashboard View (Posición Global)
 
 KPI cards:
   - Saldo actual / Ingresos / Gastos / Inversiones / Tasa ahorro / Sin categorizar
@@ -215,10 +215,21 @@ class _CategoryChartWidget(QFrame):
         hdr.addWidget(self._btn_toggle)
         root.addLayout(hdr)
 
-        # Canvas widget (paintEvent lives here)
+        # Keep the card size unchanged while allowing the bars to grow
+        # inside a vertical scroll area when there are more categories.
         self._canvas = _PaintCanvas(self._paint_chart)
         self._canvas.setMinimumHeight(200)
-        root.addWidget(self._canvas)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._scroll.setWidget(self._canvas)
+        root.addWidget(self._scroll)
 
         self._update_toggle_icon()
 
@@ -226,6 +237,7 @@ class _CategoryChartWidget(QFrame):
         self._mode = (self.MODE_HBAR
                       if self._mode == self.MODE_DONUT
                       else self.MODE_DONUT)
+        self._update_canvas_height()
         self._update_toggle_icon()
         self._canvas.update()
 
@@ -241,9 +253,19 @@ class _CategoryChartWidget(QFrame):
 
     def set_data(self, data: List[Tuple[str, float]]) -> None:
         """data = [(category_name, abs_amount), ...] sorted desc."""
-        self._data  = data[:10]   # max 10 categories
+        self._data  = data
         self._total = sum(v for _, v in self._data)
+        self._update_canvas_height()
         self._canvas.update()
+
+    def _update_canvas_height(self) -> None:
+        if self._mode == self.MODE_HBAR:
+            # Keep one readable row per category; the card size remains
+            # unchanged and the scroll area exposes the remaining rows.
+            height = max(200, len(self._data) * 28 + 20)
+        else:
+            height = 200
+        self._canvas.setMinimumHeight(height)
 
     def apply_theme(self, theme: dict) -> None:
         self._t = theme

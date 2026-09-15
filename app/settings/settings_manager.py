@@ -38,7 +38,7 @@ class SettingsManager:
     """Simple, stable persistence layer for application configuration."""
 
     ORG = "GEVernova"
-    APP = "PROFIN"
+    APP = "FAMILYFIN"
 
     def __init__(self, settings: QSettings | None = None):
         self._settings = settings or QSettings(self.ORG, self.APP)
@@ -170,7 +170,7 @@ class SettingsManager:
 
         manifest = {
             "created_at": datetime.now().isoformat(timespec="seconds"),
-            "app": "PROFIN",
+            "app": "FAMILYFIN",
             "user": safe_user,
             "database_files": [p.name for p in db_files],
             "settings_keys": sorted(self._settings.allKeys()),

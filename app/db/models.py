@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models for PROFIN.
+SQLAlchemy ORM models for FAMILYFIN.
 
 Hierarchy:
   users

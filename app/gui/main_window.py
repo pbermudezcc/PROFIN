@@ -1,7 +1,7 @@
 """
 app/gui/main_window.py
 =======================
-PROFIN — Main Application Shell
+FAMILYFIN — Main Application Shell
 
 Layout:
   ┌─────────────────────────────────────────────────────┐
@@ -59,7 +59,7 @@ class _NavButton(QPushButton):
     def _refresh(self, theme: dict) -> None:
         colour = (theme["text_sidebar_active"]
                   if self._active else theme["text_sidebar"])
-        bg     = (f"background-color: {theme['accent']}22;"
+        bg     = (f"background-color: {theme['bg_sidebar_hover']};"
                   if self._active else "background-color: transparent;")
         border = (f"border-left: 3px solid {theme['accent']};"
                   if self._active else "border-left: 3px solid transparent;")
@@ -79,8 +79,7 @@ class _NavButton(QPushButton):
                 border-radius: 0px;
             }}
             QPushButton:hover {{
-                background-color: {theme["bg_hover"] if self._active
-                                   else theme["accent"] + "15"};
+                background-color: {theme["bg_sidebar_hover"]};
             }}
         """)
 
@@ -91,7 +90,7 @@ class MainWindow(QWidget):
     """
 
     SETTINGS_ORG = "GEVernova"
-    SETTINGS_APP = "PROFIN"
+    SETTINGS_APP = "FAMILYFIN"
     KEY_THEME    = "ui/theme"
     KEY_NAV      = "ui/last_nav"
 
@@ -155,7 +154,7 @@ class MainWindow(QWidget):
     def _make_top_bar(self) -> QFrame:
         """
         Minimal modern top bar:
-        [☰] [● PROFIN  v0.1.x] ── [breadcrumb] ──────── [Pedro ▾] [🌙] [⏻]
+        [☰] [● FAMILYFIN  v0.1.x] ── [breadcrumb] ──────── [Pedro ▾] [🌙] [⏻]
         Height: 48px. Single accent-colored bottom border. No visual clutter.
         """
         bar = QFrame()
@@ -614,12 +613,12 @@ class MainWindow(QWidget):
             QFrame#sidebar {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 {t["bg_sidebar"]},
-                    stop:1 {t["bg_secondary"]});
+                    stop:1 {t["bg_sidebar"]});
                 border-right: 1px solid {t["border"]};
             }}
             QFrame#sidebarUserCard {{
-                background-color: {t["bg_hover"]};
-                border: 1px solid {t["border"]};
+                background-color: {t["bg_sidebar_card"]};
+                border: 1px solid {t["bg_sidebar_hover"]};
                 border-radius: 12px;
             }}
             QLabel#avatarCircle {{
@@ -630,12 +629,12 @@ class MainWindow(QWidget):
                 font-weight: 700;
             }}
             QLabel#sidebarUsername {{
-                color: {"#E2E8F0" if self._theme == "light" else t["text_sidebar_active"]};
+                color: {t["text_sidebar_active"]};
                 font-size: 13px;
                 font-weight: 700;
             }}
             QLabel#sidebarRole {{
-                color: {"#94A3B8" if self._theme == "light" else t["text_sidebar"]};
+                color: {t["text_sidebar_muted"]};
                 font-size: 11px;
             }}
             QFrame#sidebarSep {{
@@ -644,7 +643,7 @@ class MainWindow(QWidget):
                 max-height: 1px;
             }}
             QLabel#sidebarVersion {{
-                color: {"#94A3B8" if self._theme == "light" else t["text_sidebar"]};
+                color: {t["text_sidebar_muted"]};
                 font-size: 11px;
             }}
         """)
@@ -956,7 +955,7 @@ class MainWindow(QWidget):
 
             # Clear last user from settings and return to login
             from PySide6.QtCore import QSettings
-            settings = QSettings("GEVernova", "PROFIN")
+            settings = QSettings("GEVernova", "FAMILYFIN")
             settings.remove("auth/last_username")
 
             self._session.close()

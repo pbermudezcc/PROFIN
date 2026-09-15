@@ -1,7 +1,7 @@
 """
 app/gui/login_window.py
 ========================
-PROFIN — Login Window
+FAMILYFIN — Login Window
 
 Features:
   - Fullscreen on launch (showMaximized)
@@ -47,7 +47,7 @@ class LoginWindow(QWidget):
     """
 
     SETTINGS_ORG  = "GEVernova"
-    SETTINGS_APP  = "PROFIN"
+    SETTINGS_APP  = "FAMILYFIN"
     KEY_LAST_USER = "auth/last_username"
     KEY_THEME     = "ui/theme"
 

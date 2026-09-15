@@ -367,7 +367,7 @@ class SettingsView(QWidget):
         if self._settings.data_folder:
             self._settings_manager.apply_data_folder(self._settings.data_folder)
 
-        qsettings = QSettings("GEVernova", "PROFIN")
+        qsettings = QSettings("GEVernova", "FAMILYFIN")
         qsettings.setValue("ui/theme", self._settings.theme if self._settings.save_appearance_on_start else "light")
         qsettings.sync()
 
@@ -412,7 +412,7 @@ class SettingsView(QWidget):
     def _restore_backup(self) -> None:
         backup_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selecciona un respaldo de PROFIN",
+            "Selecciona un respaldo de FAMILYFIN",
             self._settings.backup_folder or ".",
             "Archivo ZIP (*.zip)",
         )
@@ -427,7 +427,7 @@ class SettingsView(QWidget):
                     "Los datos del usuario se han restaurado correctamente desde el backup seleccionado.",
                 )
             else:
-                QMessageBox.warning(self, "Restauración inválida", "El archivo de backup no es válido para PROFIN.")
+                QMessageBox.warning(self, "Restauración inválida", "El archivo de backup no es válido para FAMILYFIN.")
         except Exception as exc:
             QMessageBox.critical(self, "Error al restaurar", str(exc))
 

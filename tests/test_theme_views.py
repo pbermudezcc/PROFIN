@@ -21,7 +21,7 @@ def test_theme_apply_updates_view_theme_state():
 
 
 def test_settings_manager_persists_appearance_on_start_flag():
-    qsettings = QSettings("PROFIN_TEST_THEME", "PROFIN")
+    qsettings = QSettings("FAMILYFIN_TEST_THEME", "FAMILYFIN")
     qsettings.clear()
     manager = SettingsManager(qsettings)
 

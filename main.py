@@ -1,5 +1,5 @@
 """
-PROFIN — Personal & Project Finance Tracker
+FAMILYFIN — Personal & Project Finance Tracker
 Entry point. Initialises DB, runs auth flow, launches main window.
 """
 
@@ -73,10 +73,10 @@ def _show_fatal_error(message: str, detailed: str | None = None) -> None:
     try:
         if QApplication.instance() is None:
             _tmp = QApplication([])
-            QMessageBox.critical(None, "Error crítico - PROFIN", message + ("\n\n" + detailed if detailed else ""))
+            QMessageBox.critical(None, "Error crítico - FAMILYFIN", message + ("\n\n" + detailed if detailed else ""))
             _tmp.quit()
         else:
-            QMessageBox.critical(None, "Error crítico - PROFIN", message + ("\n\n" + detailed if detailed else ""))
+            QMessageBox.critical(None, "Error crítico - FAMILYFIN", message + ("\n\n" + detailed if detailed else ""))
     except Exception:
         # Fallback to console output if QMessageBox fails for any reason
         print(message)
@@ -103,7 +103,7 @@ def main() -> None:
     sys.excepthook = _unhandled_exception
 
     logging.getLogger(__name__).info(
-        "PROFIN arrancando — Python %s", sys.version.split()[0]
+        "FAMILYFIN arrancando — Python %s", sys.version.split()[0]
     )
 
     # ── HiDPI: mejor visual en pantallas de alta densidad ─────────────
@@ -120,7 +120,7 @@ def main() -> None:
 
     # ── Crear la aplicación Qt y lanzar la ventana de login ───────────
     qt_app = QApplication(sys.argv)
-    qt_app.setApplicationName("PROFIN")
+    qt_app.setApplicationName("FAMILYFIN")
     # Fusion es fiable; el tema y paleta pueden personalizarse en app/gui/theme.py
     qt_app.setStyle("Fusion")
 
@@ -129,7 +129,7 @@ def main() -> None:
 
     # Guardar la excepción global también en el bucle de eventos (por si Qt intercepta algo)
     return_code = qt_app.exec()
-    logging.getLogger(__name__).info("PROFIN terminado con código %s", return_code)
+    logging.getLogger(__name__).info("FAMILYFIN terminado con código %s", return_code)
     sys.exit(return_code)
 
 if __name__ == "__main__":

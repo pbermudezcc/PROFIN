@@ -1,7 +1,7 @@
 """
 app/gui/transactions_view.py
 =============================
-PROFIN — Transactions View (Fase 4b)
+FAMILYFIN — Transactions View (Fase 4b)
 
 Features:
   - Filterable/sortable table: Fecha | Emisor | Concepto | Importe
@@ -268,7 +268,7 @@ class TransactionsView(QWidget):
                     self._session,
                     all_ids,
                     self._user.id,
-                    overwrite=True,
+                    overwrite=False,
                 )
                 n = len(result.assigned)
                 if n:

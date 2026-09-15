@@ -1,7 +1,7 @@
 """
 app/categorization/rules_engine.py
 ====================================
-PROFIN — Auto-Categorization Rules Engine
+FAMILYFIN — Auto-Categorization Rules Engine
 
 Responsibility:
   Apply AutoCategorizationRule entries to a set of transactions,
@@ -74,13 +74,26 @@ class RulesEngineResult:
     Attributes
     ----------
     assigned  : dict {transaction_id: category_id} — auto-assigned.
+    assigned_by_rule : dict {rule_id: transaction_count} — assignments won
+                       by each rule.
+    transaction_ids_by_rule : dict {rule_id: [transaction_id, ...]} —
+                              transactions assigned by each rule.
     conflicts : dict {transaction_id: List[RuleConflict]} — needs user input.
     unmatched : List[transaction_id] — no rule matched.
     applied   : int — total rules applied (assigned + conflict rows).
+    transactions_by_id : dict {transaction_id: Transaction} — the ORM
+                          objects already loaded while matching, so callers
+                          (e.g. apply_rules_and_commit) don't need to
+                          re-fetch them one by one.
     """
     assigned:  Dict[int, int]               = field(default_factory=dict)
+    assigned_by_rule: Dict[int, int]        = field(default_factory=dict)
+    transaction_ids_by_rule: Dict[int, List[int]] = field(
+        default_factory=dict
+    )
     conflicts: Dict[int, List[RuleConflict]] = field(default_factory=dict)
     unmatched: List[int]                    = field(default_factory=list)
+    transactions_by_id: Dict[int, Transaction] = field(default_factory=dict)
 
     @property
     def applied(self) -> int:
@@ -140,13 +153,20 @@ def apply_rules(
         .all()
     )
 
+    # -- Precompute each rule's lower-cased pattern once, instead of on
+    #    every rule x field x transaction comparison. --------------------
+    pattern_lower_by_rule_id = {
+        rule.id: rule.match_pattern.lower() for rule in rules
+    }
+
     # -- Apply rules to each transaction ------------------------------------
     for txn in transactions:
-        _process_transaction(txn, rules, result)
+        _process_transaction(txn, rules, result, pattern_lower_by_rule_id)
 
     logger.info(
         "Rules engine completado: %s", result.summary
     )
+    result.transactions_by_id = {txn.id: txn for txn in transactions}
     return result
 
 
@@ -170,9 +190,10 @@ def apply_rules_and_commit(
     """
     result = apply_rules(session, transaction_ids, user_id)
 
-    # Write assignments
+    # Write assignments, reusing the Transaction objects apply_rules already
+    # loaded instead of re-fetching each one individually.
     for txn_id, cat_id in result.assigned.items():
-        txn = session.get(Transaction, txn_id)
+        txn = result.transactions_by_id.get(txn_id)
         if txn is not None:
             if overwrite or txn.category_id is None:
                 txn.category_id = cat_id
@@ -348,31 +369,34 @@ def _load_rules(
 
 
 def _match(
-    rule:  AutoCategorizationRule,
-    value: Optional[str],
+    rule:        AutoCategorizationRule,
+    value:       Optional[str],
+    value_lower: Optional[str],
+    pattern_lower: str,
 ) -> bool:
     """
-    Test a single field value against a rule's pattern.
+    Test a single (pre-lowercased) field value against a rule's pattern.
     Returns True if the pattern matches, False otherwise.
+
+    `value_lower`/`pattern_lower` are precomputed by the caller (once per
+    transaction / once per rule respectively) instead of being lower-cased
+    again on every rule x field combination.
     """
-    if not value:
+    if not value_lower:
         return False
 
-    pattern = rule.match_pattern
-    text    = value.lower()
-
     if rule.match_type == MatchType.contains:
-        return pattern.lower() in text
+        return pattern_lower in value_lower
 
     elif rule.match_type == MatchType.exact:
-        return text == pattern.lower()
+        return value_lower == pattern_lower
 
     elif rule.match_type == MatchType.regex:
         try:
-            return bool(re.search(pattern, value, re.IGNORECASE))
+            return bool(re.search(rule.match_pattern, value, re.IGNORECASE))
         except re.error:
             logger.warning(
-                "Regex inválida en regla id=%d: '%s'", rule.id, pattern
+                "Regex inválida en regla id=%d: '%s'", rule.id, rule.match_pattern
             )
             return False
 
@@ -380,8 +404,11 @@ def _match(
 
 
 def _match_transaction(
-    rule: AutoCategorizationRule,
-    txn:  Transaction,
+    rule:          AutoCategorizationRule,
+    txn:           Transaction,
+    issuer_lower:  Optional[str],
+    concept_lower: Optional[str],
+    pattern_lower: str,
 ) -> Optional[str]:
     """
     Test a rule against a transaction using OR gate on issuer_name + concept.
@@ -391,8 +418,8 @@ def _match_transaction(
     str  : 'issuer_name' | 'concept' | 'both' if matched.
     None : if no match.
     """
-    hit_issuer  = _match(rule, txn.issuer_name)
-    hit_concept = _match(rule, txn.concept)
+    hit_issuer  = _match(rule, txn.issuer_name, issuer_lower, pattern_lower)
+    hit_concept = _match(rule, txn.concept, concept_lower, pattern_lower)
 
     if hit_issuer and hit_concept:
         return "both"
@@ -404,9 +431,10 @@ def _match_transaction(
 
 
 def _process_transaction(
-    txn:    Transaction,
-    rules:  List[AutoCategorizationRule],
-    result: RulesEngineResult,
+    txn:            Transaction,
+    rules:          List[AutoCategorizationRule],
+    result:         RulesEngineResult,
+    pattern_lower_by_rule_id: Dict[int, str],
 ) -> None:
     """
     Apply all rules to a single transaction and update result in-place.
@@ -424,8 +452,14 @@ def _process_transaction(
     best_field:     Optional[str]  = None
     conflict_rules: List[tuple]    = []  # (rule, field_matched)
 
+    issuer_lower  = txn.issuer_name.lower() if txn.issuer_name else None
+    concept_lower = txn.concept.lower() if txn.concept else None
+
     for rule in rules:
-        field_hit = _match_transaction(rule, txn)
+        field_hit = _match_transaction(
+            rule, txn, issuer_lower, concept_lower,
+            pattern_lower_by_rule_id[rule.id],
+        )
         if field_hit is None:
             continue
 
@@ -452,6 +486,12 @@ def _process_transaction(
     elif len(conflict_rules) == 1:
         # Single winner — assign
         result.assigned[txn.id] = best_rule.category_id
+        result.assigned_by_rule[best_rule.id] = (
+            result.assigned_by_rule.get(best_rule.id, 0) + 1
+        )
+        result.transaction_ids_by_rule.setdefault(best_rule.id, []).append(
+            txn.id
+        )
 
     else:
         # Multiple rules at same priority, different categories → conflict

@@ -1,7 +1,7 @@
 """
 app/gui/rules_view.py
 ======================
-PROFIN — Auto-Categorization Rules View (Fase 4b)
+FAMILYFIN — Auto-Categorization Rules View (Fase 4b)
 
 Features:
   - List of all rules (global + user) ordered by priority
@@ -28,10 +28,11 @@ from sqlalchemy.orm import Session
 
 from app.config      import THEMES
 from app.db.models   import (
-    AutoCategorizationRule, MatchType, User, Category, CategoryLevel
+    AutoCategorizationRule, MatchType, User, Category, CategoryLevel,
+    Transaction,
 )
 from app.categorization.rules_engine  import (
-    create_rule, delete_rule, get_all_rules, update_rule
+    apply_rules, create_rule, delete_rule, get_all_rules, update_rule
 )
 from app.categorization.category_manager import get_all_categories
 
@@ -74,12 +75,14 @@ class RulesView(QWidget):
         )
         self._table.setAlternatingRowColors(True)
         self._table.setShowGrid(False)
+        self._table.setSortingEnabled(True)
         self._table.verticalHeader().setVisible(False)
 
         self._model = QStandardItemModel()
         self._model.setHorizontalHeaderLabels([
             "Prioridad", "Patrón", "Tipo match",
-            "Categoría", "Ámbito"
+            "Categoría", "Ámbito", "Transacciones vinculadas",
+            "Total (€)",
         ])
         self._table.setModel(self._model)
 
@@ -89,6 +92,8 @@ class RulesView(QWidget):
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
 
         root.addWidget(self._table)
 
@@ -181,6 +186,7 @@ class RulesView(QWidget):
         self._rules = get_all_rules(self._session, user_id=self._user.id)
         self._model.removeRows(0, self._model.rowCount())
         t = self._t
+        rule_transactions = self._get_rule_transactions()
 
         cat_map = {c.id: c.name for c in self._categories}
         match_labels = {
@@ -196,6 +202,7 @@ class RulesView(QWidget):
 
         for rule in self._rules:
             item_pri = QStandardItem(str(rule.priority))
+            item_pri.setData(rule.id, Qt.ItemDataRole.UserRole)
             item_pri.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             item_pat = QStandardItem(rule.match_pattern)
@@ -220,7 +227,20 @@ class RulesView(QWidget):
             else:
                 item_scope.setForeground(QColor(t["text_secondary"]))
 
-            row = [item_pri, item_pat, item_mt, item_cat, item_scope]
+            linked_transactions = rule_transactions.get(rule.id, [])
+            item_linked = QStandardItem(str(len(linked_transactions)))
+            item_linked.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            total_amount = sum(
+                transaction.amount for transaction in linked_transactions
+            )
+            item_total = QStandardItem(_format_amount(total_amount))
+            item_total.setTextAlignment(Qt.AlignmentFlag.AlignRight)
+
+            row = [
+                item_pri, item_pat, item_mt, item_cat, item_scope,
+                item_linked, item_total,
+            ]
             for item in row:
                 item.setEditable(False)
             self._model.appendRow(row)
@@ -228,6 +248,43 @@ class RulesView(QWidget):
         self._lbl_count.setText(
             f"{len(self._rules)} regla(s) activa(s)"
         )
+
+    def _get_rule_transactions(
+        self,
+    ) -> dict[int, List[Transaction]]:
+        """Return transactions assigned to each rule using current priorities."""
+        transaction_ids = [
+            row.id for row in self._session.query(Transaction.id).filter(
+                Transaction.user_id == self._user.id
+            ).all()
+        ]
+        if not transaction_ids:
+            return {}
+
+        result = apply_rules(
+            self._session, transaction_ids, self._user.id
+        )
+        transactions = self._session.query(Transaction).filter(
+            Transaction.id.in_(result.assigned)
+        ).all()
+        transactions_by_id = {transaction.id: transaction for transaction in transactions}
+        return {
+            rule_id: [
+                transactions_by_id[transaction_id]
+                for transaction_id in assigned_ids
+                if transaction_id in transactions_by_id
+            ]
+            for rule_id, assigned_ids in result.transaction_ids_by_rule.items()
+        }
+
+    def _selected_rule(self) -> AutoCategorizationRule | None:
+        """Return the rule represented by the currently selected table row."""
+        idx = self._table.currentIndex()
+        if not idx.isValid():
+            return None
+
+        rule_id = self._model.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole)
+        return next((rule for rule in self._rules if rule.id == rule_id), None)
 
     # ------------------------------------------------------------------
     # Slots
@@ -445,6 +502,7 @@ class RulesView(QWidget):
                 )
 
             QMessageBox.information(self, "Reglas aplicadas", msg)
+            self.refresh()
 
         except Exception as exc:
             QMessageBox.critical(
@@ -453,19 +511,14 @@ class RulesView(QWidget):
 
     def _on_edit_rule(self) -> None:
         """Open a pre-filled dialog to edit the selected rule."""
-        idx = self._table.currentIndex()
-        if not idx.isValid():
+        rule = self._selected_rule()
+        if rule is None:
             QMessageBox.information(
                 self, "Sin selección",
                 "Selecciona una regla para editar."
             )
             return
 
-        row_idx = idx.row()
-        if row_idx >= len(self._rules):
-            return
-
-        rule = self._rules[row_idx]
         self._load_categories()
 
         if not self._categories:
@@ -594,19 +647,14 @@ class RulesView(QWidget):
             QMessageBox.critical(self, "Error al editar regla", str(exc))
 
     def _on_delete(self) -> None:
-        idx = self._table.currentIndex()
-        if not idx.isValid():
+        rule = self._selected_rule()
+        if rule is None:
             QMessageBox.information(
                 self, "Sin selección",
                 "Selecciona una regla para eliminar."
             )
             return
 
-        row_idx = idx.row()
-        if row_idx >= len(self._rules):
-            return
-
-        rule = self._rules[row_idx]
         reply = QMessageBox.question(
             self,
             "Confirmar eliminación",
@@ -729,3 +777,13 @@ class RulesView(QWidget):
                 font-size: 12px;
             }}
         """)
+
+
+def _format_amount(value: float) -> str:
+    """Format signed amounts with Spanish separators and euro suffix."""
+    return (
+        f"{value:,.2f} €"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )

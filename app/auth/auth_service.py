@@ -1,7 +1,7 @@
 """
 app/auth/auth_service.py
 =========================
-PROFIN — Authentication Service
+FAMILYFIN — Authentication Service
 
 Provides three public functions:
   create_user(session, username, password) -> User

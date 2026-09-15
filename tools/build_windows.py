@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Windows executable for PROFIN with a traceable artifact name."""
+"""Build a Windows executable for FAMILYFIN with a traceable artifact name."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def read_version() -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build the PROFIN Windows executable")
+    parser = argparse.ArgumentParser(description="Build the FAMILYFIN Windows executable")
     parser.add_argument(
         "--channel",
         choices=("beta", "release"),

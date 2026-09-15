@@ -1,7 +1,7 @@
 """
 app/ingestion/importer.py
 ==========================
-PROFIN — Import Orchestrator
+FAMILYFIN — Import Orchestrator
 
 Responsibility:
   Orchestrate the full import pipeline:

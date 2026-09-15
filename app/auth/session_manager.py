@@ -1,5 +1,5 @@
 """
-In-process session manager for PROFIN.
+In-process session manager for FAMILYFIN.
 
 Holds the currently authenticated user for the lifetime of the application.
 A new login clears any previous session. Session is cleared on app exit.

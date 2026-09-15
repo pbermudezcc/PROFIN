@@ -1,7 +1,7 @@
 """
 app/gui/expenses_view.py
 =========================
-PROFIN — Expenses View (Gastos)
+FAMILYFIN — Expenses View (Gastos)
 
 Sections:
   1. Period selector  — Mes actual / Mes anterior / Año actual / Año anterior / Todo
@@ -833,7 +833,7 @@ class ExpensesView(QWidget):
 
             dist_data = sorted(cat_totals.items(), key=lambda x: x[1],
                                reverse=True)
-            self._chart_dist.set_data(dist_data[:10])
+            self._chart_dist.set_data(dist_data)
 
             # ── Comparison chart data ─────────────────────────────────
             cat_prev: Dict[str, float] = defaultdict(float)

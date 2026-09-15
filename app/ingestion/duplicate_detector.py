@@ -1,7 +1,7 @@
 """
 app/ingestion/duplicate_detector.py
 =====================================
-PROFIN — Duplicate Detection Logic
+FAMILYFIN — Duplicate Detection Logic
 
 Duplicate detection priority rules (from spec):
   D-1  EXACT match on (transaction_date, concepto_comun, amount,

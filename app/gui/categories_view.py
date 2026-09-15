@@ -1,7 +1,7 @@
 """
 app/gui/categories_view.py
 ===========================
-PROFIN — Categories & Subcategories View (Fase 4b)
+FAMILYFIN — Categories & Subcategories View (Fase 4b)
 
 Features:
   - Tree view: Type → Category hierarchy
@@ -29,6 +29,7 @@ from app.categorization.category_manager import (
     get_all_categories, create_category,
     update_category_name, delete_category,
     seed_default_categories,
+    seed_default_rules,
 )
 
 
@@ -328,7 +329,7 @@ class CategoriesView(QWidget):
     def _on_seed(self) -> None:
         reply = QMessageBox.question(
             self, "Cargar categorías por defecto",
-            "Se añadirán las categorías estándar de PROFIN "
+            "Se añadirán las categorías estándar de FAMILYFIN "
             "(solo si aún no existen).<br>¿Continuar?",
             QMessageBox.StandardButton.Yes |
             QMessageBox.StandardButton.No
@@ -339,16 +340,20 @@ class CategoriesView(QWidget):
         created = seed_default_categories(
             self._session, self._user.id
         )
+        rules_created = seed_default_rules(
+            self._session, self._user.id
+        )
         self.refresh()
-        if created > 0:
+        if created > 0 or rules_created > 0:
             QMessageBox.information(
                 self, "Categorías cargadas",
-                f"Se crearon {created} categorías por defecto."
+                f"Se crearon {created} categorías y {rules_created} reglas "
+                "por defecto."
             )
         else:
             QMessageBox.information(
                 self, "Sin cambios",
-                "Las categorías ya estaban creadas."
+                "Las categorías y reglas por defecto ya estaban creadas."
             )
 
     # ------------------------------------------------------------------

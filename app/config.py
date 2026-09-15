@@ -1,11 +1,11 @@
 """
 app/config.py
 ==============
-PROFIN — Application configuration constants.
+FAMILYFIN — Application configuration constants.
 """
 
-APP_NAME    = "PROFIN"
-APP_VERSION = "0.2.4"
+APP_NAME    = "FAMILYFIN"
+APP_VERSION = "0.2.5"
 
 # ---------------------------------------------------------------------------
 # Theme tokens — Light & Dark
@@ -16,14 +16,17 @@ THEMES = {
         # Background layers
         "bg_primary":    "#F3F6FA",   # main window background
         "bg_secondary":  "#FFFFFF",   # cards, panels, headers
-        "bg_sidebar":    "#1F2D3D",   # sidebar (always dark)
+        "bg_sidebar":    "#123B6D",   # sidebar
+        "bg_sidebar_card":"#1D4ED8",   # user card
+        "bg_sidebar_hover":"#2559A8", # navigation hover
         "bg_hover":      "#E2EAF5",   # hover state
 
         # Text
         "text_primary":  "#0F172A",
         "text_secondary":"#475569",
-        "text_sidebar":  "#CBD5E1",   # sidebar text (inactive)
-        "text_sidebar_active": "#F8FAFC",
+        "text_sidebar":  "#DCEBFF",   # sidebar text (inactive)
+        "text_sidebar_active": "#FFFFFF",
+        "text_sidebar_muted": "#BFDBFE",  # role and version
 
         # Accent
         "accent":        "#2563EB",   # primary blue
@@ -48,12 +51,15 @@ THEMES = {
         "bg_primary":    "#0F172A",
         "bg_secondary":  "#1E293B",
         "bg_sidebar":    "#0D1623",
+        "bg_sidebar_card":"#16263A",
+        "bg_sidebar_hover":"#334155",
         "bg_hover":      "#334155",
 
         "text_primary":  "#F1F5F9",
         "text_secondary":"#94A3B8",
         "text_sidebar":  "#64748B",
         "text_sidebar_active": "#F1F5F9",
+        "text_sidebar_muted": "#CBD5E1",
 
         "accent":        "#3B82F6",
         "accent_hover":  "#2563EB",

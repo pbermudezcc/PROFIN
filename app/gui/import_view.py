@@ -1,7 +1,7 @@
 """
 app/gui/import_view.py
 =======================
-PROFIN — Import View (Fase 4b)
+FAMILYFIN — Import View (Fase 4b)
 
 Flow:
   Step 1 — File selection  : Browse for .xlsx file

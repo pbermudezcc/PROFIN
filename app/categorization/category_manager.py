@@ -1,7 +1,7 @@
 """
 app/categorization/category_manager.py
 ========================================
-PROFIN — Category Manager
+FAMILYFIN — Category Manager
 
 Responsibility:
   CRUD operations for the category tree and seed data.
@@ -69,7 +69,6 @@ _SEED: list[dict] = [
             "Spotify",
             "Netflix",
             "HBO",
-            "Amazon Prime",
             "Restaurantes & Bares",
             "Compras Hogar",
             "IKEA",
@@ -90,6 +89,7 @@ _SEED: list[dict] = [
             "Ocio, Eventos y Bodas",
             "Parking",
             "Tabaco",
+            "Transporte",
         ],
     },
     # ── INGRESO ──────────────────────────────────────────────────────────
@@ -147,37 +147,46 @@ def seed_default_categories(session: Session, user_id: int) -> int:
     -------
     int : Number of category rows created (0 if already seeded).
     """
-    existing = (
-        session.query(Category)
-        .filter(Category.user_id == user_id)
-        .count()
-    )
-    if existing > 0:
-        logger.info(
-            "Categorías ya existentes para user_id=%d (%d filas). "
-            "Seed omitido.", user_id, existing
-        )
-        return 0
-
     created = 0
     now = datetime.now(timezone.utc)
 
     for type_block in _SEED:
-        # Create type node (level = type)
-        type_node = Category(
-            user_id          = user_id,
-            parent_id        = None,
-            name             = type_block["type_name"],
-            level            = CategoryLevel.type,
-            transaction_type = type_block["transaction_type"],
-            created_at       = now,
+        type_node = (
+            session.query(Category)
+            .filter(
+                Category.user_id == user_id,
+                Category.parent_id.is_(None),
+                Category.name == type_block["type_name"],
+                Category.level == CategoryLevel.type,
+            )
+            .first()
         )
-        session.add(type_node)
-        session.flush()  # get type_node.id before inserting children
-        created += 1
+        if type_node is None:
+            type_node = Category(
+                user_id          = user_id,
+                parent_id        = None,
+                name             = type_block["type_name"],
+                level            = CategoryLevel.type,
+                transaction_type = type_block["transaction_type"],
+                created_at       = now,
+            )
+            session.add(type_node)
+            session.flush()
+            created += 1
 
-        # Create category nodes (level = category)
         for cat_name in type_block["categories"]:
+            category_exists = (
+                session.query(Category)
+                .filter(
+                    Category.user_id == user_id,
+                    Category.parent_id == type_node.id,
+                    Category.name == cat_name,
+                    Category.level == CategoryLevel.category,
+                )
+                .first()
+            )
+            if category_exists is not None:
+                continue
             cat_node = Category(
                 user_id          = user_id,
                 parent_id        = type_node.id,
@@ -193,6 +202,109 @@ def seed_default_categories(session: Session, user_id: int) -> int:
     logger.info(
         "Seed completado para user_id=%d: %d categorías creadas.",
         user_id, created
+    )
+    return created
+
+
+def seed_default_rules(session: Session, user_id: int) -> int:
+    """Create the confirmed CaixaBank rules for a user's default categories.
+
+    Rules are personal because category IDs belong to a user.  Existing rules
+    with the same category and pattern are preserved, making this safe to run
+    again after the default categories have already been loaded.
+    """
+    from app.categorization.rules_engine import create_rule
+    from app.db.models import AutoCategorizationRule, MatchType
+
+    categories = get_all_categories(
+        session, user_id, level=CategoryLevel.category
+    )
+    income_category_names = {
+        "Nomina Maria",
+        "Ayuda Cuidado Menor",
+    }
+
+    def find_category(name: str) -> Optional[Category]:
+        matches = [category for category in categories if category.name == name]
+        if len(matches) == 1:
+            return matches[0]
+        desired_type = "INGRESO" if name in income_category_names else "GASTO"
+        return next(
+            (
+                category for category in matches
+                if category.parent is not None
+                and category.parent.name == desired_type
+            ),
+            None,
+        )
+    rule_definitions = [
+        ("Teléfono", "VODAFONE"),
+        ("Teléfono", "EUSKALTEL"),
+        ("Teléfono", "MASMOVIL"),
+        ("Luz", "IBERDROLA"),
+        ("Com. Propiertarios (Cuota)", "CUOTA COMUNIDAD"),
+        ("Com. Propiertarios (Gas & ACS)", "AGUA CALIENTE"),
+        ("Com. Propiertarios (Gas & ACS)", "CALEFACCION"),
+        ("Spotify", "SPOTIFY"),
+        ("Netflix", "NETFLIX"),
+        ("HBO", "HBO"),
+        ("Amazon", "AMAZON"),
+        ("Glovo", "GLOVO"),
+        ("Gasolina", "REPSOL"),
+        ("Gasolina", "GASOLINERA"),
+        ("Peajes", "VIA T"),
+        ("Peajes", "AUT. VASCO ARAGON"),
+        ("Peajes", "TUNELES DE ARTXAN"),
+        ("Tabaco", "ESTANCO"),
+        ("Parking", "TELPARK"),
+        ("Parking", "PARKING"),
+        ("Nomina Maria", "MANPOWER TEAM E.T.T."),
+        ("Nomina Maria", "PAGE GROUP SPAIN RECURSOS HUMANOS"),
+        ("Ayuda Cuidado Menor", "EUSKO JAURLARITZA-GOBIERNO VASCO"),
+        ("Apple iCloud", "APPLE"),
+        ("Apple iCloud", "ITUNES"),
+        ("Transporte", "UBER"),
+        ("Transporte", "RENFE"),
+        ("Transporte", "METRO"),
+        ("Ocio, Eventos y Bodas", "PADEL"),
+    ]
+
+    created = 0
+    for category_name, pattern in rule_definitions:
+        category = find_category(category_name)
+        if category is None:
+            raise ValueError(
+                f"No existe la categoría por defecto '{category_name}' "
+                f"para user_id={user_id}."
+            )
+
+        exists = (
+            session.query(AutoCategorizationRule)
+            .filter(
+                AutoCategorizationRule.user_id == user_id,
+                AutoCategorizationRule.category_id == category.id,
+                AutoCategorizationRule.match_pattern == pattern,
+                AutoCategorizationRule.match_type == MatchType.contains,
+            )
+            .first()
+        )
+        if exists is not None:
+            continue
+
+        create_rule(
+            session,
+            category_id=category.id,
+            match_pattern=pattern,
+            match_type=MatchType.contains,
+            priority=100,
+            user_id=user_id,
+        )
+        created += 1
+
+    logger.info(
+        "Reglas por defecto completadas para user_id=%d: %d creadas.",
+        user_id,
+        created,
     )
     return created
 

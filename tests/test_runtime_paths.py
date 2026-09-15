@@ -7,15 +7,15 @@ from app.settings import SettingsManager
 
 
 def test_get_user_data_dir_uses_local_appdata_in_development(monkeypatch, tmp_path):
-    QSettings("GEVernova", "PROFIN").clear()
+    QSettings("GEVernova", "FAMILYFIN").clear()
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv("APPDATA", raising=False)
 
-    expected = (tmp_path / "PROFIN" / "data").resolve()
+    expected = (tmp_path / "FAMILYFIN" / "data").resolve()
     assert get_user_app_dir() == Path(__file__).resolve().parents[1].resolve()
     assert get_user_data_dir() == expected
-    QSettings("GEVernova", "PROFIN").clear()
+    QSettings("GEVernova", "FAMILYFIN").clear()
 
 
 def test_get_legacy_data_dir_finds_repo_data_from_bundle_path(monkeypatch, tmp_path):
@@ -34,24 +34,24 @@ def test_get_legacy_data_dir_finds_repo_data_from_bundle_path(monkeypatch, tmp_p
 
 
 def test_get_user_data_dir_uses_local_appdata_when_frozen(monkeypatch, tmp_path):
-    QSettings("GEVernova", "PROFIN").clear()
+    QSettings("GEVernova", "FAMILYFIN").clear()
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv("APPDATA", raising=False)
 
-    assert get_user_app_dir() == (tmp_path / "PROFIN").resolve()
-    assert get_user_data_dir() == (tmp_path / "PROFIN" / "data").resolve()
-    QSettings("GEVernova", "PROFIN").clear()
+    assert get_user_app_dir() == (tmp_path / "FAMILYFIN").resolve()
+    assert get_user_data_dir() == (tmp_path / "FAMILYFIN" / "data").resolve()
+    QSettings("GEVernova", "FAMILYFIN").clear()
 
 
 def test_development_uses_packaged_data_folder_setting(monkeypatch, tmp_path):
-    settings = QSettings("GEVernova", "PROFIN")
+    settings = QSettings("GEVernova", "FAMILYFIN")
     settings.clear()
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    settings.setValue("settings/data_folder", str(tmp_path / "PROFIN" / "data"))
+    settings.setValue("settings/data_folder", str(tmp_path / "FAMILYFIN" / "data"))
 
-    expected = (tmp_path / "PROFIN" / "data").resolve()
+    expected = (tmp_path / "FAMILYFIN" / "data").resolve()
     assert get_user_data_dir() == expected
     settings.clear()
 
@@ -59,7 +59,7 @@ def test_development_uses_packaged_data_folder_setting(monkeypatch, tmp_path):
 def test_settings_manager_migrates_data_folder(tmp_path):
     import sqlite3
 
-    qsettings = QSettings("GEVernova", "PROFIN")
+    qsettings = QSettings("GEVernova", "FAMILYFIN")
     qsettings.clear()
     origin = tmp_path / "origin"
     target = tmp_path / "target"
@@ -83,6 +83,30 @@ def test_settings_manager_migrates_data_folder(tmp_path):
         rows = conn.execute("SELECT name FROM items").fetchall()
     assert rows == [("alpha",)]
     qsettings.clear()
+
+
+def test_get_user_data_dir_migrates_legacy_qsettings_once(monkeypatch, tmp_path):
+    from app import db as db_module
+
+    legacy = QSettings("GEVernova", "PROFIN")
+    legacy.clear()
+    legacy.setValue("settings/theme", "dark")
+    legacy.sync()
+
+    new_settings = QSettings("GEVernova", "FAMILYFIN")
+    new_settings.clear()
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("APPDATA", raising=False)
+
+    db_module.database.get_user_data_dir()
+
+    migrated = QSettings("GEVernova", "FAMILYFIN")
+    assert migrated.value("settings/theme", type=str) == "dark"
+
+    legacy.clear()
+    migrated.clear()
 
 
 def test_get_database_users_returns_sorted_users(tmp_path):
@@ -109,7 +133,7 @@ def test_get_user_data_dir_falls_back_to_legacy_repo_db(monkeypatch, tmp_path):
     import sqlite3
     from app import db as db_module
 
-    qsettings = QSettings("GEVernova", "PROFIN")
+    qsettings = QSettings("GEVernova", "FAMILYFIN")
     qsettings.clear()
     legacy_dir = tmp_path / "legacy-data"
     legacy_dir.mkdir()
@@ -119,7 +143,7 @@ def test_get_user_data_dir_falls_back_to_legacy_repo_db(monkeypatch, tmp_path):
         conn.execute("INSERT INTO users (username) VALUES ('COMUN')")
         conn.commit()
 
-    app_data = tmp_path / "AppData" / "Local" / "PROFIN" / "data"
+    app_data = tmp_path / "AppData" / "Local" / "FAMILYFIN" / "data"
     app_data.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(app_data / "profin.db")
     conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)")
@@ -144,7 +168,7 @@ def test_get_user_data_dir_overwrites_empty_packaged_db_with_legacy_users(monkey
     import sqlite3
     from app import db as db_module
 
-    qsettings = QSettings("GEVernova", "PROFIN")
+    qsettings = QSettings("GEVernova", "FAMILYFIN")
     qsettings.clear()
 
     legacy_dir = tmp_path / "legacy-data"
@@ -156,7 +180,7 @@ def test_get_user_data_dir_overwrites_empty_packaged_db_with_legacy_users(monkey
         )
         conn.commit()
 
-    app_data = tmp_path / "AppData" / "Local" / "PROFIN" / "data"
+    app_data = tmp_path / "AppData" / "Local" / "FAMILYFIN" / "data"
     app_data.mkdir(parents=True, exist_ok=True)
     app_db = app_data / "profin.db"
     app_db.write_bytes(b"")

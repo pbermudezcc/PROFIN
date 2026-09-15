@@ -49,6 +49,12 @@ def get_legacy_data_dir() -> Path:
             for base in [exe_dir, *exe_dir.parents]:
                 candidates.extend([base / "data", base / "PROFIN" / "data"])
 
+    # Lowest priority: the old packaged install's LOCALAPPDATA folder, for
+    # dev-mode runs that wouldn't otherwise traverse into it.
+    legacy_local_app_data = os.environ.get("LOCALAPPDATA")
+    if legacy_local_app_data:
+        candidates.append(Path(legacy_local_app_data) / "PROFIN" / "data")
+
     seen: set[Path] = set()
     for candidate in candidates:
         resolved = candidate.resolve(strict=False)
@@ -67,7 +73,7 @@ def get_default_data_dir() -> Path:
     """Return the shared writable location used by development and frozen builds."""
     base_dir = os.environ.get("LOCALAPPDATA")
     root = Path(base_dir) if base_dir else Path.home() / "AppData" / "Local"
-    return (root / "PROFIN" / "data").resolve()
+    return (root / "FAMILYFIN" / "data").resolve()
 
 
 def get_user_app_dir() -> Path:
@@ -75,7 +81,7 @@ def get_user_app_dir() -> Path:
     if getattr(sys, "frozen", False):
         local_app_data = os.environ.get("LOCALAPPDATA")
         base_dir = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
-        return (base_dir / "PROFIN").resolve()
+        return (base_dir / "FAMILYFIN").resolve()
     return Path(__file__).resolve().parents[2].resolve()
 
 
@@ -126,9 +132,23 @@ def _migrate_legacy_database_if_needed(default_data_dir: Path, legacy_data_dir: 
     return True
 
 
+def _migrate_legacy_qsettings_if_needed(settings: QSettings) -> None:
+    """Copy saved preferences from the old PROFIN QSettings store, once, on first run under the new name."""
+    if settings.allKeys():
+        return
+    legacy_settings = QSettings("GEVernova", "PROFIN")
+    legacy_keys = legacy_settings.allKeys()
+    if not legacy_keys:
+        return
+    for key in legacy_keys:
+        settings.setValue(key, legacy_settings.value(key))
+    settings.sync()
+
+
 def get_user_data_dir() -> Path:
     """Return the writable data directory, preferring the user-configured value when set."""
-    settings = QSettings("GEVernova", "PROFIN")
+    settings = QSettings("GEVernova", "FAMILYFIN")
+    _migrate_legacy_qsettings_if_needed(settings)
     default_data_dir = get_default_data_dir()
     legacy_data_dir = get_legacy_data_dir()
 

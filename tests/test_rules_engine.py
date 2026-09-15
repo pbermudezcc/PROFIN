@@ -152,6 +152,9 @@ class TestRulesEngine:
                         base_data["account_id"], issuer="MERCADONA SA")
         result = apply_rules(db_session, [txn.id], base_data["user_id"])
         assert result.assigned[txn.id] == base_data["cat_super"].id
+        rule = db_session.query(AutoCategorizationRule).one()
+        assert result.assigned_by_rule == {rule.id: 1}
+        assert result.transaction_ids_by_rule == {rule.id: [txn.id]}
         assert txn.id not in result.unmatched
 
     def test_r03_contains_match_concept_or_gate(self, db_session, base_data):
@@ -227,6 +230,10 @@ class TestRulesEngine:
                         base_data["account_id"], issuer="MERCADONA")
         result = apply_rules(db_session, [txn.id], base_data["user_id"])
         assert result.assigned[txn.id] == base_data["cat_super"].id
+        rules = db_session.query(AutoCategorizationRule).order_by(
+            AutoCategorizationRule.priority
+        ).all()
+        assert result.assigned_by_rule == {rules[0].id: 1}
 
     def test_r07_conflict_same_priority_different_categories(
         self, db_session, base_data
@@ -296,3 +303,54 @@ class TestRulesEngine:
         result = apply_rules(db_session, [txn.id], base_data["user_id"])
         assert txn.id in result.unmatched
         assert txn.category_id is None
+
+    def test_r11_no_overwrite_preserves_manual_category(self, db_session, base_data):
+        """R-11: apply_rules_and_commit(overwrite=False) must not touch a
+        transaction that a user already categorized manually, even if a
+        rule matches it — this is the passive-refresh/tab-visit path used
+        by TransactionsView, which must never silently revert a manual fix."""
+        create_rule(
+            db_session,
+            category_id   = base_data["cat_super"].id,
+            match_pattern = "MERCADONA",
+            match_type    = MatchType.contains,
+        )
+        txn = _make_txn(db_session, base_data["user_id"],
+                        base_data["account_id"], issuer="MERCADONA")
+        # User manually assigns a different category than the rule would.
+        txn.category_id = base_data["cat_nomina"].id
+        db_session.commit()
+
+        apply_rules_and_commit(
+            db_session, [txn.id], base_data["user_id"], overwrite=False
+        )
+
+        db_session.refresh(txn)
+        assert txn.category_id == base_data["cat_nomina"].id
+
+    def test_r12_apply_and_commit_persists_multiple_assignments(
+        self, db_session, base_data
+    ):
+        """R-12: apply_rules_and_commit's write-back loop must persist
+        category_id for every assigned transaction, not just a single one."""
+        create_rule(
+            db_session,
+            category_id   = base_data["cat_super"].id,
+            match_pattern = "MERCADONA",
+            match_type    = MatchType.contains,
+        )
+        txns = [
+            _make_txn(db_session, base_data["user_id"],
+                      base_data["account_id"], issuer="MERCADONA")
+            for _ in range(5)
+        ]
+        assert all(txn.category_id is None for txn in txns)
+
+        result = apply_rules_and_commit(
+            db_session, [t.id for t in txns], base_data["user_id"]
+        )
+
+        assert len(result.assigned) == 5
+        for txn in txns:
+            db_session.refresh(txn)
+            assert txn.category_id == base_data["cat_super"].id

@@ -1,7 +1,7 @@
 """
 app/ingestion/excel_parser.py
 ==============================
-PROFIN — CaixaBank Excel Parser
+FAMILYFIN — CaixaBank Excel Parser
 
 Responsibility:
   Read a CaixaBank .xlsx export file (no traditional header row) and return
@@ -17,8 +17,8 @@ CaixaBank file structure (24 unnamed columns, data from row 1 onward):
   Col 5  : value date      dd/mm/yyyy     → value_date
   Col 6  : ingreso amount  (NaN if gasto) → _ingreso_raw
   Col 7  : gasto amount    (NaN if ingr.) → _gasto_raw
-  Col 8  : running balance                → running_balance
-  Col 9  : always NaN                     → dropped
+  Col 8  : positive running balance       → running_balance
+  Col 9  : negative running balance       → running_balance
   Col 10 : concepto común code            → concepto_comun
   Col 11 : concepto propio code           → concepto_propio
   Col 12 : always 000000000000            → dropped
@@ -45,6 +45,7 @@ from __future__ import annotations
 import logging
 logger = logging.getLogger(__name__)
 import re
+import unicodedata
 from pathlib import Path
 from typing import Union
 
@@ -60,7 +61,8 @@ _COL_DATE_OP         = 4
 _COL_DATE_VAL        = 5
 _COL_INGRESO         = 6
 _COL_GASTO           = 7
-_COL_SALDO           = 8
+_COL_SALDO_POSITIVO  = 8
+_COL_SALDO_NEGATIVO  = 9
 _COL_CONCEPTO_COMUN  = 10
 _COL_CONCEPTO_PROPIO = 11
 _COL_DETAILS_START   = 14   # issuer + details cols 14-22
@@ -117,7 +119,7 @@ def parse_excel(file_path: Union[str, Path]) -> pd.DataFrame:
     else:
         raise ValueError(
             f"Formato de fichero no soportado: '{suffix}'. "
-            "PROFIN acepta ficheros .xls y .xlsx de CaixaBank."
+            "FAMILYFIN acepta ficheros .xls y .xlsx de CaixaBank."
         )
 
     logger.info(
@@ -146,15 +148,14 @@ def parse_excel(file_path: Union[str, Path]) -> pd.DataFrame:
     #   row 3 → "F. Operación | F. Valor | ..."  ← REAL HEADER
     #   row 4 → first transaction
     #   row N → empty (trailing)
-    # We detect the header row by scanning for "F. Operaci" in the first
-    # 10 rows (accent-insensitive, handles both .xls and .xlsx variants).
+    # We detect all header rows by their operation-date cell
+    # (accent-insensitive, handles repeated headers in paginated exports).
 
-    header_row_idx: int | None = None
-    for _i in range(min(10, len(raw))):
-        _row_str = " ".join(str(v) for v in raw.iloc[_i].tolist()).lower()
-        if "f. operaci" in _row_str or "f.operaci" in _row_str:
-            header_row_idx = _i
-            break
+    header_row_indices = [
+        _i for _i in range(len(raw))
+        if _is_header_row(raw.iloc[_i])
+    ]
+    header_row_idx = header_row_indices[0] if header_row_indices else None
 
     if header_row_idx is not None:
         logger.info(
@@ -163,9 +164,19 @@ def parse_excel(file_path: Union[str, Path]) -> pd.DataFrame:
             header_row_idx, header_row_idx + 1,
         )
         raw = raw.iloc[header_row_idx + 1:].reset_index(drop=True)
+        repeated_headers = [
+            _i for _i in range(len(raw))
+            if _is_header_row(raw.iloc[_i])
+        ]
+        if repeated_headers:
+            logger.info(
+                "Eliminando %d cabecera(s) repetida(s) del fichero",
+                len(repeated_headers),
+            )
+            raw = raw.drop(index=repeated_headers).reset_index(drop=True)
     else:
         logger.warning(
-            "Cabecera 'F. Operación' no encontrada en las primeras 10 filas "
+            "Cabecera 'F. Operación' no encontrada "
             "— continuando sin eliminar preámbulo. "
             "Valor col[4] fila 0: %s",
             str(raw.iloc[0, 4]) if len(raw) > 0 else "N/A",
@@ -224,9 +235,16 @@ def parse_excel(file_path: Union[str, Path]) -> pd.DataFrame:
     gasto   = _to_numeric(data.iloc[:, _COL_GASTO],   "Gasto (col 7)")
     out["amount"] = ingreso.combine_first(-gasto)
 
-    out["running_balance"] = _to_numeric(
-        data.iloc[:, _COL_SALDO], "Saldo (col 8)"
+    # CaixaBank exports the running balance in two mutually exclusive
+    # columns: "Saldo (+)" and "Saldo (-)".  Negative balances are therefore
+    # not a malformed/missing value; they are stored in column 9.
+    saldo_positivo = _to_numeric(
+        data.iloc[:, _COL_SALDO_POSITIVO], "Saldo (+) (col 8)"
     )
+    saldo_negativo = _to_numeric(
+        data.iloc[:, _COL_SALDO_NEGATIVO], "Saldo (-) (col 9)"
+    )
+    out["running_balance"] = saldo_positivo.combine_first(saldo_negativo)
 
     out["concepto_comun"] = _clean_str(
         data.iloc[:, _COL_CONCEPTO_COMUN]
@@ -260,6 +278,18 @@ def parse_excel(file_path: Union[str, Path]) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _is_header_row(row: pd.Series) -> bool:
+    """Return whether a raw row is a CaixaBank operation header."""
+    if len(row) <= _COL_DATE_OP:
+        return False
+    value = str(row.iloc[_COL_DATE_OP]).strip()
+    normalized = unicodedata.normalize("NFKD", value)
+    normalized = "".join(
+        char for char in normalized if not unicodedata.combining(char)
+    ).lower()
+    return bool(re.match(r"^f\s*\.?\s*operaci", normalized))
+
 
 def _parse_dates(
     series: pd.Series,

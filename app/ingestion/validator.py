@@ -1,7 +1,7 @@
 """
 app/ingestion/validator.py
 ===========================
-PROFIN — Import Validation Layer
+FAMILYFIN — Import Validation Layer
 
 Validation rules (in order):
   V-01  DataFrame is not empty.
@@ -132,7 +132,7 @@ def validate_dataframe(df: pd.DataFrame) -> ValidationResult:
     if not non_eur.empty:
         bad_currencies = non_eur["currency"].unique().tolist()
         raise ValidationError(
-            "PROFIN v1 soporta únicamente la divisa EUR. "
+            "FAMILYFIN v1 soporta únicamente la divisa EUR. "
             f"Se encontraron: {bad_currencies} en {len(non_eur)} fila(s)."
         )
 
@@ -147,7 +147,7 @@ def validate_dataframe(df: pd.DataFrame) -> ValidationResult:
         raise ValidationError(
             f"El fichero contiene {len(unique_ibans)} IBANs distintos: "
             f"{unique_ibans.tolist()}. "
-            "PROFIN espera un fichero de una única cuenta."
+            "FAMILYFIN espera un fichero de una única cuenta."
         )
     detected_iban = str(unique_ibans[0]).strip()
 
