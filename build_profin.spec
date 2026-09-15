@@ -6,7 +6,18 @@ from pathlib import Path
 ROOT = Path.cwd()
 APP_NAME = "PROFIN"
 APP_CHANNEL = os.environ.get("PROFIN_CHANNEL", "B").upper()
-APP_VERSION = "0.2.4"
+
+
+def _read_app_version() -> str:
+    config_text = (ROOT / "app" / "config.py").read_text(encoding="utf-8")
+    for line in config_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("APP_VERSION"):
+            return stripped.split("=", 1)[1].strip().strip("\"'")
+    raise RuntimeError("No se pudo leer APP_VERSION en app/config.py")
+
+
+APP_VERSION = _read_app_version()
 ARTIFACT_NAME = f"{APP_NAME}.{APP_CHANNEL}.{APP_VERSION}"
 
 block_cipher = None
