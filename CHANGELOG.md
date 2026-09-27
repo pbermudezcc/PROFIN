@@ -5,6 +5,60 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.4.0.md`  |  **Files:** 54  |  **Handler:** v1.0.0
+**Date:** 2026-09-27 18:02  |  **Type:** Release
+**Description:** FAMILYFIN 0.4.0 hace la aplicación más segura para vuestros datos: las copias de seguridad automáticas por fin se hacen de verdad, las categorías que elegís a mano ya no las cambian las reglas y la base de datos se actualiza sola al abrirla, guardando antes una copia. Además, las pantallas de Gastos e Ingresos cargan más rápido, la importación de extractos es más fiable y se corrigen varios fallos del panel principal.
+
+### Antes de actualizar
+
+- La base de datos se actualiza automáticamente del esquema v0 al v3 la primera vez que se abre la aplicación. Antes se guarda una copia `profin.pre-migration-v3.<fecha>.db` junto a la base.
+
+### Novedades
+
+- Copias de seguridad automáticas reales: si están activadas, se hacen al iniciar sesión y cada 30 minutos cuando toca, se guardan las 10 más recientes (las copias manuales nunca se borran) y restaurar una copia se aplica de forma segura al volver a abrir la aplicación. Las categorías asignadas a mano quedan protegidas y las reglas ya no las sobrescriben; la base de datos se actualiza sola con una copia previa, y cambiar la carpeta de datos ya no puede pisar una base existente (`05c4316`).
+- Proceso de publicación de versiones más fiable: cada versión se comprueba con todos los tests antes de publicarse y las notas, el historial de cambios y el instalable salen siempre de la misma fuente (`3ba2edf`).
+
+### Correcciones
+
+- Importación de extractos: los importes se guardan redondeados a céntimos, el registro de cambios apunta al movimiento importado y conserva el detalle original, y los movimientos repetidos con importe cero se tratan correctamente como duplicados (`5a5e173`).
+- El ejecutable de Windows vuelve a llevar el número de versión correcto en su nombre (`c74fae4`).
+
+### Mejoras
+
+- Gastos e Ingresos calculan los totales directamente en la base de datos y las pantallas se crean solo al abrirlas, así que la aplicación arranca y responde más rápido. La importación ya no bloquea la ventana, y se corrige un cierre inesperado del panel principal cuando faltaba el saldo, además del orden del gráfico diario (`2b1979e`).
+
+### Interno
+
+- Documentación y registro de trabajo del asistente de desarrollo actualizados, incluida la publicación de la versión 0.3.0 (`d1adab3`, `d2954e5`, `0113271`).
+
+### Áreas afectadas
+
+- **Base de datos y migraciones**: `app/db/database.py`, `app/db/models.py`
+- **Categorías y reglas**: `app/categorization/category_manager.py`, `app/categorization/rules_engine.py`
+- **Importación de extractos**: `app/ingestion/duplicate_detector.py`, `app/ingestion/excel_parser.py`, `app/ingestion/importer.py`
+- **Informes y gráficos**: `app/analytics/__init__.py`, `app/analytics/period_summary.py`
+- **Configuración y copias de seguridad**: `app/settings/settings_manager.py`
+- **Interfaz**: `app/gui/dashboard.py`, `app/gui/expenses_view.py`, `app/gui/import_view.py`, `app/gui/login_window.py`, `app/gui/main_window.py`, `app/gui/rules_view.py` y 2 más
+- **Instalación y compilación Windows**: `build_profin.spec`, `tools/build_windows.py`
+- **Tests**: `conftest.py`, `tests/test_backup_and_migrations.py`, `tests/test_category_manager.py`, `tests/test_duplicate_detector.py`, `tests/test_excel_parser.py`, `tests/test_gui_smoke.py` y 7 más
+- **Herramientas de desarrollo y agentes**: `.claude/agents/familyfin-engineer.md`, `.claude/skills/release/SKILL.md`, `.github/agents/familyfin-developer.agent.md`, `.gitignore`, `tools/ExportVersionHandler.py`, `tools/release_tools.py`
+- **Documentación**: `docs/agent/agent_log.md`, `docs/agent/lessons_learned.md`
+
+<details><summary>Commits incluidos (8 desde v0.3.0)</summary>
+
+- `d1adab3` docs(agent): rewrite engineer agent prompt, log sessions and lessons
+- `3ba2edf` feat(release): release_tools preflight/draft/verify/package/postflight
+- `2b1979e` perf(gui): SQL-side period aggregation, lazy views, threaded import session, dashboard fixes
+- `5a5e173` fix(import): cents rounding, audit record_id/raw_details, D-3 zero-amount duplicates
+- `05c4316` feat(db): schema migrations v1-v3, manual-category protection and real auto-backups
+- `c74fae4` fix(build): read APP_VERSION from app/config.py in build_profin.spec
+- `d2954e5` docs(agent_log): record v0.3.0 GitHub Release publication
+- `0113271` docs(agent_log): record v0.3.0 release session
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.3.0.md`  |  **Files:** 43  |  **Handler:** v1.0.0
 **Date:** 2026-09-16 01:19  |  **Type:** Release
 **Description:** This release adds a /release skill to automate future version publishing, and delivers a UI polish pass across the desktop app: refreshed theme colors, consistent card drop-shadows, chart axis labels, scrollable category/month charts, and a cleaner login screen. All changes are backward compatible -- no data or schema migration required.
