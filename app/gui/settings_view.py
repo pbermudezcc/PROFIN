@@ -20,14 +20,23 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
-import sqlite3
+import logging
+from pathlib import Path
 
 import qtawesome as qta
 
 from app.config import THEMES
-from app.db.database import get_default_data_dir, get_legacy_data_dir
+from app.db.database import (
+    database_has_users,
+    get_default_data_dir,
+    get_legacy_data_dir,
+    get_user_data_dir,
+    init_db,
+)
 from app.settings import SettingsManager
 from app.gui._style_utils import apply_card_shadow
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsView(QWidget):
@@ -331,20 +340,8 @@ class SettingsView(QWidget):
     def _detect_data_folder(self) -> None:
         candidates = []
         for folder in (get_legacy_data_dir(), get_default_data_dir()):
-            db_path = folder / "profin.db"
-            if not db_path.exists():
-                continue
-            try:
-                with sqlite3.connect(db_path) as connection:
-                    has_users = connection.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
-                    ).fetchone()
-                    if has_users:
-                        count = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-                        if int(count or 0) > 0:
-                            candidates.append(folder)
-            except sqlite3.DatabaseError:
-                continue
+            if database_has_users(folder / "profin.db"):
+                candidates.append(folder)
 
         if not candidates:
             QMessageBox.information(
@@ -364,10 +361,10 @@ class SettingsView(QWidget):
 
     def _save_settings(self) -> None:
         self._collect_from_form()
+        # save() overwrites settings/data_folder, so remember the folder in use.
+        current_data_dir = get_user_data_dir()
         self._settings_manager.ensure_dirs(self._settings)
         self._settings_manager.save(self._settings)
-        if self._settings.data_folder:
-            self._settings_manager.apply_data_folder(self._settings.data_folder)
 
         qsettings = QSettings("GEVernova", "FAMILYFIN")
         qsettings.setValue("ui/theme", self._settings.theme if self._settings.save_appearance_on_start else "light")
@@ -389,17 +386,51 @@ class SettingsView(QWidget):
                         view.refresh_theme(self._settings.theme)
         self.apply_theme(self._settings.theme)
 
+        if self._settings.data_folder:
+            try:
+                self._switch_data_folder(self._settings.data_folder, current_data_dir)
+            except Exception as exc:
+                logger.exception("No se pudo cambiar la carpeta de datos.")
+                QMessageBox.critical(self, "Error al migrar datos", str(exc))
+
     def _migrate_data_folder(self) -> None:
         target = self._data_folder_edit.text().strip()
         if not target:
             QMessageBox.warning(self, "Ubicación no válida", "Selecciona una carpeta para la ubicación de datos del usuario.")
             return
         try:
-            self._settings_manager.apply_data_folder(target)
             self._settings.data_folder = target
-            QMessageBox.information(self, "Ubicación de datos actualizada", f"La base de datos y los datos del usuario ahora se guardan en:\n{target}")
+            if not self._switch_data_folder(target, get_user_data_dir()):
+                QMessageBox.information(self, "Ubicación de datos", f"Los datos ya se guardan en:\n{target}")
         except Exception as exc:
+            logger.exception("No se pudo cambiar la carpeta de datos.")
             QMessageBox.critical(self, "Error al migrar datos", str(exc))
+
+    def _switch_data_folder(self, target: str, current_dir: Path) -> bool:
+        """Move the app to another data folder. Returns False if it was already in use.
+
+        The live session is bound to the old database file, so after the
+        switch the database is re-initialised (integrity check + schema
+        migrations) and the user is logged out; logging in again opens a
+        session on the new file and nothing more is written to the old one.
+        """
+        new_dir = self._settings_manager.apply_data_folder(target, current_dir=current_dir)
+        if new_dir.resolve() == current_dir.resolve():
+            return False
+        self._session.commit()
+        init_db()
+        QMessageBox.information(
+            self,
+            "Ubicación de datos actualizada",
+            "FAMILYFIN usará a partir de ahora la base de datos de:\n"
+            f"{new_dir}\n\nVuelve a iniciar sesión para continuar.",
+        )
+        parent = self.parentWidget()
+        while parent is not None and not hasattr(parent, "_on_logout"):
+            parent = parent.parentWidget()
+        if parent is not None:
+            parent._on_logout()
+        return True
 
     def _create_backup(self) -> None:
         self._collect_from_form()
@@ -425,8 +456,10 @@ class SettingsView(QWidget):
             if ok:
                 QMessageBox.information(
                     self,
-                    "Restauración completada",
-                    "Los datos del usuario se han restaurado correctamente desde el backup seleccionado.",
+                    "Restauración preparada",
+                    "La copia de seguridad es válida y está preparada.\n\n"
+                    "Cierra y vuelve a abrir FAMILYFIN para completar la restauración. "
+                    "Los datos actuales se guardarán antes en una copia (profin.before-restore.*.db).",
                 )
             else:
                 QMessageBox.warning(self, "Restauración inválida", "El archivo de backup no es válido para FAMILYFIN.")

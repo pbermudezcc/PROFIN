@@ -16,9 +16,10 @@ Layout:
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
-from PySide6.QtCore    import Qt, QSettings, QSize
+from PySide6.QtCore    import Qt, QSettings, QSize, QTimer
 from PySide6.QtGui     import QFont, QIcon
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -93,6 +94,7 @@ class MainWindow(QWidget):
     SETTINGS_APP = "FAMILYFIN"
     KEY_THEME    = "ui/theme"
     KEY_NAV      = "ui/last_nav"
+    AUTO_BACKUP_CHECK_MS = 30 * 60 * 1000
 
     def __init__(self, user: User, session: Session,
                  theme: str = "light") -> None:
@@ -118,6 +120,13 @@ class MainWindow(QWidget):
         # Navigate to last view or default dashboard
         last_nav = self._settings.value(self.KEY_NAV, "dashboard")
         self._navigate(last_nav)
+
+        # Automatic backups: check now, then periodically while the app runs.
+        self._auto_backup_timer = QTimer(self)
+        self._auto_backup_timer.setInterval(self.AUTO_BACKUP_CHECK_MS)
+        self._auto_backup_timer.timeout.connect(self._run_auto_backup)
+        self._auto_backup_timer.start()
+        QTimer.singleShot(0, self._run_auto_backup)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -403,7 +412,12 @@ class MainWindow(QWidget):
         return sidebar
 
     def _register_views(self) -> None:
-        """Lazy-register all view widgets into the QStackedWidget."""
+        """Register a factory per view; each widget is built on first visit.
+
+        Building every view at login ran all of their DB queries up front.
+        Views are now created (with the theme current at that moment) the
+        first time the user navigates to them, then kept in the stack.
+        """
         from app.gui.dashboard         import DashboardView
         from app.gui.import_view       import ImportView
         from app.gui.transactions_view import TransactionsView
@@ -413,7 +427,7 @@ class MainWindow(QWidget):
         from app.gui.incomes_window    import IncomesWindow
         from app.gui.settings_view      import SettingsView
 
-        view_map = {
+        self._view_factories = {
             "dashboard":    lambda: DashboardView(
                                 self._user, self._session, self._theme
                             ),
@@ -450,17 +464,22 @@ class MainWindow(QWidget):
                             ),
         }
 
-        for key, factory in view_map.items():
-            widget = factory()
+
+    def _ensure_view(self, view_key: str) -> QWidget:
+        """Return the view for view_key, building it on first use."""
+        widget = self._views.get(view_key)
+        if widget is None:
+            widget = self._view_factories[view_key]()
             self._stack.addWidget(widget)
-            self._views[key] = widget
+            self._views[view_key] = widget
+        return widget
 
     # ------------------------------------------------------------------
     # Navigation
     # ------------------------------------------------------------------
 
     def _navigate(self, view_key: str) -> None:
-        if view_key not in self._views:
+        if view_key not in self._view_factories:
             view_key = "dashboard"
 
         # Update sidebar active state
@@ -476,7 +495,7 @@ class MainWindow(QWidget):
         )
         self._lbl_breadcrumb.setText(label)
 
-        self._stack.setCurrentWidget(self._views[view_key])
+        self._stack.setCurrentWidget(self._ensure_view(view_key))
         self._current_view = view_key
         self._settings.setValue(self.KEY_NAV, view_key)
 
@@ -651,6 +670,15 @@ class MainWindow(QWidget):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    def _run_auto_backup(self) -> None:
+        """Create an automatic backup if one is due. Never interrupts the user."""
+        try:
+            SettingsManager().run_auto_backup_if_due(user_name=self._user.username)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "No se pudo crear la copia de seguridad automática."
+            )
 
     def _on_logout(self) -> None:
         self._session.close()

@@ -258,18 +258,24 @@ class TransactionsView(QWidget):
             from app.db.models import Transaction as TxnModel
             from app.categorization.rules_engine import apply_rules_and_commit
 
-            all_ids = [
+            # overwrite=False only ever fills empty categories, so only the
+            # uncategorized rows need to go through the engine — not the
+            # whole history on every visit to this tab.
+            uncategorized_ids = [
                 row.id for row in (
                     self._session.query(TxnModel.id)
-                    .filter(TxnModel.user_id == self._user.id)
+                    .filter(
+                        TxnModel.user_id == self._user.id,
+                        TxnModel.category_id.is_(None),
+                    )
                     .all()
                 )
             ]
 
-            if all_ids:
+            if uncategorized_ids:
                 result = apply_rules_and_commit(
                     self._session,
-                    all_ids,
+                    uncategorized_ids,
                     self._user.id,
                     overwrite=False,
                 )
@@ -280,6 +286,7 @@ class TransactionsView(QWidget):
                     )
 
         except Exception as exc:
+            self._session.rollback()
             _log.warning("Error al re-aplicar reglas en refresh: %s", exc)
 
         # Always reload the table regardless of rule results

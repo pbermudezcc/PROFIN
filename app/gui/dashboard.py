@@ -870,15 +870,18 @@ class DashboardView(QWidget):
         date_from, date_to = self._get_date_range(today)
 
         try:
-            # Running balance — latest transaction saldo
-            last_txn = (
-                self._session.query(Transaction)
-                .filter(Transaction.user_id == self._user.id)
+            # Running balance — saldo of the latest transaction that has one
+            # (running_balance is nullable; a row without it must not crash
+            # the whole dashboard).
+            balance = (
+                self._session.query(Transaction.running_balance)
+                .filter(Transaction.user_id == self._user.id,
+                        Transaction.running_balance.isnot(None))
                 .order_by(Transaction.transaction_date.desc(),
                           Transaction.id.desc())
-                .first()
-            )
-            balance = last_txn.running_balance if last_txn else 0.0
+                .limit(1)
+                .scalar()
+            ) or 0.0
 
             # Period aggregates
             period_q = (

@@ -45,26 +45,31 @@ class _ParseWorker(QObject):
     finished = Signal(object)   # ImportPreview or Exception
     error    = Signal(str)
 
-    def __init__(self, file_path: str, session: Session,
-                 user_id: int, account_id: int) -> None:
+    def __init__(self, file_path: str, user_id: int, account_id: int) -> None:
         super().__init__()
         self._file_path  = file_path
-        self._session    = session
         self._user_id    = user_id
         self._account_id = account_id
 
     def run(self) -> None:
+        # A SQLAlchemy Session is not thread-safe: this worker thread opens
+        # its own short-lived session instead of using the GUI's shared one.
+        from app.db.database import get_session
+        from app.ingestion.importer import prepare_import
+
+        session = get_session()
         try:
-            from app.ingestion.importer import prepare_import
             preview = prepare_import(
                 file_path  = self._file_path,
-                session    = self._session,
+                session    = session,
                 user_id    = self._user_id,
                 account_id = self._account_id,
             )
             self.finished.emit(preview)
         except Exception as exc:
             self.error.emit(str(exc))
+        finally:
+            session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -442,8 +447,7 @@ class ImportView(QWidget):
         self._thread = QThread()
         from pathlib import Path
         self._worker = _ParseWorker(
-            Path(self._selected_path), self._session,
-            self._user.id, self._account_id
+            Path(self._selected_path), self._user.id, self._account_id
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)

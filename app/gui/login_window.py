@@ -34,6 +34,7 @@ from app.db.database   import (
     get_default_data_dir,
     get_session,
     get_user_data_dir,
+    init_db,
     refresh_runtime_paths,
 )
 from app.auth.auth_service import verify_login
@@ -321,12 +322,15 @@ class LoginWindow(QWidget):
             self._session.close()
             self._settings.setValue("settings/data_folder", str(data_dir))
             self._settings.sync()
-            self._data_dir = refresh_runtime_paths()
+            # init_db, not just refresh_runtime_paths: an older database in the
+            # chosen folder must be integrity-checked and migrated before use.
+            init_db()
+            self._data_dir = database_module.DB_DIR
             self._session = get_session()
             self._data_folder.set_path(str(self._data_dir))
             self._refresh_database_info()
             self._lbl_error.setVisible(False)
-        except (OSError, sqlite3.DatabaseError) as exc:
+        except (OSError, RuntimeError, sqlite3.DatabaseError) as exc:
             self._settings.setValue("settings/data_folder", previous_value)
             self._settings.sync()
             refresh_runtime_paths()

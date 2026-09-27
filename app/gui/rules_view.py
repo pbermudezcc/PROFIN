@@ -457,6 +457,8 @@ class RulesView(QWidget):
             # Re-process ALL transactions — overwrite=True ensures
             # that transactions already categorized by a previous
             # version of the rule are updated with the new category.
+            # Manually categorized ones (category_source='manual') are
+            # always kept by apply_rules_and_commit.
             all_ids = [
                 row.id for row in (
                     self._session.query(Transaction.id)

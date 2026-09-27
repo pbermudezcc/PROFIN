@@ -13,8 +13,7 @@ Sections:
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
-from datetime    import date, datetime
+from datetime    import date
 from typing      import Dict, List, Optional, Tuple
 
 from PySide6.QtCore    import Qt, QRectF, QPointF
@@ -29,11 +28,15 @@ from PySide6.QtWidgets import (
 )
 import qtawesome as qta
 
-from sqlalchemy     import func, extract
 from sqlalchemy.orm import Session
 
+from app.analytics.period_summary import (
+    category_totals,
+    period_totals,
+    summarize_period,
+)
 from app.config    import THEMES
-from app.db.models import Transaction, TransactionType, Category, User
+from app.db.models import TransactionType, User
 from app.gui._style_utils import apply_card_shadow
 
 # Reuse chart palette and helpers from dashboard
@@ -840,32 +843,19 @@ class ExpensesView(QWidget):
                      period_label, date_from, date_to)
 
         try:
-            # ── Base query helper ─────────────────────────────────────
-            def _expense_q(d_from: date, d_to: date):
-                return (
-                    self._session.query(Transaction)
-                    .filter(
-                        Transaction.user_id          == self._user.id,
-                        Transaction.type             == self.TRANSACTION_TYPE,
-                        Transaction.transaction_date >= d_from,
-                        Transaction.transaction_date <= d_to,
-                    )
-                )
-
-            txns_cur  = _expense_q(date_from, date_to).all()
-            txns_prev = _expense_q(prev_from, prev_to).all()
+            summary = summarize_period(
+                self._session, self._user.id, self.TRANSACTION_TYPE,
+                date_from, date_to,
+            )
+            total_prev, count_prev = period_totals(
+                self._session, self._user.id, self.TRANSACTION_TYPE,
+                prev_from, prev_to,
+            )
+            total_cur = summary.total
+            count_cur = summary.count
+            pct_cat   = summary.categorized_pct
 
             # ── KPIs ──────────────────────────────────────────────────
-            amounts_cur  = [abs(t.amount) for t in txns_cur]
-            total_cur    = sum(amounts_cur)
-            count_cur    = len(amounts_cur)
-            avg_cur      = total_cur / count_cur if count_cur else 0.0
-            max_cur      = max(amounts_cur) if amounts_cur else 0.0
-            cat_cur      = sum(1 for t in txns_cur if t.category_id)
-            pct_cat      = cat_cur / count_cur * 100 if count_cur else 0.0
-
-            total_prev   = sum(abs(t.amount) for t in txns_prev)
-
             # Delta vs previous period
             if total_prev > 0:
                 delta_pct = (total_cur - total_prev) / total_prev * 100
@@ -880,84 +870,53 @@ class ExpensesView(QWidget):
             )
             self._kpis["count"].set_value(
                 str(count_cur),
-                f"{'▲' if len(txns_prev) and count_cur > len(txns_prev) else '▼'} "
-                f"{abs(count_cur - len(txns_prev))} vs anterior"
-                if txns_prev else None,
-                count_cur <= len(txns_prev),
+                f"{'▲' if count_prev and count_cur > count_prev else '▼'} "
+                f"{abs(count_cur - count_prev)} vs anterior"
+                if count_prev else None,
+                count_cur <= count_prev,
             )
-            self._kpis["avg"].set_value(_fmt_amount(avg_cur))
-            self._kpis["max_txn"].set_value(_fmt_amount(max_cur))
+            self._kpis["avg"].set_value(_fmt_amount(summary.average))
+            self._kpis["max_txn"].set_value(_fmt_amount(summary.max_amount))
             self._kpis["pct_cat"].set_value(f"{pct_cat:.1f}%",
                                             None if pct_cat >= 80 else "⚠ Pendientes")
 
-            # ── Category map ──────────────────────────────────────────
-            cat_map = {
-                c.id: c.name
-                for c in self._session.query(Category)
-                .filter(Category.user_id == self._user.id).all()
-            }
-
-            # ── Distribution chart data ───────────────────────────────
-            cat_totals: Dict[str, float] = defaultdict(float)
-            for t in txns_cur:
-                label = cat_map.get(t.category_id, "Sin categorizar")
-                cat_totals[label] += abs(t.amount)
-
-            dist_data = sorted(cat_totals.items(), key=lambda x: x[1],
-                               reverse=True)
+            # ── Distribution + comparison charts ──────────────────────
+            dist_data = summary.by_category
             self._chart_dist.set_data(dist_data)
-
-            # ── Comparison chart data ─────────────────────────────────
-            cat_prev: Dict[str, float] = defaultdict(float)
-            for t in txns_prev:
-                label = cat_map.get(t.category_id, "Sin categorizar")
-                cat_prev[label] += abs(t.amount)
-
             self._chart_comp.set_data(
                 dist_data,
-                sorted(cat_prev.items(), key=lambda x: x[1], reverse=True),
+                category_totals(
+                    self._session, self._user.id, self.TRANSACTION_TYPE,
+                    prev_from, prev_to,
+                ),
                 label_a=period_label,
                 label_b="Período anterior",
             )
 
             # ── Monthly category breakdown ─────────────────────────────
-            month_totals: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
-            for t in txns_cur:
-                month_key = t.transaction_date.strftime("%b %Y")
-                label = cat_map.get(t.category_id, "Sin categorizar")
-                month_totals[month_key][label] += abs(t.amount)
+            self._chart_monthly_cat.set_data([
+                (month_start.strftime("%b %Y"), cat_items)
+                for month_start, cat_items in summary.by_month_category
+            ])
 
-            monthly_cat_data: List[Tuple[str, List[Tuple[str, float]]]] = []
-            for month_key in sorted(month_totals.keys(), key=lambda item: datetime.strptime(item, "%b %Y")):
-                cat_items = sorted(month_totals[month_key].items(), key=lambda x: x[1], reverse=True)[:4]
-                monthly_cat_data.append((month_key, cat_items))
-            self._chart_monthly_cat.set_data(monthly_cat_data)
-
-            # ── Line chart — daily aggregation ────────────────────────
-            daily: Dict[str, float] = defaultdict(float)
-            for t in txns_cur:
-                key = t.transaction_date.strftime("%d/%m")
-                daily[key] += abs(t.amount)
-
-            line_data = sorted(daily.items())
+            # ── Line chart — daily aggregation (chronological) ────────
             self._chart_line.set_title(f"{self.LINE_TITLE} · {period_label}")
-            self._chart_line.set_data(line_data)
+            self._chart_line.set_data([
+                (day.strftime("%d/%m"), amount) for day, amount in summary.by_day
+            ])
 
             # ── Detail table ──────────────────────────────────────────
             self._table.setSortingEnabled(False)
             self._table.setRowCount(0)
-            txns_sorted = sorted(txns_cur,
-                                 key=lambda t: t.transaction_date,
-                                 reverse=True)[:50]
 
-            for txn in txns_sorted:
+            for row in summary.latest:
                 r = self._table.rowCount()
                 self._table.insertRow(r)
 
-                date_str = str(txn.transaction_date)[:10]
-                issuer   = (txn.issuer_name or txn.concept or "—")[:50]
-                cat      = cat_map.get(txn.category_id, "—")
-                amt_str  = _fmt_amount(abs(txn.amount))
+                date_str = str(row.transaction_date)[:10]
+                issuer   = row.description[:50]
+                cat      = row.category or "—"
+                amt_str  = _fmt_amount(row.amount)
 
                 for col, (text, align) in enumerate([
                     (date_str, Qt.AlignmentFlag.AlignLeft),
@@ -973,7 +932,7 @@ class ExpensesView(QWidget):
                                   Qt.ItemFlag.ItemIsSelectable)
                     if col == 3:
                         item.setForeground(
-                            QColor(                            self._t.get(self.AMOUNT_COLOR_KEY, self.AMOUNT_COLOR_FALLBACK))
+                            QColor(self._t.get(self.AMOUNT_COLOR_KEY, self.AMOUNT_COLOR_FALLBACK))
                         )
                     self._table.setItem(r, col, item)
 
@@ -989,6 +948,7 @@ class ExpensesView(QWidget):
             )
 
         except Exception as exc:
+            self._session.rollback()
             logger.exception("ExpensesView._load_data error: %s", exc)
 
     # ------------------------------------------------------------------
