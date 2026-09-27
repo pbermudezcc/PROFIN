@@ -196,3 +196,62 @@ def test_get_user_data_dir_overwrites_empty_packaged_db_with_legacy_users(monkey
     with sqlite3.connect(app_db) as conn:
         assert conn.execute("SELECT username FROM users WHERE username = 'COMUN'").fetchone() == ("COMUN",)
     qsettings.clear()
+
+
+def _db_with_users(path, *names):
+    import sqlite3
+    from contextlib import closing
+
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)")
+        conn.executemany("INSERT INTO users (username) VALUES (?)", [(n,) for n in names])
+        conn.commit()
+
+
+def test_apply_data_folder_never_overwrites_database_with_users(tmp_path):
+    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings.clear()
+    origin, target = tmp_path / "origin", tmp_path / "target"
+    origin.mkdir()
+    target.mkdir()
+    _db_with_users(origin / "profin.db", "ana")
+    _db_with_users(target / "profin.db", "pedro", "maria")
+
+    qsettings.setValue("settings/data_folder", str(origin))
+    SettingsManager(qsettings).apply_data_folder(str(target))
+
+    assert get_database_users(target) == ["maria", "pedro"]
+    assert qsettings.value("settings/data_folder", type=str) == str(target.resolve())
+    qsettings.clear()
+
+
+def test_apply_data_folder_keeps_replaced_userless_database_aside(tmp_path):
+    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings.clear()
+    origin, target = tmp_path / "origin", tmp_path / "target"
+    origin.mkdir()
+    target.mkdir()
+    _db_with_users(origin / "profin.db", "ana")
+    _db_with_users(target / "profin.db")  # schema but no users
+
+    qsettings.setValue("settings/data_folder", str(origin))
+    SettingsManager(qsettings).apply_data_folder(str(target))
+
+    assert get_database_users(target) == ["ana"]
+    assert len(list(target.glob("profin.replaced.*.db"))) == 1
+    qsettings.clear()
+
+
+def test_apply_data_folder_copies_from_explicit_current_dir(tmp_path):
+    """save() may already point the setting at the target; the source must still be the old folder."""
+    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings.clear()
+    origin, target = tmp_path / "origin", tmp_path / "target"
+    origin.mkdir()
+    _db_with_users(origin / "profin.db", "ana")
+    qsettings.setValue("settings/data_folder", str(target))
+
+    SettingsManager(qsettings).apply_data_folder(str(target), current_dir=origin)
+
+    assert get_database_users(target) == ["ana"]
+    qsettings.clear()

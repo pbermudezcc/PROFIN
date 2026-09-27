@@ -448,13 +448,16 @@ def assign_transaction_category(
     ------
     ValueError : If transaction not found.
     """
-    from app.db.models import Transaction  # local import to avoid circular
+    from app.db.models import CATEGORY_SOURCE_MANUAL, Transaction  # local import to avoid circular
 
     txn = session.get(Transaction, transaction_id)
     if txn is None:
         raise ValueError(f"Transacción con id={transaction_id} no encontrada.")
 
     txn.category_id = category_id
+    # A manual choice is protected from rule re-runs; clearing the category
+    # hands the transaction back to the rules engine.
+    txn.category_source = CATEGORY_SOURCE_MANUAL if category_id is not None else None
     session.commit()
     logger.info(
         "Transacción id=%d → category_id=%s (asignación manual).",

@@ -354,3 +354,122 @@ class TestRulesEngine:
         for txn in txns:
             db_session.refresh(txn)
             assert txn.category_id == base_data["cat_super"].id
+    def test_r13_overwrite_never_touches_manual_category(self, db_session, base_data):
+        """R-13: the explicit "re-apply all rules" action (overwrite=True)
+        must still keep a category a family member chose by hand."""
+        from app.categorization.category_manager import assign_transaction_category
+        from app.db.models import CATEGORY_SOURCE_MANUAL
+
+        create_rule(
+            db_session,
+            category_id   = base_data["cat_super"].id,
+            match_pattern = "MERCADONA",
+            match_type    = MatchType.contains,
+        )
+        txn = _make_txn(db_session, base_data["user_id"],
+                        base_data["account_id"], issuer="MERCADONA")
+        assign_transaction_category(db_session, txn.id, base_data["cat_nomina"].id)
+
+        apply_rules_and_commit(
+            db_session, [txn.id], base_data["user_id"], overwrite=True
+        )
+
+        db_session.refresh(txn)
+        assert txn.category_id == base_data["cat_nomina"].id
+        assert txn.category_source == CATEGORY_SOURCE_MANUAL
+
+    def test_r14_overwrite_updates_rule_assigned_category(self, db_session, base_data):
+        """R-14: overwrite=True still re-categorizes rows a rule set earlier,
+        and marks every rule assignment with category_source='rule'."""
+        from app.db.models import CATEGORY_SOURCE_RULE
+
+        rule = create_rule(
+            db_session,
+            category_id   = base_data["cat_nomina"].id,
+            match_pattern = "MERCADONA",
+            match_type    = MatchType.contains,
+        )
+        txn = _make_txn(db_session, base_data["user_id"],
+                        base_data["account_id"], issuer="MERCADONA")
+        apply_rules_and_commit(db_session, [txn.id], base_data["user_id"])
+        db_session.refresh(txn)
+        assert txn.category_source == CATEGORY_SOURCE_RULE
+
+        rule.category_id = base_data["cat_super"].id
+        db_session.commit()
+        apply_rules_and_commit(
+            db_session, [txn.id], base_data["user_id"], overwrite=True
+        )
+
+        db_session.refresh(txn)
+        assert txn.category_id == base_data["cat_super"].id
+        assert txn.category_source == CATEGORY_SOURCE_RULE
+
+    def test_r15_clearing_category_hands_back_to_rules(self, db_session, base_data):
+        """R-15: clearing a category manually removes the manual protection."""
+        from app.categorization.category_manager import assign_transaction_category
+
+        txn = _make_txn(db_session, base_data["user_id"],
+                        base_data["account_id"], issuer="MERCADONA")
+        assign_transaction_category(db_session, txn.id, base_data["cat_nomina"].id)
+        assign_transaction_category(db_session, txn.id, None)
+
+        db_session.refresh(txn)
+        assert txn.category_id is None
+        assert txn.category_source is None
+
+
+def _second_user(db_session, with_super: bool):
+    """Another family member with an optional own 'GASTO > Supermercados'."""
+    user = create_user(db_session, "maria_test", "password123")
+    account = Account(user_id=user.id, account_name="Cuenta María")
+    db_session.add(account)
+    db_session.flush()
+    own_super = None
+    if with_super:
+        gasto = Category(user_id=user.id, name="GASTO", level=CategoryLevel.type,
+                         transaction_type=TransactionType.expense)
+        db_session.add(gasto)
+        db_session.flush()
+        own_super = Category(user_id=user.id, parent_id=gasto.id,
+                             name="Supermercados", level=CategoryLevel.category)
+        db_session.add(own_super)
+    db_session.commit()
+    return user.id, account.id, own_super
+
+
+def test_r16_global_rule_maps_to_other_users_equivalent_category(db_session, base_data):
+    """R-16: a global rule assigns the other user's own same-named category."""
+    create_rule(db_session, category_id=base_data["cat_super"].id,
+                match_pattern="LIDL", user_id=None)
+    user_id, account_id, own_super = _second_user(db_session, with_super=True)
+    txn = _make_txn(db_session, user_id, account_id, issuer="LIDL")
+
+    result = apply_rules_and_commit(db_session, [txn.id], user_id)
+
+    assert result.assigned[txn.id] == own_super.id
+    db_session.refresh(txn)
+    assert txn.category_id == own_super.id
+
+
+def test_r17_global_rule_skipped_without_equivalent_category(db_session, base_data):
+    """R-17: never assign another user's category id."""
+    create_rule(db_session, category_id=base_data["cat_super"].id,
+                match_pattern="LIDL", user_id=None)
+    user_id, account_id, _ = _second_user(db_session, with_super=False)
+    txn = _make_txn(db_session, user_id, account_id, issuer="LIDL")
+
+    result = apply_rules(db_session, [txn.id], user_id)
+
+    assert result.assigned == {}
+    assert result.unmatched == [txn.id]
+
+
+def test_r18_other_users_personal_rule_never_applies(db_session, base_data):
+    """R-18: a per-user rule is not loaded for a different user."""
+    create_rule(db_session, category_id=base_data["cat_super"].id,
+                match_pattern="LIDL", user_id=base_data["user_id"])
+    user_id, account_id, _ = _second_user(db_session, with_super=True)
+    txn = _make_txn(db_session, user_id, account_id, issuer="LIDL")
+
+    assert apply_rules(db_session, [txn.id], user_id).assigned == {}

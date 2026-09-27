@@ -28,6 +28,10 @@ Global vs. per-user rules:
   - Per-user rules override global rules at the SAME priority.
   - Load order: global rules first, then user rules (user rules can
     shadow global rules at equal priority).
+  - Categories belong to one user, so a global rule's category_id points
+    into its creator's tree. For any other user the rule is applied to the
+    equivalent category in that user's own tree (same name and same parent
+    type name); if there is none, the global rule is skipped for that user.
 
 Output:
   RulesEngineResult.assigned   : {transaction_id: category_id}
@@ -43,7 +47,14 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.db.models import AutoCategorizationRule, MatchType, Transaction
+from app.db.models import (
+    CATEGORY_SOURCE_MANUAL,
+    CATEGORY_SOURCE_RULE,
+    AutoCategorizationRule,
+    Category,
+    MatchType,
+    Transaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +152,8 @@ def apply_rules(
 
     # -- Load rules (global + user-specific), ordered by priority ASC ------
     rules = _load_rules(session, user_id)
+    category_by_rule_id = _resolve_rule_categories(session, rules, user_id)
+    rules = [rule for rule in rules if rule.id in category_by_rule_id]
     if not rules:
         logger.info("No hay reglas de auto-categorización definidas.")
         result.unmatched = list(transaction_ids)
@@ -161,7 +174,9 @@ def apply_rules(
 
     # -- Apply rules to each transaction ------------------------------------
     for txn in transactions:
-        _process_transaction(txn, rules, result, pattern_lower_by_rule_id)
+        _process_transaction(
+            txn, rules, result, pattern_lower_by_rule_id, category_by_rule_id
+        )
 
     logger.info(
         "Rules engine completado: %s", result.summary
@@ -185,6 +200,8 @@ def apply_rules_and_commit(
                 category_id (used when rules are edited/deleted).
                 If False (default), only categorize transactions with
                 category_id=NULL (used on first import).
+                Categories a user set by hand (category_source='manual')
+                are never overwritten, in either mode.
 
     Conflicted and unmatched transactions are left untouched.
     """
@@ -194,9 +211,11 @@ def apply_rules_and_commit(
     # loaded instead of re-fetching each one individually.
     for txn_id, cat_id in result.assigned.items():
         txn = result.transactions_by_id.get(txn_id)
-        if txn is not None:
-            if overwrite or txn.category_id is None:
-                txn.category_id = cat_id
+        if txn is None or txn.category_source == CATEGORY_SOURCE_MANUAL:
+            continue
+        if overwrite or txn.category_id is None:
+            txn.category_id = cat_id
+            txn.category_source = CATEGORY_SOURCE_RULE
 
     session.commit()
     logger.info(
@@ -368,6 +387,57 @@ def _load_rules(
     return get_all_rules(session, user_id=user_id)
 
 
+def _resolve_rule_categories(
+    session: Session,
+    rules:   List[AutoCategorizationRule],
+    user_id: int,
+) -> Dict[int, int]:
+    """Map each applicable rule id to a category id in user_id's own tree.
+
+    Rules whose category already belongs to the user map to it unchanged.
+    Global rules pointing at another user's category map to the category
+    with the same name under a type node with the same name; rules with no
+    equivalent are left out (never assign another user's category).
+    """
+    category_ids = {rule.category_id for rule in rules}
+    categories = {
+        cat.id: cat
+        for cat in session.query(Category).filter(Category.id.in_(category_ids))
+    } if category_ids else {}
+
+    def key(cat: Category) -> tuple:
+        parent_name = cat.parent.name if cat.parent is not None else None
+        return (parent_name, cat.name, cat.level)
+
+    foreign = [
+        cat for cat in categories.values() if cat.user_id != user_id
+    ]
+    own_by_key: Dict[tuple, int] = {}
+    if foreign:
+        wanted_names = {cat.name for cat in foreign}
+        for cat in (
+            session.query(Category)
+            .filter(Category.user_id == user_id, Category.name.in_(wanted_names))
+        ):
+            own_by_key.setdefault(key(cat), cat.id)
+
+    resolved: Dict[int, int] = {}
+    for rule in rules:
+        cat = categories.get(rule.category_id)
+        if cat is None:
+            continue
+        if cat.user_id == user_id:
+            resolved[rule.id] = cat.id
+        elif rule.user_id is None and key(cat) in own_by_key:
+            resolved[rule.id] = own_by_key[key(cat)]
+        else:
+            logger.debug(
+                "Regla id=%d omitida para user_id=%d: sin categoría equivalente.",
+                rule.id, user_id,
+            )
+    return resolved
+
+
 def _match(
     rule:        AutoCategorizationRule,
     value:       Optional[str],
@@ -435,6 +505,7 @@ def _process_transaction(
     rules:          List[AutoCategorizationRule],
     result:         RulesEngineResult,
     pattern_lower_by_rule_id: Dict[int, str],
+    category_by_rule_id: Dict[int, int],
 ) -> None:
     """
     Apply all rules to a single transaction and update result in-place.
@@ -472,7 +543,7 @@ def _process_transaction(
 
         elif rule.priority == best_priority:
             # Same priority level — potential conflict
-            if rule.category_id != best_rule.category_id:
+            if category_by_rule_id[rule.id] != category_by_rule_id[best_rule.id]:
                 conflict_rules.append((rule, field_hit))
 
         else:
@@ -485,7 +556,7 @@ def _process_transaction(
 
     elif len(conflict_rules) == 1:
         # Single winner — assign
-        result.assigned[txn.id] = best_rule.category_id
+        result.assigned[txn.id] = category_by_rule_id[best_rule.id]
         result.assigned_by_rule[best_rule.id] = (
             result.assigned_by_rule.get(best_rule.id, 0) + 1
         )
@@ -502,8 +573,8 @@ def _process_transaction(
                 transaction_id = txn.id,
                 rule_a_id      = first_rule.id,
                 rule_b_id      = other_rule.id,
-                category_a_id  = first_rule.category_id,
-                category_b_id  = other_rule.category_id,
+                category_a_id  = category_by_rule_id[first_rule.id],
+                category_b_id  = category_by_rule_id[other_rule.id],
                 priority       = best_priority,
                 field_matched  = other_field,
                 pattern_a      = first_rule.match_pattern,

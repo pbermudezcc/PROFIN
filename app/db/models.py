@@ -24,6 +24,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -73,6 +74,12 @@ class ImportStatus(str, enum.Enum):
     completed = "completed"
     failed = "failed"
     partial = "partial"
+
+
+# Transaction.category_source values. Stored as plain strings (not an Enum
+# column) so the column can be added to existing SQLite files with ALTER TABLE.
+CATEGORY_SOURCE_MANUAL = "manual"   # set by a family member — rules never touch it
+CATEGORY_SOURCE_RULE   = "rule"     # set by the auto-categorization rules engine
 
 
 # ---------------------------------------------------------------------------
@@ -240,9 +247,18 @@ class Transaction(Base):
     Derived fields:
       type              ← Derived from amount sign + rule overrides
       category_id       ← Auto-assigned by rules or manual
+      category_source   ← 'manual' | 'rule' | NULL (who set category_id)
     """
 
     __tablename__ = "transactions"
+    # Every view filters by user and sorts/filters by date or category, and
+    # duplicate detection looks up (user, account, date). Existing files get
+    # these through schema migration v2 (same names, IF NOT EXISTS).
+    __table_args__ = (
+        Index("ix_transactions_user_date", "user_id", "transaction_date"),
+        Index("ix_transactions_user_category", "user_id", "category_id"),
+        Index("ix_transactions_user_account_date", "user_id", "account_id", "transaction_date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
@@ -256,6 +272,10 @@ class Transaction(Base):
     )
     category_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
+    # Who set category_id: CATEGORY_SOURCE_MANUAL | CATEGORY_SOURCE_RULE | None
+    category_source: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True
     )
 
     # --- Core date & amount fields ---
