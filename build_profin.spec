@@ -36,6 +36,7 @@ analysis = Analysis(
         "PySide6.QtGui",
         "sqlalchemy",
         "qtawesome",
+        "yfinance",          # imported lazily by app.investments.market_data
         "app",
         "app.auth",
         "app.categorization",

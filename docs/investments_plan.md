@@ -30,7 +30,7 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 |---|------|--------|
 | F0 | Prueba técnica: yfinance desde la red de casa, tickers reales (USD y EUR), búsqueda por ISIN de los fondos, empaquetado con PyInstaller | **hecho** 2026-09-27 |
 | F1 | Esquema (`securities`, `investment_transactions`, `price_history`, `fx_rates`) + migración v4 + cálculos (posiciones, FIFO, P/L, XIRR) + tests | **hecho** 2026-09-27 |
-| F2 | Proveedor de cotizaciones + caché + actualización en segundo plano + tests con proveedor simulado | pendiente |
+| F2 | Proveedor de cotizaciones + caché + actualización en segundo plano + tests con proveedor simulado | **hecho** 2026-09-27 |
 | F3 | Pestaña Operaciones: diálogo de alta/edición y listado | pendiente |
 | F4 | Pestaña Posiciones + tarjetas + refresco (primera versión usable) | pendiente |
 | F5 | Gráficas de evolución, índice de referencia y distribución | pendiente |
@@ -65,6 +65,20 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 - Cálculos en `app/investments/portfolio.py` (posiciones, lotes FIFO, `ledger_error`, `value_position`,
   `realized_by_year`) y `app/investments/returns.py` (`investor_cash_flows`, `xirr`). Tests en
   `tests/test_investments_portfolio.py` y `test_migration_4_…`.
+
+## Resultados F2 (2026-09-27)
+- `app/investments/market_data.py`: protocolo `MarketDataProvider` + `YahooProvider` (`search`, `security_info`,
+  `daily_closes` por lotes). `yfinance` se importa solo cuando hace falta. Los fallos de red se convierten en
+  `MarketDataError` con un mensaje en castellano. Las divisas en céntimos (GBp) se convierten con el tipo de GBP ×100.
+- `app/investments/prices.py`: `refresh_market_data` (primera descarga desde la primera operación −7 días;
+  después, solo los últimos 5 días; nunca sobrescribe precios manuales), `latest_prices` (con el cierre anterior para
+  la variación del día), `fx_rate`, `set_manual_price`, `find_or_create_security`, `is_stale` (15 min).
+- `app/investments/refresh_worker.py`: `PriceRefresher` (un hilo con su propia sesión, nunca dos actualizaciones a la vez,
+  guarda la hora de `last_success`). La vista de F4 llamará a `refresh_if_stale()` al mostrarse y a `refresh()` desde el botón.
+- Prueba real (base de datos temporal, 5 valores desde 01/2025): catálogo 1,5 s; primera actualización 0,4 s
+  (1.986 precios + 453 tipos de cambio); siguientes 0,2 s. GEV 957,63 USD → 839,94 EUR.
+- Pendiente para F6: el "Close" de Yahoo se ajusta por splits, así que cuando haya un split habrá que volver
+  a descargar el histórico completo de ese valor.
 
 ## Riesgos
 - `yfinance` no es oficial y puede dejar de funcionar si Yahoo cambia su web → proveedor aislado, caché local y alternativas (Stooq, Twelve Data).
