@@ -33,6 +33,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -482,6 +483,10 @@ class InvestmentTransaction(Base):
     __table_args__ = (
         Index("ix_investment_transactions_user_date", "user_id", "trade_date"),
         Index("ix_investment_transactions_user_security", "user_id", "security_id"),
+        # An imported operation is recognised by its broker reference, so the
+        # same statement can be imported twice without duplicates (v5).
+        Index("ux_investment_transactions_broker_ref", "user_id", "broker", "broker_ref",
+              unique=True, sqlite_where=text("broker_ref IS NOT NULL")),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -504,6 +509,9 @@ class InvestmentTransaction(Base):
     cash_paid_eur: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     split_ratio: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Broker's own id (DEGIRO order id, or a stable key for a dividend) when
+    # the operation came from an imported statement; None when typed by hand.
+    broker_ref: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

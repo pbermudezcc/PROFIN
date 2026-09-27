@@ -60,12 +60,14 @@ class TransactionDraft:
     cash_paid_eur:    Optional[float] = None
     split_ratio:      Optional[float] = None
     notes:            Optional[str] = None
+    broker_ref:       Optional[str] = None     # broker's id when imported
     id:               Optional[int] = None     # set when editing
 
 
 _FIELDS = (
     "security_id", "kind", "trade_date", "broker", "quantity", "price", "currency",
     "amount_eur", "fees_eur", "tax_withheld_eur", "cash_paid_eur", "split_ratio", "notes",
+    "broker_ref",
 )
 
 
@@ -168,6 +170,70 @@ def save_transaction(
         for security_id in {draft.security_id, old_security_id} - {None}:
             reset_price_history(session, security_id)
     return txn
+
+
+@dataclass
+class ImportResult:
+    added:    List[InvestmentTransaction]
+    skipped:  int                               # already imported (same broker_ref)
+
+
+def existing_refs(session: Session, user_id: int, broker: str) -> set:
+    return {ref for (ref,) in session.query(InvestmentTransaction.broker_ref)
+            .filter(InvestmentTransaction.user_id == user_id,
+                    InvestmentTransaction.broker == broker,
+                    InvestmentTransaction.broker_ref.isnot(None))}
+
+
+def import_drafts(
+    session: Session, user_id: int, drafts: List[TransactionDraft]
+) -> ImportResult:
+    """Add a batch of operations from a broker statement, all or nothing.
+
+    Drafts whose (broker, broker_ref) the user already has are skipped. The
+    remaining ones are validated one by one and then replayed together with
+    the user's existing operations of each security; any problem raises
+    LedgerError and nothing is written.
+    """
+    drafts = [_normalized(d) for d in drafts]
+    known = {}
+    fresh: List[TransactionDraft] = []
+    skipped = 0
+    for draft in drafts:
+        if draft.broker_ref:
+            refs = known.setdefault(draft.broker, existing_refs(session, user_id, draft.broker))
+            if draft.broker_ref in refs:
+                skipped += 1
+                continue
+            refs.add(draft.broker_ref)
+        if not draft.broker:
+            raise LedgerError("Falta el bróker de una operación importada.")
+        errors = validate_fields(draft)
+        if errors:
+            raise LedgerError(f"Operación del {draft.trade_date:%d/%m/%Y}: {errors[0]}", draft)
+        fresh.append(draft)
+
+    for security_id in {d.security_id for d in fresh}:
+        if session.get(Security, security_id) is None:
+            raise LedgerError("Una operación importada apunta a un valor inexistente.")
+        _check(_user_ledger(session, user_id, security_id)
+               + [d for d in fresh if d.security_id == security_id])
+
+    added = []
+    for draft in fresh:
+        txn = InvestmentTransaction(user_id=user_id)
+        for name in _FIELDS:
+            setattr(txn, name, getattr(draft, name))
+        session.add(txn)
+        added.append(txn)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    for security_id in {d.security_id for d in fresh if d.kind == InvestmentKind.split}:
+        reset_price_history(session, security_id)
+    return ImportResult(added=added, skipped=skipped)
 
 
 def delete_transaction(session: Session, user_id: int, transaction_id: int) -> None:

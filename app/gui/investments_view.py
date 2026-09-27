@@ -51,6 +51,7 @@ from app.gui._format import fmt_date, fmt_eur, fmt_money, fmt_quantity
 from app.gui._style_utils import apply_card_shadow
 from app.gui._background import BackgroundRunner
 from app.gui.investment_dialogs import PendingEventsDialog, TransactionDialog
+from app.gui.investment_import import ImportStatementDialog
 from app.gui.investment_tax import TaxPanel
 from app.investments.events import fetch_corporate_actions, held_symbols, pending_events
 from app.gui.investment_charts import AllocationPanel, EvolutionPanel
@@ -223,6 +224,13 @@ class InvestmentsView(QWidget):
 
         bar.addStretch()
 
+        self._btn_import = QPushButton(" Importar extracto…")
+        self._btn_import.setObjectName("btnSecondary")
+        self._btn_import.setFixedHeight(34)
+        self._btn_import.setToolTip("Importar el «Estado de cuenta» de DEGIRO (.xlsx o .csv)")
+        self._btn_import.clicked.connect(self.open_import_dialog)
+        bar.addWidget(self._btn_import)
+
         self._btn_edit = QPushButton("Editar")
         self._btn_edit.setObjectName("btnSecondary")
         self._btn_edit.setFixedHeight(34)
@@ -301,6 +309,13 @@ class InvestmentsView(QWidget):
         button.clicked.connect(lambda: self.open_transaction_dialog())
         self._btn_empty_add = button
         row.addWidget(button)
+        importer = QPushButton(" Importar extracto de DEGIRO…")
+        importer.setObjectName("btnSecondary")
+        importer.setFixedHeight(36)
+        importer.setCursor(Qt.CursorShape.PointingHandCursor)
+        importer.clicked.connect(self.open_import_dialog)
+        self._btn_empty_import = importer
+        row.addWidget(importer)
         row.addStretch()
         layout.addLayout(row)
         layout.addStretch()
@@ -465,6 +480,24 @@ class InvestmentsView(QWidget):
         self.reload()
         # New security or a date before the cached history → fetch prices now.
         self._refresher.refresh()
+        return True
+
+    def open_import_dialog(self) -> bool:
+        dialog = ImportStatementDialog(self._session, self._user.id, self._user.username,
+                                       self._provider, self._t, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.summary is None:
+            return False
+        summary = dialog.summary
+        text = (f"Importadas {summary.trades} compras/ventas y {summary.dividends} dividendos.")
+        if summary.result.skipped:
+            text += f"\n{summary.result.skipped} ya estaban importadas y se han omitido."
+        if summary.estimated:
+            text += (f"\n{summary.estimated} dividendos se han convertido a EUR con el tipo de "
+                     "cambio del día (el extracto no tenía su cambio de divisa).")
+        QMessageBox.information(self, "Extracto importado", text)
+        self.reload()
+        self._refresher.refresh()               # history of the new securities
+        self.check_corporate_actions(force=True)
         return True
 
     def _edit_selected(self) -> None:
@@ -668,6 +701,8 @@ class InvestmentsView(QWidget):
         self._btn_refresh.setIcon(qta.icon("mdi.refresh", color=t["text_secondary"]))
         self._btn_add.setIcon(qta.icon("mdi.plus", color="#FFFFFF"))
         self._btn_empty_add.setIcon(qta.icon("mdi.plus", color="#FFFFFF"))
+        self._btn_import.setIcon(qta.icon("mdi.file-import-outline", color=t["text_secondary"]))
+        self._btn_empty_import.setIcon(qta.icon("mdi.file-import-outline", color=t["text_secondary"]))
         self._btn_edit.setIcon(qta.icon("mdi.pencil-outline", color=t["text_secondary"]))
         self._btn_delete.setIcon(qta.icon("mdi.delete-outline", color=t["text_secondary"]))
         self._lbl_empty_icon.setPixmap(

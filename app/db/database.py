@@ -572,11 +572,35 @@ def _migration_4_investments(db_path: Path) -> None:
     logger.info("Migración 4: tablas de inversiones creadas")
 
 
+def _migration_5_broker_ref(db_path: Path) -> None:
+    """Add investment_transactions.broker_ref and its partial unique index.
+
+    Imported broker statements store the broker's id of each operation so a
+    re-import skips what is already there. Existing (hand-typed) rows keep
+    NULL, which the partial index ignores. Idempotent.
+    """
+    with closing(sqlite3.connect(db_path)) as connection:
+        if not _column_exists(connection, "investment_transactions", "broker_ref"):
+            connection.execute(
+                "ALTER TABLE investment_transactions ADD COLUMN broker_ref VARCHAR(64)"
+            )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_investment_transactions_broker_ref
+                ON investment_transactions (user_id, broker, broker_ref)
+                WHERE broker_ref IS NOT NULL
+            """
+        )
+        connection.commit()
+    logger.info("Migración 5: referencia del bróker en las operaciones de inversión")
+
+
 SCHEMA_MIGRATIONS = (
     (1, _migration_1_category_source),
     (2, _migration_2_indexes_and_cents),
     (3, _migration_3_fix_cross_user_categories),
     (4, _migration_4_investments),
+    (5, _migration_5_broker_ref),
 )
 SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1][0]
 

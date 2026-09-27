@@ -474,3 +474,56 @@ def test_tax_tab_shows_report_and_exports(env, monkeypatch, tmp_path):
         assert target.exists() and shown
     finally:
         view.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# F7: DEGIRO statement import dialog
+# ---------------------------------------------------------------------------
+
+def test_import_dialog_previews_and_imports(env, tmp_path):
+    from app.gui.investment_import import ImportStatementDialog
+    from tests.test_investments_import import ACME, ETF, SIE, USCO, FakeProvider as ImportProvider
+    from tests.test_investments_import import write_xlsx
+
+    provider = ImportProvider()
+    path = write_xlsx(tmp_path / "Account.xlsx")
+    dialog = ImportStatementDialog(env.session, env.user.id, "pedro", provider, env.theme)
+    dialog.load_file(path)
+    assert dialog._ops.rowCount() == 8                     # 5 trades + 3 dividends
+    assert wait_until(lambda: dialog._combos and dialog._combos[ACME].currentText() == "ACM.DE")
+    assert dialog._combos[ETF].currentText() == "WLD.AS"
+    assert not dialog._btn_import.isEnabled()              # two securities without a symbol
+    assert "Falta el símbolo de 2" in dialog._lbl_status.text()
+    dialog._combos[SIE].setCurrentText("six.de")
+    dialog._combos[USCO].setCurrentText("USC")
+    rows = [dialog._securities.item(r, 0).text() for r in range(dialog._securities.rowCount())]
+    assert dialog._securities.item(rows.index(USCO), 3).text() == "Elegido a mano"   # USD, like the trade
+    dialog._combos[USCO].setCurrentText("USC.DE")
+    assert "otra divisa" in dialog._securities.item(rows.index(USCO), 3).text()
+    dialog._combos[USCO].setCurrentText("USC")
+    assert dialog._btn_import.isEnabled()
+
+    dialog._import()
+    assert wait_until(lambda: dialog.summary is not None)
+    assert (dialog.summary.trades, dialog.summary.dividends) == (5, 3)
+    assert env.session.query(InvestmentTransaction).filter_by(broker="DEGIRO").count() == 8
+
+    # Loading the same file again: everything is recognised.
+    again = ImportStatementDialog(env.session, env.user.id, "pedro", provider, env.theme)
+    again.load_file(path)
+    assert wait_until(lambda: not again._runner.busy)
+    env.app.processEvents()
+    assert "ya estaban importadas" in again._lbl_status.text()
+    assert not again._btn_import.isEnabled()
+
+
+def test_import_dialog_rejects_other_files(env, tmp_path):
+    from openpyxl import Workbook
+    from app.gui.investment_import import ImportStatementDialog
+
+    wb = Workbook()
+    wb.active.append(["Concepto", "Importe"])
+    wb.save(tmp_path / "otro.xlsx")
+    dialog = ImportStatementDialog(env.session, env.user.id, "pedro", env.provider, env.theme)
+    dialog.load_file(tmp_path / "otro.xlsx")
+    assert "Estado de cuenta" in dialog._lbl_status.text() and dialog.statement is None

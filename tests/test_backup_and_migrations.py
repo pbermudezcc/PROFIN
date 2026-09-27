@@ -271,6 +271,25 @@ def test_migration_4_adds_investment_tables_without_touching_data(tmp_path):
     assert after == before
 
 
+def test_migration_5_adds_broker_ref_to_a_v4_database(tmp_path):
+    db = tmp_path / "profin.db"
+    _make_legacy_db(db)
+    migrate_schema(db)
+    with closing(sqlite3.connect(db)) as conn:       # a v4 file from the F1-F6 builds
+        conn.execute("DROP INDEX ux_investment_transactions_broker_ref")
+        conn.execute("ALTER TABLE investment_transactions DROP COLUMN broker_ref")
+        conn.execute("PRAGMA user_version = 4")
+        conn.commit()
+
+    assert migrate_schema(db) == 4
+    assert _user_version(db) == SCHEMA_VERSION
+    with closing(sqlite3.connect(db)) as conn:
+        columns = {r[1] for r in conn.execute('PRAGMA table_info("investment_transactions")')}
+        indexes = {r[1]: r[2] for r in conn.execute('PRAGMA index_list("investment_transactions")')}
+    assert "broker_ref" in columns
+    assert indexes["ux_investment_transactions_broker_ref"] == 1      # unique
+
+
 def test_migration_is_noop_when_up_to_date(tmp_path):
     db = tmp_path / "profin.db"
     _make_legacy_db(db)

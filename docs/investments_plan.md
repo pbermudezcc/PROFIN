@@ -35,7 +35,7 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 | F4 | Pestaña Posiciones + tarjetas + refresco (primera versión usable) | **hecho** 2026-09-27 |
 | F5 | Gráficas de evolución, índice de referencia y distribución | **hecho** 2026-09-27 |
 | F6 | Dividendos, splits e informe fiscal anual FIFO | **hecho** 2026-09-27 |
-| F7 | Importación CSV (DEGIRO, Trade Republic, MyInvestor, Scalable) — opcional | pendiente |
+| F7 | Importación de extractos: **DEGIRO hecho** 2026-09-27 (Trade Republic / MyInvestor / Scalable pendientes) | parcial |
 | F8 | Retoques finales y versión 0.5.0 | pendiente |
 
 ## Resultados F0 (2026-09-27, yfinance 1.7.0)
@@ -133,6 +133,23 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
   que corresponde), dividendos (íntegro = neto + retención) y `export_xlsx` (hojas Resumen, Ganancias y pérdidas,
   Dividendos). Pestaña Fiscalidad en `app/gui/investment_tax.py`.
 - Aviso en la vista («Yahoo Finance indica N dividendos… Revisar») → `PendingEventsDialog` → formulario prerrellenado.
+
+## Resultados F7 (2026-09-27) — importación de DEGIRO
+- Formato real analizado: «Estado de cuenta» de DEGIRO (.xlsx/.csv, 12 columnas, más reciente primero). Del extracto
+  de Pedro (07/2025–09/2026, 107 filas) salen 15 compras/ventas y 6 dividendos. Una orden puede tener varias
+  ejecuciones con el mismo ID Orden (Vanguard 17 + 1). Los costes (comisión y Spanish Transaction Tax) van unidos por
+  ID Orden. Los dividendos en USD se cambian a EUR el día siguiente con un par Retirada/Ingreso Cambio de Divisa de la
+  misma hora; se toma el EUR realmente abonado.
+- Decisiones: botón con vista previa, que importa siempre en el usuario de la sesión; se evitan duplicados con el
+  ID de orden (migración v5: `investment_transactions.broker_ref` + índice único parcial); se ignoran las comisiones
+  de conectividad.
+- `app/investments/importers/degiro.py` (lectura, sin red), `symbols.py` (propone la cotización en EUR que cuadra con
+  el precio pagado; en empate, la bolsa principal del mismo ticker y nunca otra clase del fondo, como VUAA frente a VUSA),
+  `service.py` (crea los valores y llama a `ledger.import_drafts`, que importa todo o nada),
+  `app/gui/investment_import.py` (vista previa editable).
+- Ensayo sobre una copia de la base real: v4→v5, 21 operaciones importadas en PEDRO, reimportación = 0 nuevas,
+  transacciones bancarias intactas. Resultado de 2026: +487,21 €.
+  Símbolos: AMZ.DE, IDR.MC, MSF.DE, NVD.DE, ENR.DE, TKE.DE, VUSA.AS, 0V6.F, QDVE.DE.
 
 ## Riesgos
 - `yfinance` no es oficial y puede dejar de funcionar si Yahoo cambia su web → proveedor aislado, caché local y alternativas (Stooq, Twelve Data).
