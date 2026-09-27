@@ -118,5 +118,6 @@ class PriceRefresher(QObject):
     def shutdown(self) -> None:
         """Wait for a running refresh (call before the app closes)."""
         if self._thread is not None:
-            self._thread.quit()
-            self._thread.wait(5000)
+            self._thread.quit()     # the loop quits once the worker's run() returns
+            if not self._thread.wait(15000):
+                logger.warning("La actualización de cotizaciones no terminó a tiempo")

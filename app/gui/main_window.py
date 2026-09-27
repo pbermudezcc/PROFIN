@@ -425,6 +425,7 @@ class MainWindow(QWidget):
         from app.gui.rules_view        import RulesView
         from app.gui.expenses_view     import ExpensesView
         from app.gui.incomes_window    import IncomesWindow
+        from app.gui.investments_view  import InvestmentsView
         from app.gui.settings_view      import SettingsView
 
         self._view_factories = {
@@ -437,8 +438,8 @@ class MainWindow(QWidget):
             "income":       lambda: IncomesWindow(
                                 self._user, self._session, self._theme
                             ),
-            "investments":  lambda: _PlaceholderView(
-                                "Inversiones", "mdi.chart-line", self._t
+            "investments":  lambda: InvestmentsView(
+                                self._user, self._session, self._theme
                             ),
             "transactions": lambda: TransactionsView(
                                 self._user, self._session, self._theme
@@ -498,6 +499,16 @@ class MainWindow(QWidget):
         self._stack.setCurrentWidget(self._ensure_view(view_key))
         self._current_view = view_key
         self._settings.setValue(self.KEY_NAV, view_key)
+
+    def closeEvent(self, event) -> None:
+        # Views with background threads (Inversiones price refresh, Yahoo
+        # lookups) must let them finish: destroying a running QThread aborts.
+        from app.gui._background import wait_for_background_threads
+        for view in self._views.values():
+            if hasattr(view, "shutdown"):
+                view.shutdown()
+        wait_for_background_threads()
+        super().closeEvent(event)
 
     def _toggle_maximize(self) -> None:
         if self.isMaximized():

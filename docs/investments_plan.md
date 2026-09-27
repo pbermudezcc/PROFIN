@@ -31,7 +31,7 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 | F0 | Prueba técnica: yfinance desde la red de casa, tickers reales (USD y EUR), búsqueda por ISIN de los fondos, empaquetado con PyInstaller | **hecho** 2026-09-27 |
 | F1 | Esquema (`securities`, `investment_transactions`, `price_history`, `fx_rates`) + migración v4 + cálculos (posiciones, FIFO, P/L, XIRR) + tests | **hecho** 2026-09-27 |
 | F2 | Proveedor de cotizaciones + caché + actualización en segundo plano + tests con proveedor simulado | **hecho** 2026-09-27 |
-| F3 | Pestaña Operaciones: diálogo de alta/edición y listado | pendiente |
+| F3 | Pestaña Operaciones: diálogo de alta/edición y listado | **hecho** 2026-09-27 |
 | F4 | Pestaña Posiciones + tarjetas + refresco (primera versión usable) | pendiente |
 | F5 | Gráficas de evolución, índice de referencia y distribución | pendiente |
 | F6 | Dividendos, splits e informe fiscal anual FIFO | pendiente |
@@ -79,6 +79,20 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
   (1.986 precios + 453 tipos de cambio); siguientes 0,2 s. GEV 957,63 USD → 839,94 EUR.
 - Pendiente para F6: el "Close" de Yahoo se ajusta por splits, así que cuando haya un split habrá que volver
   a descargar el histórico completo de ese valor.
+
+## Resultados F3 (2026-09-27)
+- `app/investments/ledger.py`: `save_transaction` y `delete_transaction` repasan todas las operaciones del valor
+  antes de escribir (se rechaza editar o borrar algo que dejaría imposible una venta posterior) y filtran siempre
+  por usuario. También `list_transactions`, `known_brokers`, `picker_securities` y `estimate_amount_eur`.
+- `app/gui/investments_view.py`: barra superior (estado de las cotizaciones, botón de refresco, "+ Operación") y
+  pestañas Posiciones (provisional hasta F4) y Operaciones (filtros, tabla ordenable, editar con doble clic
+  o menú contextual, borrar con confirmación y tecla Supr, pantalla vacía con botón para la primera operación).
+- `app/gui/investment_dialogs.py`: `TransactionDialog` (importe en EUR estimado hasta que el usuario lo edita,
+  "Usar" el cierre del día, "Tienes N… Vender todas", errores dentro del propio diálogo) y `SecuritySearchDialog`
+  (búsqueda en Yahoo en segundo plano, con la bolsa visible e ISIN opcional).
+- `app/gui/_background.py`: llamadas a internet en hilos propios que se retienen hasta terminar; la ventana
+  principal espera a que acaben al cerrarse (`closeEvent`). Los hilos de refresco abren su sesión sobre la misma
+  base de datos que la vista.
 
 ## Riesgos
 - `yfinance` no es oficial y puede dejar de funcionar si Yahoo cambia su web → proveedor aislado, caché local y alternativas (Stooq, Twelve Data).

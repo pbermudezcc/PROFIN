@@ -65,7 +65,7 @@ def test_main_window_builds_views_lazily_and_themes_them(qt_app, session, monkey
         window._navigate("dashboard")
         assert set(window._views) == {"dashboard"}
 
-        for key in ("expenses", "income", "transactions", "rules", "categories"):
+        for key in ("expenses", "income", "investments", "transactions", "rules", "categories"):
             window._navigate(key)
             assert window._stack.currentWidget() is window._views[key]
 

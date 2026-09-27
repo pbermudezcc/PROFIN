@@ -37,6 +37,7 @@ from app.db.models import (
 from app.investments.market_data import (
     MarketDataError,
     MarketDataProvider,
+    SecurityInfo,
     fx_pair,
     fx_symbol,
 )
@@ -240,6 +241,11 @@ def latest_prices(
     return result
 
 
+def close_on(session: Session, security_id: int, day: date) -> Optional[LatestPrice]:
+    """The cached close on `day`, or the last one before it (weekends, holidays)."""
+    return latest_prices(session, [security_id], as_of=day).get(security_id)
+
+
 def fx_rate(session: Session, currency: str, on: Optional[date] = None) -> Optional[float]:
     """Units of `currency` per EUR on (or before) a day; 1.0 for EUR.
 
@@ -293,18 +299,32 @@ def find_or_create_security(
         if isin and not security.isin:
             security.isin = isin.strip().upper()
         return security
-    info = provider.security_info(symbol)
-    security = Security(
-        symbol=info.symbol.upper(),
-        name=info.name,
-        asset_type=info.asset_type,
-        currency=info.currency,
-        exchange=info.exchange,
-        sector=info.sector,
-        country=info.country,
-        isin=isin.strip().upper() if isin else None,
-        price_source=PRICE_SOURCE_YAHOO,
-    )
-    session.add(security)
+    return security_from_info(session, provider.security_info(symbol), isin)
+
+
+def security_from_info(
+    session: Session, info: SecurityInfo, isin: Optional[str] = None
+) -> Security:
+    """Catalogue row for provider data already fetched (e.g. in a worker thread).
+
+    Returns the existing row when the symbol is already catalogued. Flushes,
+    does not commit.
+    """
+    symbol = info.symbol.strip().upper()
+    security = session.query(Security).filter(Security.symbol == symbol).one_or_none()
+    if security is None:
+        security = Security(
+            symbol=symbol,
+            name=info.name,
+            asset_type=info.asset_type,
+            currency=info.currency,
+            exchange=info.exchange,
+            sector=info.sector,
+            country=info.country,
+            price_source=PRICE_SOURCE_YAHOO,
+        )
+        session.add(security)
+    if isin and not security.isin:
+        security.isin = isin.strip().upper()
     session.flush()
     return security
