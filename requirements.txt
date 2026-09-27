@@ -11,6 +11,9 @@ pandas>=2.0.0
 openpyxl>=3.1.0
 xlrd>=2.0.1
 
+# Inversiones: cotizaciones Yahoo Finance (probado con 1.7.0 + PyInstaller 6.22)
+yfinance>=1.7.0
+
 # Fase 2 (próximamente):
 # pandas>=2.0.0
 # openpyxl>=3.1.0

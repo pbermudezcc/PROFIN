@@ -42,6 +42,7 @@ analysis = Analysis(
         "app.db",
         "app.gui",
         "app.ingestion",
+        "app.investments",
         "app.settings",
     ],
     hookspath=[],
