@@ -1,161 +1,190 @@
 ---
 name: release
-description: Cut a professional GitHub release for FAMILYFIN/PROFIN — determines semantic version bump, asks whether this is a stable main release or a branch/pre-release, generates release notes from commit history, updates CHANGELOG.md and app/config.py via the existing ExportVersionHandler, tags, and publishes with `gh release create`. Use when the user asks to "release", "publish a version", "cut a release", "create a GitHub release", or "tag a new version".
+description: Cut a complete, verified FAMILYFIN/PROFIN release — runs the full test suite as a gate, commits pending work, decides the semantic version, drafts release notes from every commit/changed area/schema migration since the last tag, writes them into CHANGELOG.md and app/config.py via ExportVersionHandler, builds and zips the Windows app, tags, pushes, publishes the GitHub Release with the same notes and the zip attached, and verifies everything afterwards. Use when the user asks to "release", "publish a version", "cut a release", "create a GitHub release", "hacer un release", "publicar versión" or "tag a new version".
 ---
 
 # Release skill — FAMILYFIN / PROFIN
 
-Produces a standard, auditable software release: semantic version bump →
-changelog → annotated git tag → pushed branch/tag → published GitHub
-Release. Follows the same conventions used by any professional GitHub-based
-project (Semantic Versioning, Keep a Changelog style notes, annotated tags,
-`gh release create`), adapted to this repo's existing tooling instead of
-inventing a parallel system.
+One release = one set of notes in three places that must agree:
+`CHANGELOG.md` entry, annotated git tag message, GitHub Release body —
+plus the Windows build attached as a zip. Every mechanical check lives in
+`tools/release_tools.py` (tested in `tests/test_release_tooling.py`); this
+skill decides, writes the prose, asks the user, and runs the commands.
 
-This repo already owns two pieces of the release surface — reuse them, don't
-duplicate them:
-- `app/config.py` — `APP_NAME` / `APP_VERSION` (and `APP_RELEASE_DATE` if
-  present) are the source of truth for the app's own version string.
-- `tools/ExportVersionHandler.py` — `export_version()` already knows how to
-  write `APP_VERSION` back to `app/config.py`, prepend a dated entry to
-  `CHANGELOG.md`, and produce the `FAMILYFIN.B.X.X.md` / `FAMILYFIN.R.X.X.md`
-  snapshot + optional `.prj` archive. This skill drives that function
-  directly (see Step 4) rather than re-implementing version/changelog
-  writing.
+Paths used below (`dist/` is gitignored, so drafts never get committed):
+- notes file: `dist/release-notes-vX.Y.Z.md`
+- build folder: `dist/PROFIN.<R|B>.X.Y.Z/` (exe + `_internal/`)
+- release asset: `dist/PROFIN.<R|B>.X.Y.Z-windows.zip`
 
-This skill only handles the **git/GitHub side**: version-bump decision,
-commit, tag, push, and the GitHub Release itself.
+Channel letter: `R` = stable release from `main`; `B` = pre-release
+(`X.Y.Z-beta.N`) from the current branch.
 
-## Preconditions
+Run every command from the repo root. Stop at the first failure and report
+exactly what already happened (commit? tag? push? release?) — see
+"Recovery" at the end.
 
-1. Run `git status`. If there are uncommitted changes unrelated to the
-   release, stop and ask the user whether to commit, stash, or include them
-   — never silently commit unrelated work into a release commit.
-2. Confirm `gh` is available: `gh --version`. If missing, tell the user the
-   GitHub CLI (`gh`) needs to be installed and authenticated
-   (`gh auth login`) before this skill can publish a release — do not fall
-   back to guessing API calls or tokens.
-3. Confirm `gh auth status` succeeds (authenticated to the right account/org
-   for `pbermudezcc/PROFIN`, or whatever `git remote get-url origin` shows).
-4. `git fetch --tags` so version/tag comparisons use up-to-date remote state.
+---
 
-## Step 1 — Main release or branch release?
+## Step 0 — Bring the working tree to a releasable state
 
-Ask the user (AskUserQuestion) which this is, since it changes tagging,
-prerelease flag, and target branch:
+1. `git status`. Pending work is normal (features are often left
+   uncommitted until release). For each group of related changes, propose
+   a Conventional Commit (`feat(scope): …`, `fix(scope): …`,
+   `refactor/perf/test/docs/chore(scope): …`) with an explicit file list,
+   show the plan, and commit only after the user agrees. Good commit
+   subjects matter: they become the release notes' raw material.
+   - Never stage with `git add -A` / `git add .`.
+   - Never commit `.env`, `*.db`, `*.zip`, `data/`, `logs/`, `build/`,
+     `dist/` (the `.gitignore` covers them; `preflight` double-checks).
+   - Files the user doesn't want in this release: ask whether to stash them.
+2. Commit messages end with the attribution lines required by this
+   session's system reminder.
 
-- **Main / stable release** — work has already been merged into `main` (or
-  will be as part of this release), tag is a plain `vX.Y.Z`, GitHub Release
-  is **not** marked prerelease, target branch is `main`.
-- **Branch / pre-release** — cut from the current feature/working branch
-  without merging to `main` yet (e.g. an internal beta for testing). Tag is
-  `vX.Y.Z-beta.N` (increment N if that base version was already
-  pre-released), GitHub Release **is** marked `--prerelease`, target is the
-  current branch (`gh release create ... --target <branch>`).
+## Step 1 — Main release or branch pre-release?
 
-If the user picked "main" but the current branch isn't `main` and isn't
-merged, ask explicitly whether to merge/PR first or release the current
-commit directly onto `main` — never merge or push to `main` without that
-confirmation.
+Ask (AskUserQuestion):
+- **Main / stable** — tag `vX.Y.Z`, not prerelease, from `main` in sync with
+  `origin/main`. If the work is on another branch, ask whether to merge/PR
+  first — never merge or push to `main` without that confirmation.
+- **Branch / pre-release** — tag `vX.Y.Z-beta.N` (next free N), GitHub
+  `--prerelease`, `--target <branch>`.
 
-## Step 2 — Determine the version bump
+## Step 2 — Gate: tests and preflight
 
-1. Read `APP_VERSION` from `app/config.py` (current baseline).
-2. Run `git log <last_tag>..HEAD --oneline` (last_tag = latest matching
-   `v*` tag reachable from history, or the whole history if none) to see
-   what's actually shipping.
-3. Classify by Conventional Commits style prefixes where present
-   (`feat:`, `fix:`, `BREAKING CHANGE`/`!:`, `chore:`, `refactor:`, etc.);
-   where commits don't follow that convention, read the messages directly.
-4. Propose a bump per Semantic Versioning:
-   - **MAJOR** — breaking changes (data migration required, removed
-     feature, incompatible config/schema change).
-   - **MINOR** — new features, backward compatible.
-   - **PATCH** — bug fixes, polish, no new capability.
-5. State the proposed next version and a one-line reason, then ask the user
-   to confirm or override it — do not silently pick a bump for a household
-   finance app where an unexpected major bump (e.g. forced re-auth or DB
-   migration) has real user impact.
-
-## Step 3 — Draft the release notes
-
-1. Group the commits from Step 2 into sections: `Features`, `Fixes`,
-   `Improvements`, `Chores/Internal` (skip empty sections).
-2. Cross-check against `docs/agent/agent_log.md` and, for any bug fixed,
-   `docs/agent/lessons_learned.md` — these often have a clearer one-line
-   description of *why* a change matters than the raw commit message.
-3. Write a short human-readable summary paragraph (2-4 sentences) plus the
-   grouped bullet list. This becomes both the `CHANGELOG.md` description
-   (Step 4) and the GitHub Release body (Step 6) — one description, two
-   destinations, so they never drift apart.
-4. Show the drafted notes to the user before proceeding — this is the one
-   piece of free text a human should sanity-check.
-
-## Step 4 — Update version + CHANGELOG via the existing tool
-
-Call `export_version()` from `tools/ExportVersionHandler.py` directly with
-explicit keyword arguments (same non-interactive pattern already used in
-this repo for this tool — never pipe guessed answers into its stdin
-prompts):
-
-```python
-from tools.ExportVersionHandler import export_version
-export_version(
-    version="X.Y.Z",              # digits only, no leading "v" — matches existing FAMILYFIN.R.0.2.5 convention
-    ver_type="R",                  # "R" for a main/stable release, "B" for a branch/pre-release
-    also_prj=True,                 # keep parity with existing release snapshots in versions/
-)
 ```
+python tools/release_tools.py preflight --version <X.Y.Z> --channel <R|B>
+```
+(Use a provisional version if Step 3 hasn't fixed it yet, and rerun once
+it is final.) It runs the **whole pytest suite offscreen** and checks:
+semver and greater than `APP_VERSION`; `CHANGELOG.md` top entry matches
+`APP_VERSION`; clean working tree; no forbidden tracked files; tag free
+locally and on GitHub; branch is `main` for R and not behind origin; `gh`
+authenticated. **Any problem stops the release** — fix it (or ask), never
+skip it. Do not pass `--skip-tests` for a real release.
 
-This call itself prompts once for a free-text description
-(`_prompt_revision_description`) with no bypass parameter — monkeypatch
-that single prompt function to return the Step 3 summary paragraph, same
-approach already established for driving this tool non-interactively.
+## Step 3 — Decide the version
 
-This updates `app/config.py` (`APP_VERSION`, `APP_RELEASE_DATE`),
-prepends the dated entry to `CHANGELOG.md`, and writes the
-`versions/FAMILYFIN.{B,R}.X.Y.Z.{md,prj}` snapshot.
+```
+python tools/release_tools.py draft --version <provisional> --out dist/release-notes-v<provisional>.md
+```
+Read the draft's facts (commits since the last tag, changed areas, schema
+`vA → vB`, agent-log titles) and propose per SemVer:
+- **MAJOR** — removes a feature, requires manual action, or data could not
+  migrate automatically.
+- **MINOR** — new features, **or any schema migration** (the family's DB is
+  upgraded on first start; they must know).
+- **PATCH** — fixes/polish only, no migration.
 
-## Step 5 — Commit and tag
+State the version and a one-line reason; the user confirms or overrides.
+If it changed, regenerate the draft with the final version.
 
-1. `git add app/config.py CHANGELOG.md versions/FAMILYFIN.*` (name the files
-   explicitly — never a bare `git add -A`/`.`).
-2. Commit: `chore(release): vX.Y.Z` with the Step 3 summary as the body,
-   ending with the attribution lines this session's system reminder
-   specifies for commits.
-3. Create an **annotated** tag so the release has a real message, not a
-   lightweight pointer:
-   `git tag -a vX.Y.Z -m "<Step 3 summary + bullet list>"`
-   (append `-beta.N` per Step 1 for a branch/pre-release).
+## Step 4 — Write the notes (Spanish, for the family)
 
-## Step 6 — Push and publish (confirm first)
+Edit `dist/release-notes-vX.Y.Z.md`:
+1. `### Resumen`: 2–4 sentences, plain Spanish, what changes for someone
+   who installs this version. This paragraph becomes the CHANGELOG
+   "Description".
+2. Rewrite every `TODO:` bullet as a user-facing sentence; keep the
+   `` (`sha`) `` reference at the end of each. Merge or split bullets as
+   needed, but **every commit sha must remain somewhere** in the notes.
+   Use `docs/agent/agent_log.md` / `lessons_learned.md` (titles listed in
+   the draft's "Fuentes" comment) for the *why* of each change.
+3. Keep `### Antes de actualizar` (schema migration warning) verbatim when
+   present, and keep `### Áreas afectadas` and the `<details>` commit list.
+4. Delete both HTML comments. No bare `---` lines.
 
-Pushing a tag/branch and creating a public GitHub Release are both visible,
-hard-to-reverse actions — confirm with the user before this step even if
-they approved the plan earlier, unless they've already explicitly said to
-proceed through publish.
+Then:
+```
+python tools/release_tools.py verify-notes dist/release-notes-vX.Y.Z.md --version X.Y.Z
+```
+must print `Notas OK.` (it rejects TODO/BORRADOR/comments, a missing
+commit, a missing changed area, a missing migration warning, a too-short
+summary). Finally **show the notes to the user and wait for approval** —
+this is the one piece of prose a human must sanity-check.
 
-1. `git push origin <branch>` then `git push origin vX.Y.Z`.
-2. `gh release create vX.Y.Z --title "FAMILYFIN vX.Y.Z" --notes "<Step 3 notes>" [--prerelease] [--target <branch-if-not-default>]`.
-3. If a Windows build is expected for this release (see
-   `build_profin.spec` / `tools/build_windows.py`), ask whether to attach
-   the built artifact to the release (`gh release upload vX.Y.Z <path>`) —
-   do not build or upload it silently.
+## Step 5 — Version, CHANGELOG and snapshot
 
-## Step 7 — Log it
+```
+python - <<'EOF'
+from pathlib import Path
+import tools.release_tools as rt
+from tools.ExportVersionHandler import export_version
+summary, body = rt.split_notes(Path("dist/release-notes-vX.Y.Z.md").read_text(encoding="utf-8"))
+export_version(version="X.Y.Z", ver_type="R", also_prj=True, description=summary, notes=body)
+EOF
+```
+(`ver_type="B"` for a pre-release.) No prompts are involved. This writes
+`APP_VERSION` + `APP_RELEASE_DATE` in `app/config.py`, prepends the entry
+(summary + full notes body) to `CHANGELOG.md`, and creates
+`versions/FAMILYFIN.<R|B>.X.Y.Z.md/.prj`. Run
+`python -m pytest -q tests/test_release_tooling.py` afterwards (it checks
+`APP_VERSION` against the new CHANGELOG entry).
 
-Append one entry to `docs/agent/agent_log.md` (type: `release`) recording:
-version, release type (main/pre-release), tag, files touched, and a link
-note that the GitHub Release + CHANGELOG.md entry are the durable record —
-this mirrors the existing agent_log.md convention already used for every
-other work session in this repo.
+## Step 6 — Build and package the Windows app
+
+```
+python tools/build_windows.py --channel release     # or: --channel beta
+python tools/release_tools.py package --version X.Y.Z --channel R
+```
+The build is a one-dir PyInstaller app: the `.exe` does **not** run
+without `_internal/`, so only the zip is ever published. `package` refuses
+an incomplete build. Do not launch the built exe against the family's data
+to "test" it — it would migrate their real database.
+
+## Step 7 — Commit, tag, verify locally
+
+1. `git add app/config.py CHANGELOG.md versions/FAMILYFIN.<R|B>.X.Y.Z.md versions/FAMILYFIN.<R|B>.X.Y.Z.prj`
+2. `git commit -m "chore(release): vX.Y.Z" -m "<Resumen paragraph>" -m "<attribution lines>"`
+3. `git tag -a vX.Y.Z --cleanup=verbatim -F dist/release-notes-vX.Y.Z.md`
+   (annotated; `verbatim` keeps the `### ` headings, which git's default
+   `strip` cleanup would delete as comments)
+4. ```
+   python tools/release_tools.py postflight --version X.Y.Z --channel R --notes dist/release-notes-vX.Y.Z.md
+   ```
+   must print `Postflight OK.` (config version/date, snapshot files,
+   CHANGELOG top entry contains the summary **and** the full notes body,
+   annotated tag on HEAD whose message is the notes, zip present).
+
+## Step 8 — Push and publish (confirm first)
+
+Pushing and publishing are public and hard to reverse: summarise what will
+happen (branch, tag, release title, prerelease flag, asset) and get an
+explicit yes, even if the plan was approved earlier.
+
+```
+git push origin <branch>
+git push origin vX.Y.Z
+gh release create vX.Y.Z --verify-tag --title "FAMILYFIN vX.Y.Z" --notes-file dist/release-notes-vX.Y.Z.md [--prerelease --target <branch>] dist/PROFIN.<R|B>.X.Y.Z-windows.zip
+python tools/release_tools.py postflight --version X.Y.Z --channel R --notes dist/release-notes-vX.Y.Z.md --published
+```
+The last command must print `Postflight OK.`: the GitHub Release exists,
+is not a draft, has the right prerelease flag, its body equals the notes
+file, and the zip is attached. Give the user the release URL
+(`gh release view vX.Y.Z --json url --jq .url`).
+
+## Step 9 — Log it
+
+Append a `release` entry to `docs/agent/agent_log.md`: version, channel,
+tag, commit, asset name, test count from preflight, postflight result.
+Commit it as `docs(agent_log): record vX.Y.Z release` and push it (ask
+first, same as Step 8).
+
+---
+
+## Recovery (nothing is ever force-pushed)
+
+| Failed at | State | Fix (confirm with the user first) |
+|---|---|---|
+| Step 2–4 | nothing changed | fix the problem, rerun |
+| Step 5–6 | files modified, no commit | `git restore app/config.py CHANGELOG.md` + delete the new `versions/` files, rerun |
+| Step 7 postflight | local commit + tag | `git tag -d vX.Y.Z`, `git reset --soft HEAD~1`, fix, redo Step 7 |
+| Step 8 push/publish | branch/tag pushed | never delete a pushed tag; fix forward: `gh release edit vX.Y.Z --notes-file …` / `gh release upload vX.Y.Z <zip> --clobber`, rerun postflight `--published` |
 
 ## Guardrails
 
-- Never force-push a tag or branch as part of a release.
-- Never skip the Step 3 human review of release notes.
-- Never release from a dirty working tree (uncommitted, unrelated changes).
-- Never invent a version number without showing the reasoning in Step 2.
-- If any step fails (e.g. `gh release create` errors), stop and report
-  exactly what succeeded so far (commit? tag? push?) so the user isn't left
-  guessing what state the repo/remote is in.
+- Never skip the test gate, `verify-notes`, the user's review of the notes,
+  or the confirmation before Step 8.
+- Never force-push, never move or delete a pushed tag.
+- Never publish the bare `.exe`; always the zip from `package`.
+- One notes file feeds CHANGELOG, tag and GitHub — never retype them.
+- Never invent a version without the Step 3 reasoning.

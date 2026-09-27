@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -22,6 +23,11 @@ def read_version() -> str:
             value = stripped.split("=", 1)[1].strip()
             return value.strip("\"'")
     raise RuntimeError("No se pudo leer la versión de APP_VERSION en app/config.py")
+
+
+def build_marker(dist_dir: Path, artifact_name: str) -> Path:
+    """dist/<artifact>.build-ok — proof that the last build of this artifact completed."""
+    return dist_dir / f"{artifact_name}.build-ok"
 
 
 def main() -> int:
@@ -60,12 +66,24 @@ def main() -> int:
         str(SPEC_PATH),
     ]
 
+    # The marker is written only after PyInstaller succeeds, so a crashed
+    # build that left a partial dist folder can never be packaged/published
+    # (tools/release_tools.py package requires it).
+    marker = build_marker(dist_dir, artifact_name)
+    marker.unlink(missing_ok=True)
+
     print(f"Compilando {artifact_name} ...")
     print("Comando:", " ".join(command))
     build_environment = os.environ.copy()
     build_environment["PROFIN_CHANNEL"] = channel[0].upper()
     subprocess.run(command, cwd=ROOT, check=True, env=build_environment)
     exe_path = dist_dir / artifact_name / f"{artifact_name}.exe"
+    if not exe_path.is_file():
+        raise RuntimeError(f"PyInstaller terminó sin generar {exe_path}")
+    marker.write_text(
+        json.dumps({"artifact": artifact_name, "version": version, "channel": channel[0].upper()}),
+        encoding="utf-8",
+    )
     print(f"Artefacto generado: {exe_path}")
     return 0
 

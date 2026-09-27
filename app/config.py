@@ -6,6 +6,7 @@ FAMILYFIN — Application configuration constants.
 
 APP_NAME    = "FAMILYFIN"
 APP_VERSION = "0.3.0"
+APP_RELEASE_DATE = "2026-09-16"
 
 # ---------------------------------------------------------------------------
 # Theme tokens — Light & Dark

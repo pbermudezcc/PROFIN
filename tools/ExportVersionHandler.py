@@ -477,6 +477,23 @@ def _prompt_revision_description() -> str:
 # CHANGELOG UPDATE
 # ==============================================================================
 
+def _validate_notes(notes: str) -> str:
+    """Normalise a release-notes body for embedding in CHANGELOG.md.
+
+    Entries are separated by lines that are exactly '---', so a notes body
+    must not contain one (it would split the entry in two). Headings are
+    kept as written; trailing whitespace is trimmed.
+    """
+    body = notes.replace("\r\n", "\n").strip()
+    for line in body.splitlines():
+        if line.strip() == "---":
+            raise ValueError(
+                "Las notas de la versión no pueden contener una línea '---' "
+                "(es el separador de entradas del CHANGELOG)."
+            )
+    return body
+
+
 def _update_changelog(
     ver_type:   str,
     version:    str,
@@ -484,6 +501,7 @@ def _update_changelog(
     file_count: int,
     description: str,
     snap_base:  str,
+    notes:      str = "",
 ) -> None:
     """
     Create or update CHANGELOG.md in the project root directory.
@@ -498,6 +516,8 @@ def _update_changelog(
     **Snapshot:** `FAMILYFIN.B.1.0.md`  |  **Files:** 18  |  **Handler:** v1.0.0
     **Date:** 2025-08-06 14:30  |  **Type:** Beta
     **Description:** Phase 1 complete — DB schema + auth.
+
+    <optional release-notes body (markdown), e.g. grouped change lists>
     """
     changelog_path = ROOT / "CHANGELOG.md"
     type_label     = "Beta"    if ver_type == "B" else "Release"
@@ -516,6 +536,8 @@ def _update_changelog(
         type_label,
         description if description else "(no description)",
     )
+    if notes:
+        new_entry += "\n" + _validate_notes(notes) + "\n"
 
     changelog_header = (
         "# FAMILYFIN — Changelog\n\n"
@@ -666,6 +688,8 @@ def export_version(
     ver_type:    Optional[str] = None,
     output_path: Optional[Path] = None,
     also_prj:    Optional[bool] = None,
+    description: Optional[str] = None,
+    notes:       Optional[str] = None,
 ) -> None:
     """
     Write all project source files to a versioned markdown snapshot
@@ -677,6 +701,11 @@ def export_version(
     ver_type    : "B" (Beta) or "R" (Release). None -> interactive prompt.
     output_path : Override output .md path (optional, Path object).
     also_prj    : If True, also write a .prj archive. None -> prompt user.
+    description : One-paragraph summary for the CHANGELOG entry.
+                  None -> interactive prompt (new revisions only).
+    notes       : Optional markdown body (grouped change list) appended to
+                  the CHANGELOG entry under the description. Must not
+                  contain a bare '---' line.
     """
     _ensure_dir(VERSIONS_DIR)
 
@@ -691,9 +720,14 @@ def export_version(
         is_override = False
 
     # -- Description (new revisions only) -------------------------------------
-    description = ""
-    if not is_override:
+    if notes:
+        notes = _validate_notes(notes)   # fail before writing anything
+    if is_override:
+        description = ""
+    elif description is None:
         description = _prompt_revision_description()
+    else:
+        description = description.strip()
 
     # -- .prj prompt ----------------------------------------------------------
     if also_prj is None:
@@ -859,7 +893,7 @@ def export_version(
     # -- Update CHANGELOG (new revisions only) --------------------------------
     if not is_override:
         _update_changelog(ver_type, version, now, file_count,
-                          description, snap_base)
+                          description, snap_base, notes or "")
 
     # -- Final summary --------------------------------------------------------
     print("\n  {}".format(_sep("=")))

@@ -17,3 +17,10 @@ __pycache__/
 .env
 .venv/
 venv/
+
+# Real family data that can land in the repo folder (backups, databases)
+profin_backup_*.zip
+profin_autobackup_*.zip
+*.db
+*.db-wal
+*.db-shm
