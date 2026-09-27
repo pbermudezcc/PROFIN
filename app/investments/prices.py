@@ -34,6 +34,7 @@ from app.db.models import (
     PriceHistory,
     Security,
 )
+from app.investments.benchmarks import BENCHMARK_SYMBOLS
 from app.investments.market_data import (
     MarketDataError,
     MarketDataProvider,
@@ -86,12 +87,18 @@ def is_stale(last_refresh: Optional[datetime], now: Optional[datetime] = None,
 # Refresh
 # ---------------------------------------------------------------------------
 def _securities_to_refresh(session: Session) -> List[Security]:
-    """Provider-priced securities that appear in anyone's ledger."""
+    """Provider-priced securities in anyone's ledger, plus catalogued benchmarks.
+
+    Benchmarks are only worth downloading once somebody has operations.
+    """
+    held = session.query(InvestmentTransaction.security_id)
+    if session.query(held.exists()).scalar() is not True:
+        return []
     return (
         session.query(Security)
         .filter(
             Security.price_source != PRICE_SOURCE_MANUAL,
-            Security.id.in_(session.query(InvestmentTransaction.security_id)),
+            Security.id.in_(held) | Security.symbol.in_(BENCHMARK_SYMBOLS),
         )
         .order_by(Security.symbol)
         .all()
@@ -113,7 +120,10 @@ def _refresh_start(session: Session, security: Security, today: date) -> date:
         session.query(func.min(InvestmentTransaction.trade_date))
         .filter(InvestmentTransaction.security_id == security.id)
         .scalar()
-    ) or today
+    )
+    if first_trade is None:     # a benchmark: cover everybody's history
+        first_trade = session.query(func.min(InvestmentTransaction.trade_date)).scalar()
+    first_trade = first_trade or today
     return first_trade - timedelta(days=HISTORY_MARGIN_DAYS)
 
 

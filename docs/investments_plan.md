@@ -33,7 +33,7 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 | F2 | Proveedor de cotizaciones + caché + actualización en segundo plano + tests con proveedor simulado | **hecho** 2026-09-27 |
 | F3 | Pestaña Operaciones: diálogo de alta/edición y listado | **hecho** 2026-09-27 |
 | F4 | Pestaña Posiciones + tarjetas + refresco (primera versión usable) | **hecho** 2026-09-27 |
-| F5 | Gráficas de evolución, índice de referencia y distribución | pendiente |
+| F5 | Gráficas de evolución, índice de referencia y distribución | **hecho** 2026-09-27 |
 | F6 | Dividendos, splits e informe fiscal anual FIFO | pendiente |
 | F7 | Importación CSV (DEGIRO, Trade Republic, MyInvestor, Scalable) — opcional | pendiente |
 | F8 | Retoques finales y versión 0.5.0 | pendiente |
@@ -104,6 +104,18 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
   Doble clic en una posición → Operaciones filtradas por ese valor. La XIRR solo se muestra con al menos 30 días de historial.
 - La vista abre en Posiciones si el usuario ya tiene operaciones, y en Operaciones si todavía no tiene ninguna.
   Las posiciones se recargan después de cada actualización de cotizaciones.
+
+## Resultados F5 (2026-09-27)
+- Índices de referencia (`app/investments/benchmarks.py`), todos en EUR: MSCI World `IWDA.AS` (por defecto),
+  S&P 500 `SXR8.DE`, IBEX 35 `^IBEX`. Se guardan como un valor más del catálogo y se actualizan junto con
+  vuestras posiciones (solo si hay operaciones).
+- `app/investments/performance.py`: `portfolio_history` (valor diario, capital invertido FIFO y «el mismo dinero
+  en el índice», con las mismas aportaciones y retiradas) y `allocation` (por valor, bróker, divisa o tipo de activo).
+- `app/gui/investment_charts.py`: pestaña Evolución (periodos 1M/6M/Año/1A/3A/Todo, selector de índice que se
+  recuerda en la configuración, lectura al pasar el ratón, frase de resumen) y pestaña Distribución (gráfico circular
+  o de barras del panel principal). Solo se recalculan cuando su pestaña está a la vista.
+- Corregido de paso un fallo del gráfico circular de Posición Global (`dashboard._paint_donut`): los sectores
+  se superponían.
 
 ## Riesgos
 - `yfinance` no es oficial y puede dejar de funcionar si Yahoo cambia su web → proveedor aislado, caché local y alternativas (Stooq, Twelve Data).

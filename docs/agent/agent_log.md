@@ -137,3 +137,10 @@ Entry format:
 - Validation: `python -m pytest -q` → 246 passed (234 before). Screenshots with real Yahoo prices on a temp DB in both themes.
 - Lesson: QTableView.setSortingEnabled(True) immediately sorts by the header's current indicator (column 0), so "sortColumn() < 0" never means "not sorted yet"; set the default order explicitly with sortByColumn when building the table.
 - Follow-up: F5 charts (portfolio value vs invested capital over time, benchmark, allocation donut).
+
+## 2026-09-27 — Inversiones F5: evolution chart, benchmark, allocation
+- Type: feature + bugfix
+- Files touched: new app/investments/{benchmarks,performance}.py, app/investments/prices.py (benchmarks refreshed, global start fallback), new app/gui/investment_charts.py, app/gui/investments_view.py (Evolución / Distribución tabs, lazy reload, benchmark selection), app/gui/dashboard.py (donut direction fix), new tests/test_investments_performance.py, tests/test_investments_gui.py, docs/investments_plan.md, docs/agent/lessons_learned.md, this file.
+- Summary: Daily portfolio value against FIFO invested capital and a benchmark fed with the same cash flows (EUR ETFs/indices IWDA.AS, SXR8.DE, ^IBEX, verified on Yahoo), plus allocation by security/broker/currency/asset type. QPainter line chart with periods, remembered benchmark choice, hover read-out and summary; the allocation reuses the dashboard donut card. Fixed the dashboard donut slice direction.
+- Validation: `python -m pytest -q` → 258 passed (246 before). Screenshots with real Yahoo prices in both themes (evolution with hover, allocation).
+- Follow-up: F6 dividends/splits/tax report. The dashboard donut still uses English-style number formatting (`€11.1k`, `33.6%`) — pre-existing.

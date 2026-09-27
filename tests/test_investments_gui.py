@@ -351,3 +351,53 @@ def test_new_user_starts_on_operations_tab(env):
         assert view._tabs.currentIndex() == 1
     finally:
         view.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# Evolución / Distribución tabs
+# ---------------------------------------------------------------------------
+
+def test_chart_tabs_load_lazily_and_paint(env):
+    for offset, close in ((3, 130.0), (2, 135.0)):
+        env.session.add(PriceHistory(security_id=env.enr.id,
+                                     price_date=env.day - timedelta(days=offset), close=close))
+    env.session.commit()
+    buy(env, env.enr, 10, 1300.0, d=env.day - timedelta(days=3))
+    buy(env, env.gev, 1, 700.0, d=env.day - timedelta(days=3))
+    view = make_view(env)
+    try:
+        assert view._evolution._history.points == []          # not built until visible
+        view._tabs.setCurrentWidget(view._evolution)
+        points = view._evolution._history.points
+        assert len(points) >= 3 and points[-1].value_eur > 0
+        assert "plusvalía latente" in view._evolution._lbl_summary.text()
+
+        view._evolution.resize(900, 420)
+        view._evolution._canvas.resize(860, 320)
+        view._evolution._canvas.hover_x = 500.0
+        assert not view._evolution._canvas.grab().isNull()     # paints lines + hover box
+        for button in view._evolution._period_group.buttons():
+            button.click()
+
+        view._tabs.setCurrentWidget(view._allocation)
+        labels = [label for label, _ in view._allocation.data]
+        assert labels == ["Siemens Energy AG", "GE Vernova Inc."]
+        view._allocation._set_dimension("currency")
+        assert [label for label, _ in view._allocation.data] == ["EUR", "USD"]
+    finally:
+        view.shutdown()
+
+
+def test_choosing_a_benchmark_catalogues_it_and_refreshes(env):
+    buy(env, env.enr, 10, 1300.0)
+    view = make_view(env)
+    try:
+        view._tabs.setCurrentWidget(view._evolution)
+        combo = view._evolution._cmb_benchmark
+        combo.setCurrentIndex(combo.findData("sp500"))
+        assert env.session.query(Security).filter_by(symbol="SXR8.DE").one()
+        assert wait_until(lambda: not view._refresher.running)
+        combo.setCurrentIndex(0)
+        assert view._evolution.benchmark_key is None
+    finally:
+        view.shutdown()

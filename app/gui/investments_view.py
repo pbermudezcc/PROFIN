@@ -5,8 +5,10 @@ FAMILYFIN — Inversiones view (per user).
 
 Layout
   top bar   title · price status ("Precios de las 18:52") · refresh · "+ Operación"
-  tabs      Posiciones  (KPI cards + positions table, investment_positions.py)
-            Operaciones (ledger: filter bar + sortable table, edit/delete)
+  tabs      Posiciones   (KPI cards + positions table, investment_positions.py)
+            Operaciones  (ledger: filter bar + sortable table, edit/delete)
+            Evolución    (value vs invested vs benchmark, investment_charts.py)
+            Distribución (donut by security / broker / currency / type)
 
 Prices are refreshed in the background by a PriceRefresher when the view
 is shown and they are older than 15 minutes, or on demand. The GUI never
@@ -45,6 +47,7 @@ from app.db.models import InvestmentKind, InvestmentTransaction, User
 from app.gui._format import fmt_date, fmt_eur, fmt_money, fmt_quantity
 from app.gui._style_utils import apply_card_shadow
 from app.gui.investment_dialogs import TransactionDialog
+from app.gui.investment_charts import AllocationPanel, EvolutionPanel
 from app.gui.investment_positions import PositionsPanel
 from app.investments.ledger import (
     KIND_LABELS,
@@ -120,6 +123,13 @@ class InvestmentsView(QWidget):
         self._positions.security_activated.connect(self._show_operations_of)
         self._tabs.addTab(self._positions, "Posiciones")
         self._tabs.addTab(self._make_operations_tab(), "Operaciones")
+        self._evolution = EvolutionPanel(self._session, self._user.id, self._t)
+        self._evolution.benchmark_changed.connect(self._on_benchmark_changed)
+        self._tabs.addTab(self._evolution, "Evolución")
+        self._allocation = AllocationPanel(self._session, self._user.id, self._t)
+        self._tabs.addTab(self._allocation, "Distribución")
+        self._charts_dirty = True
+        self._tabs.currentChanged.connect(self._reload_charts_if_visible)
         root.addWidget(self._tabs, 1)
 
     def _make_topbar(self) -> QFrame:
@@ -287,7 +297,30 @@ class InvestmentsView(QWidget):
         self._load_brokers()
         self._load_operations()
         self._positions.reload()
+        self._charts_dirty = True
+        self._reload_charts_if_visible()
         self._update_status()
+
+    def _reload_charts_if_visible(self, *_args) -> None:
+        """Charts replay the whole history: only rebuild them when on screen."""
+        if not self._charts_dirty:
+            return
+        current = self._tabs.currentWidget()
+        if current is self._evolution or current is self._allocation:
+            self._evolution.reload()
+            self._allocation.reload(self._positions.snapshot)
+            self._charts_dirty = False
+
+    def _on_benchmark_changed(self, key) -> None:
+        if key:
+            from app.db.models import PriceHistory
+            from app.investments.performance import ensure_benchmark
+            security = ensure_benchmark(self._session, key)
+            has_prices = (self._session.query(PriceHistory.security_id)
+                          .filter(PriceHistory.security_id == security.id).first() is not None)
+            if not has_prices:
+                self._refresher.refresh()       # charts reload when it finishes
+        self._evolution.reload()
 
     def _show_operations_of(self, symbol: str) -> None:
         self._cmb_kind.setCurrentIndex(0)
@@ -478,6 +511,8 @@ class InvestmentsView(QWidget):
             logger.info("Sin cotización para: %s", ", ".join(result.missing))
         if result.ok:
             self._positions.reload()
+            self._charts_dirty = True
+            self._reload_charts_if_visible()
         self._update_status()
 
     def _update_status(self) -> None:
@@ -601,3 +636,5 @@ class InvestmentsView(QWidget):
         """)
         apply_card_shadow(self._filter_bar, t, blur_radius=12, y_offset=2)
         self._positions.apply_theme(t)
+        self._evolution.apply_theme(t)
+        self._allocation.apply_theme(t)

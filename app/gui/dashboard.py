@@ -314,7 +314,9 @@ class _CategoryChartWidget(QFrame):
 
             painter.setBrush(QBrush(color))
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawPie(arc_rect, start_angle, span)
+            # Negative span = clockwise, the same direction start_angle moves;
+            # a positive span drew each slice back over the previous one.
+            painter.drawPie(arc_rect, start_angle, -span)
             start_angle -= span   # clockwise
 
         # ── Donut hole ───────────────────────────────────────────────

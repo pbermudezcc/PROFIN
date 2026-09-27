@@ -72,3 +72,10 @@ Entry format:
 - Root cause: points were keyed and sorted by the formatted "dd/mm" string.
 - Fix: aggregation moved to `app/analytics/period_summary.py` (SQL-side), grouped and ordered by the real date; the view only formats labels.
 - Prevention: `tests/test_period_summary.py::test_summarize_period_groupings`. Never sort by a display-formatted date.
+
+## 2026-09-27 — Dashboard donut slices overlapped
+- Area: dashboard (reused by Inversiones → Distribución)
+- Symptom: the donut showed overlapping slices and gaps (visible in the Inversiones allocation screenshot).
+- Root cause: `_paint_donut` drew each slice with a positive span (counter-clockwise in Qt) while moving `start_angle` clockwise, so every slice was painted back over the previous one.
+- Fix: `painter.drawPie(arc_rect, start_angle, -span)` in `app/gui/dashboard.py`.
+- Prevention: render charts to an image (`widget.grab()`, `WA_DontShowOnScreen` on the real Windows platform) and look at them; unit tests only proved the data was right.
