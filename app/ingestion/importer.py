@@ -228,7 +228,7 @@ def commit_import(
                 session.add(AuditLog(
                     user_id       = user_id,
                     table_affected= "transactions",
-                    record_id     = None,  # filled after flush
+                    record_id     = txn.id,
                     action        = AuditAction.insert,
                     old_value     = None,
                     new_value     = (
@@ -335,6 +335,7 @@ def _row_to_transaction(
         issuer_name                = row.get("issuer_name"),
         concept                    = row.get("concept"),
         raw_col14                  = row.get("raw_col14"),
+        raw_details                = row.get("raw_details"),
         source_file                = source_file,
         is_duplicate_flagged       = is_flagged,
         duplicate_resolved_by_user = resolved,

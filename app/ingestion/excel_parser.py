@@ -37,6 +37,7 @@ Output columns (standardised):
   issuer_name       : str | None
   concept           : str | None  (concat of cols 14-22)
   raw_col14         : str | None  (col 14 exactly as received)
+  raw_details       : str | None  (cols 15-22 as received, uncollapsed)
   currency          : str         (always 'EUR' for CaixaBank ES)
   iban_raw          : str | None
 """
@@ -233,7 +234,8 @@ def parse_excel(file_path: Union[str, Path]) -> pd.DataFrame:
     # Rule: amount = +ingreso if ingreso not NaN, else -gasto
     ingreso = _to_numeric(data.iloc[:, _COL_INGRESO], "Ingreso (col 6)")
     gasto   = _to_numeric(data.iloc[:, _COL_GASTO],   "Gasto (col 7)")
-    out["amount"] = ingreso.combine_first(-gasto)
+    # Money is kept to whole cents so duplicate keys and sums are exact.
+    out["amount"] = ingreso.combine_first(-gasto).round(2)
 
     # CaixaBank exports the running balance in two mutually exclusive
     # columns: "Saldo (+)" and "Saldo (-)".  Negative balances are therefore
@@ -244,7 +246,7 @@ def parse_excel(file_path: Union[str, Path]) -> pd.DataFrame:
     saldo_negativo = _to_numeric(
         data.iloc[:, _COL_SALDO_NEGATIVO], "Saldo (-) (col 9)"
     )
-    out["running_balance"] = saldo_positivo.combine_first(saldo_negativo)
+    out["running_balance"] = saldo_positivo.combine_first(saldo_negativo).round(2)
 
     out["concepto_comun"] = _clean_str(
         data.iloc[:, _COL_CONCEPTO_COMUN]
@@ -271,6 +273,12 @@ def parse_excel(file_path: Union[str, Path]) -> pd.DataFrame:
     out["concept"] = concept_cols.apply(
         _concat_details, axis=1
     )
+
+    # raw_details: complementary cols 15-22 exactly as received (only
+    # stripped), kept for traceability before any cleaning.
+    out["raw_details"] = data.iloc[
+        :, _COL_DETAILS_START + 1 : _COL_DETAILS_END + 1
+    ].apply(_raw_details, axis=1)
 
     return out
 
@@ -407,6 +415,16 @@ def _extract_issuer(raw: object) -> str | None:
     # Collapse multiple internal spaces (CaixaBank pads with spaces)
     text = re.sub(r"\s{2,}", " ", text)
     return text if text else None
+
+
+def _raw_details(row: pd.Series) -> str | None:
+    """Join the non-empty raw detail cells with ' | ' without cleaning them."""
+    parts = [
+        str(val).strip()
+        for val in row
+        if str(val).strip() not in ("", "nan", "None")
+    ]
+    return " | ".join(parts) if parts else None
 
 
 def _concat_details(row: pd.Series) -> str | None:

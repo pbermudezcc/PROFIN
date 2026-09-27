@@ -7,7 +7,7 @@ Covers:
   - D-1: exact 4-field match → auto_skip
   - D-1 intra-batch: exact duplicate within the same file → auto_skip
   - D-2: same date+concepto+amount, different balance → clean (not flagged)
-  - D-3: intra-batch partial match with different balance → needs_review
+  - D-3: exact match on a zero-amount row (DB or same file) → needs_review
   - Completely clean batch → all rows in clean
 """
 from __future__ import annotations
@@ -207,3 +207,31 @@ class TestDuplicateDetector:
         assert 1 in result.auto_skip
         assert 2 in result.clean
         assert result.needs_review == []
+    def test_d3_zero_amount_exact_match_in_db_needs_review(
+        self, db_session, user_and_account
+    ):
+        user_id, account_id = user_and_account
+        _add_existing_txn(
+            db_session, user_id, account_id,
+            txn_date        = date(2025, 6, 1),
+            concepto_comun  = "044",
+            amount          = 0.0,
+            running_balance = 950.0,
+        )
+        df = _make_df([{"amount": 0.0, "running_balance": 950.0}])
+        result = check_duplicates(df, db_session, user_id, account_id)
+        assert result.needs_review == [0]
+        assert result.auto_skip == []
+        assert "0,00" in result.review_reasons[0]
+
+    def test_d3_zero_amount_repeated_in_file_needs_review(
+        self, db_session, user_and_account
+    ):
+        user_id, account_id = user_and_account
+        df = _make_df([
+            {"amount": 0.0, "running_balance": 950.0},
+            {"amount": 0.0, "running_balance": 950.0},
+        ])
+        result = check_duplicates(df, db_session, user_id, account_id)
+        assert result.clean == [0]
+        assert result.needs_review == [1]

@@ -1,0 +1,184 @@
+"""
+tests/test_import_pipeline.py
+==============================
+End-to-end import of a real .xlsx laid out like a CaixaBank export:
+parse → validate → duplicate check → commit → auto-categorize, then the
+same file imported again must not create a single duplicate.
+"""
+from __future__ import annotations
+
+from datetime import date
+
+import pytest
+from openpyxl import Workbook
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.auth.auth_service import create_user
+from app.categorization.category_manager import (
+    seed_default_categories,
+    seed_default_rules,
+)
+from app.categorization.rules_engine import apply_rules_and_commit
+from app.db.models import (
+    CATEGORY_SOURCE_RULE, Account, AuditLog, Category, ImportBatch,
+    ImportStatus, Transaction, TransactionType,
+)
+from app.db.models import Base
+from app.ingestion.importer import commit_import, prepare_import
+from app.ingestion.validator import ValidationError
+
+IBAN = "ES12 2100 0000 0000 0000 0000"
+
+
+def _row(fecha, ingreso=None, gasto=None, saldo_pos=None, saldo_neg=None,
+         comun="044", issuer="", details=(), iban=IBAN):
+    row = [None] * 24
+    row[1] = iban
+    row[3] = "EUR"
+    row[4] = fecha
+    row[5] = fecha
+    row[6] = ingreso
+    row[7] = gasto
+    row[8] = saldo_pos
+    row[9] = saldo_neg
+    row[10] = comun
+    row[11] = "000"
+    row[12] = "000000000000"
+    row[14] = issuer
+    for offset, text in enumerate(details):
+        row[15 + offset] = text
+    return row
+
+
+def _write_export(path, rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.append([None] * 24)
+    ws.append([None, "MOVIMIENTOS DESDE 01/09/2026 HASTA 30/09/2026"] + [None] * 22)
+    ws.append([None] * 24)
+    # The real export labels every column, so the sheet is 24 columns wide
+    # even when the trailing detail cells of every movement are empty.
+    header = [f"Col {i}" for i in range(24)]
+    header[4], header[5], header[6], header[7] = "F. Operación", "F. Valor", "Ingreso (+)", "Gasto (-)"
+    ws.append(header)
+    for row in rows:
+        ws.append(row)
+    wb.save(path)
+
+
+EXPORT_ROWS = [
+    _row("01/09/2026", gasto=45.3, saldo_pos=1954.7,
+         issuer="Fecha de operación: 01-09-2026   IBERDROLA CLIENTES", details=("RECIBO LUZ",)),
+    _row("02/09/2026", ingreso=1500.0, saldo_pos=3454.7, comun="012",
+         issuer="MANPOWER TEAM E.T.T.", details=("NOMINA", "SEPTIEMBRE")),
+    _row("03/09/2026", gasto=12.35, saldo_pos=3442.35, issuer="PANADERIA LOLA"),
+    _row("04/09/2026", gasto=3500.0, saldo_neg=-57.65, issuer="TRANSFERENCIA A AHORRO"),
+    _row("05/09/2026", gasto=0.0, saldo_neg=-57.65, comun="099", issuer="AJUSTE"),
+]
+
+
+@pytest.fixture
+def session():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sess = sessionmaker(bind=engine)()
+    yield sess
+    sess.close()
+    engine.dispose()
+
+
+@pytest.fixture
+def family(session):
+    user = create_user(session, "maria", "secreto1")
+    account = Account(user_id=user.id, account_name="CaixaBank Principal")
+    session.add(account)
+    session.commit()
+    seed_default_categories(session, user.id)
+    seed_default_rules(session, user.id)
+    return user.id, account.id
+
+
+def _import(path, session, user_id, account_id, decisions=None):
+    """Mirror ImportView: clean rows are imported, review rows only if approved."""
+    preview = prepare_import(path, session, user_id, account_id)
+    chosen = {idx: True for idx in preview.duplicate_result.clean}
+    chosen.update(decisions or {})
+    summary = commit_import(preview, session, user_id, account_id, chosen)
+    if summary.imported_ids:
+        apply_rules_and_commit(session, summary.imported_ids, user_id)
+    return preview, summary
+
+
+def test_first_import_persists_categorizes_and_audits(tmp_path, session, family):
+    user_id, account_id = family
+    path = tmp_path / "movimientos.xlsx"
+    _write_export(path, EXPORT_ROWS)
+
+    preview, summary = _import(path, session, user_id, account_id)
+
+    assert preview.validation_result.iban == IBAN
+    assert [w.rule for w in preview.validation_result.warnings] == ["V-08"]
+    assert summary.rows_imported == 5 and summary.rows_skipped == 0
+    assert summary.status == ImportStatus.completed
+
+    txns = {t.issuer_name: t for t in session.query(Transaction).all()}
+    luz = txns["IBERDROLA CLIENTES"]
+    assert luz.amount == -45.3 and luz.type == TransactionType.expense
+    assert luz.transaction_date == date(2026, 9, 1)
+    assert luz.raw_details == "RECIBO LUZ"
+    assert luz.source_file == "movimientos.xlsx"
+    assert session.get(Category, luz.category_id).name == "Luz"
+    assert luz.category_source == CATEGORY_SOURCE_RULE
+
+    nomina = txns["MANPOWER TEAM E.T.T."]
+    assert nomina.amount == 1500.0 and nomina.type == TransactionType.income
+    category = session.get(Category, nomina.category_id)
+    assert (category.name, category.parent.name) == ("Nomina Maria", "INGRESO")
+
+    assert txns["TRANSFERENCIA A AHORRO"].running_balance == -57.65
+    assert txns["PANADERIA LOLA"].category_id is None
+    assert txns["AJUSTE"].type == TransactionType.unknown
+
+    audit_ids = {a.record_id for a in session.query(AuditLog).all()}
+    assert audit_ids == {t.id for t in txns.values()}
+
+
+def test_reimporting_the_same_file_creates_no_duplicates(tmp_path, session, family):
+    user_id, account_id = family
+    path = tmp_path / "movimientos.xlsx"
+    _write_export(path, EXPORT_ROWS)
+    _import(path, session, user_id, account_id)
+
+    preview, summary = _import(path, session, user_id, account_id)
+
+    dup = preview.duplicate_result
+    assert sorted(dup.auto_skip) == [0, 1, 2, 3]
+    assert dup.needs_review == [4]          # 0,00 € row: balance can't tell
+    assert summary.rows_imported == 0
+    assert session.query(Transaction).count() == 5
+    assert session.query(ImportBatch).count() == 2
+
+
+def test_overlapping_export_imports_only_new_rows(tmp_path, session, family):
+    user_id, account_id = family
+    first, second = tmp_path / "agosto.xlsx", tmp_path / "septiembre.xlsx"
+    _write_export(first, EXPORT_ROWS[:3])
+    _write_export(second, EXPORT_ROWS[1:4])
+    _import(first, session, user_id, account_id)
+
+    _, summary = _import(second, session, user_id, account_id)
+
+    assert summary.rows_imported == 1
+    assert summary.rows_skipped == 2
+    assert session.query(Transaction).count() == 4
+
+
+def test_file_with_two_accounts_is_rejected_before_any_write(tmp_path, session, family):
+    user_id, account_id = family
+    path = tmp_path / "mezcla.xlsx"
+    _write_export(path, [EXPORT_ROWS[0], _row("02/09/2026", gasto=1.0, saldo_pos=1.0,
+                                             issuer="X", iban="ES99 0000")])
+    with pytest.raises(ValidationError):
+        prepare_import(path, session, user_id, account_id)
+    assert session.query(Transaction).count() == 0

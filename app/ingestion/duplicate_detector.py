@@ -13,13 +13,11 @@ Duplicate detection priority rules (from spec):
        (e.g., two identical payments same day). Do NOT auto-skip.
        Imported as new, NOT flagged.
 
-  D-3  Match on (transaction_date, concepto_comun, amount, running_balance)
-       that is ambiguous per known patterns → flag is_duplicate_flagged=True,
-       prompt user via GUI dialog. User resolves Yes/No.
-       NOTE: In v1 with the 4-field exact match in D-1, D-3 is only triggered
-       for edge cases where the match is ambiguous despite exact field match
-       (e.g., same-day batch transfers). Implementing as a flag list that
-       the import flow GUI resolves interactively.
+  D-3  Exact 4-field match on a ZERO-amount row → ambiguous. A 0,00 €
+       movement does not change the running balance, so the balance cannot
+       tell a re-imported row from a genuine second one. Such rows go to
+       needs_review (is_duplicate_flagged=True if imported) and the import
+       GUI asks the user; unresolved rows are skipped (conservative).
 
   D-4  Never silently guess on ambiguous cases — always defer to user.
 
@@ -155,6 +153,19 @@ def check_duplicates(
 
         exact_key   = (txn_date, conc_comun, amount, balance)
         partial_key = (txn_date, conc_comun, amount)
+
+        # D-3: exact match on a zero-amount row → ambiguous, ask the user
+        if amount == 0 and (
+            exact_key in existing_exact or exact_key in intra_batch_exact
+        ):
+            result.needs_review.append(idx)
+            where = "en BD" if exact_key in existing_exact else "dentro del fichero"
+            result.review_reasons[idx] = (
+                f"Posible duplicado {where} con importe 0,00 € "
+                f"(el saldo no permite distinguirlo): "
+                f"{txn_date} | {conc_comun} | Saldo {balance:.2f} €"
+            )
+            continue
 
         # D-1: Exact match against DB → auto-skip
         if exact_key in existing_exact:

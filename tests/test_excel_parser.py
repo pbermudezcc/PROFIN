@@ -73,3 +73,30 @@ def test_parse_excel_uses_negative_balance_column(monkeypatch, tmp_path):
     result = parse_excel(source)
 
     assert result["running_balance"].tolist() == [1184.93, -131.47]
+
+
+def test_parse_excel_rounds_money_and_keeps_raw_details(monkeypatch, tmp_path):
+    header = [None] * 25
+    header[4] = "F. Operación"
+
+    row = [None] * 25
+    row[1] = "2100 0000 00 0000000000"
+    row[3] = "EUR"
+    row[4] = "12/11/2021"
+    row[7] = "12,339999999"
+    row[8] = "100,004"
+    row[14] = "Fecha de operación: 12-11-2021   MERCADONA"
+    row[15] = "  TARJETA   1234 "
+    row[16] = "COMPRA"
+
+    raw = pd.DataFrame([header, row])
+    monkeypatch.setattr(pd, "read_excel", lambda *args, **kwargs: raw)
+
+    source = tmp_path / "movimientos.xls"
+    source.touch()
+    result = parse_excel(Path(source))
+
+    assert result["amount"].tolist() == [-12.34]
+    assert result["running_balance"].tolist() == [100.0]
+    assert result["raw_details"].tolist() == ["TARJETA   1234 | COMPRA"]
+    assert result["issuer_name"].tolist() == ["MERCADONA"]
