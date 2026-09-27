@@ -535,10 +535,48 @@ def _migration_3_fix_cross_user_categories(db_path: Path) -> None:
     )
 
 
+def _migration_4_investments(db_path: Path) -> None:
+    """Create the investments tables (securities, ledger, price and FX cache).
+
+    Purely additive: no existing row is touched. init_db() already runs
+    create_all() before migrating, but the step creates the tables itself so
+    migrate_schema() alone upgrades a file too. create_all(checkfirst) also
+    creates the ledger indexes declared in the model; IF NOT EXISTS covers a
+    table that exists without them. Idempotent.
+    """
+    from app.db.models import FxRate, InvestmentTransaction, PriceHistory, Security
+
+    migration_engine = _build_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(
+            migration_engine,
+            tables=[
+                Security.__table__,
+                InvestmentTransaction.__table__,
+                PriceHistory.__table__,
+                FxRate.__table__,
+            ],
+        )
+    finally:
+        migration_engine.dispose()
+    with closing(sqlite3.connect(db_path)) as connection:
+        connection.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS ix_investment_transactions_user_date
+                ON investment_transactions (user_id, trade_date);
+            CREATE INDEX IF NOT EXISTS ix_investment_transactions_user_security
+                ON investment_transactions (user_id, security_id);
+            """
+        )
+        connection.commit()
+    logger.info("Migración 4: tablas de inversiones creadas")
+
+
 SCHEMA_MIGRATIONS = (
     (1, _migration_1_category_source),
     (2, _migration_2_indexes_and_cents),
     (3, _migration_3_fix_cross_user_categories),
+    (4, _migration_4_investments),
 )
 SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1][0]
 

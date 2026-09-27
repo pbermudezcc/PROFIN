@@ -9,6 +9,9 @@ Hierarchy:
           └── transactions
     └── auto_categorization_rules
     └── audit_log
+    └── investment_transactions ──> securities (shared catalogue)
+                                      └── price_history
+  fx_rates (shared, per currency and day)
 """
 
 from __future__ import annotations
@@ -76,6 +79,25 @@ class ImportStatus(str, enum.Enum):
     partial = "partial"
 
 
+class AssetType(str, enum.Enum):
+    stock = "stock"
+    etf = "etf"
+    fund = "fund"
+
+
+class InvestmentKind(str, enum.Enum):
+    buy = "buy"
+    sell = "sell"
+    dividend = "dividend"
+    split = "split"
+    grant = "grant"     # shares received from an employer plan (RSU / ESPP / matching)
+
+
+# Security.price_source / PriceHistory.source values (plain strings).
+PRICE_SOURCE_YAHOO  = "yahoo"    # refreshed from the market-data provider
+PRICE_SOURCE_MANUAL = "manual"   # typed in by a family member (e.g. a fund NAV)
+
+
 # Transaction.category_source values. Stored as plain strings (not an Enum
 # column) so the column can be added to existing SQLite files with ALTER TABLE.
 CATEGORY_SOURCE_MANUAL = "manual"   # set by a family member — rules never touch it
@@ -113,6 +135,9 @@ class User(Base):
     )
     audit_logs: Mapped[List[AuditLog]] = relationship(
         "AuditLog", back_populates="user", cascade="all, delete-orphan"
+    )
+    investment_transactions: Mapped[List[InvestmentTransaction]] = relationship(
+        "InvestmentTransaction", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
@@ -389,3 +414,146 @@ class AuditLog(Base):
             f"<AuditLog id={self.id} table={self.table_affected!r} "
             f"action={self.action} record_id={self.record_id}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# securities  (shared catalogue: one row per market-data symbol)
+# ---------------------------------------------------------------------------
+class Security(Base):
+    """A listed instrument. Shared by every user; holdings live in the trades.
+
+    `symbol` is the market-data provider's symbol, which also fixes the
+    listing: AMZN (NASDAQ, USD) and AMZ.DE (Xetra, EUR) are two securities.
+    """
+
+    __tablename__ = "securities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    asset_type: Mapped[AssetType] = mapped_column(
+        Enum(AssetType), nullable=False, default=AssetType.stock
+    )
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    exchange: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    isin: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)
+    sector: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    country: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # PRICE_SOURCE_YAHOO | PRICE_SOURCE_MANUAL
+    price_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=PRICE_SOURCE_YAHOO
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    # passive_deletes="all": deleting a security that still has trades must
+    # fail on the RESTRICT foreign key, never orphan or null the user's ledger.
+    transactions: Mapped[List[InvestmentTransaction]] = relationship(
+        "InvestmentTransaction", back_populates="security", passive_deletes="all"
+    )
+    prices: Mapped[List[PriceHistory]] = relationship(
+        "PriceHistory", back_populates="security",
+        cascade="all, delete-orphan", passive_deletes=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Security id={self.id} symbol={self.symbol!r} {self.currency}>"
+
+
+# ---------------------------------------------------------------------------
+# investment_transactions  (the ledger; positions are derived from it)
+# ---------------------------------------------------------------------------
+class InvestmentTransaction(Base):
+    """One broker operation of one user.
+
+    Money fields by kind (EUR amounts are positive and rounded to cents):
+      buy      amount_eur = total EUR charged, fees included
+      sell     amount_eur = net EUR received, fees already deducted
+      dividend amount_eur = net EUR received; gross = amount + tax_withheld_eur
+      grant    amount_eur = tax cost basis (market value when received);
+               cash_paid_eur = EUR actually paid (0 for free shares)
+      split    split_ratio = new shares per old share (2.0 for a 2-for-1)
+    `price` is per share in `currency` (the security's quote currency);
+    with amount_eur it gives the FX rate the broker applied.
+    """
+
+    __tablename__ = "investment_transactions"
+    __table_args__ = (
+        Index("ix_investment_transactions_user_date", "user_id", "trade_date"),
+        Index("ix_investment_transactions_user_security", "user_id", "security_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    security_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("securities.id", ondelete="RESTRICT"), nullable=False
+    )
+    broker: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[InvestmentKind] = mapped_column(Enum(InvestmentKind), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    quantity: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    amount_eur: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    fees_eur: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    tax_withheld_eur: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cash_paid_eur: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    split_ratio: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, onupdate=func.now(), nullable=True
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="investment_transactions")
+    security: Mapped[Security] = relationship("Security", back_populates="transactions")
+
+    def __repr__(self) -> str:
+        return (
+            f"<InvestmentTransaction id={self.id} {self.kind} {self.trade_date} "
+            f"security_id={self.security_id} qty={self.quantity} eur={self.amount_eur}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# price_history / fx_rates  (local cache of market data)
+# ---------------------------------------------------------------------------
+class PriceHistory(Base):
+    """Daily close of a security in its own quote currency."""
+
+    __tablename__ = "price_history"
+
+    security_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("securities.id", ondelete="CASCADE"), primary_key=True
+    )
+    price_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    close: Mapped[float] = mapped_column(Float, nullable=False)
+    # PRICE_SOURCE_YAHOO | PRICE_SOURCE_MANUAL
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=PRICE_SOURCE_YAHOO
+    )
+
+    security: Mapped[Security] = relationship("Security", back_populates="prices")
+
+    def __repr__(self) -> str:
+        return f"<PriceHistory security_id={self.security_id} {self.price_date} {self.close}>"
+
+
+class FxRate(Base):
+    """Units of `currency` per 1 EUR on a day (Yahoo's EURUSD=X convention)."""
+
+    __tablename__ = "fx_rates"
+
+    currency: Mapped[str] = mapped_column(String(3), primary_key=True)
+    rate_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    rate: Mapped[float] = mapped_column(Float, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<FxRate {self.currency} {self.rate_date} {self.rate}>"

@@ -86,6 +86,8 @@ def _make_legacy_db(path) -> dict:
 
     with closing(sqlite3.connect(path)) as conn:
         conn.execute("ALTER TABLE transactions DROP COLUMN category_source")
+        for table in ("investment_transactions", "price_history", "securities", "fx_rates"):
+            conn.execute(f"DROP TABLE {table}")     # added by migration 4
         conn.execute("PRAGMA user_version = 0")
         conn.commit()
     return ids
@@ -240,6 +242,33 @@ def test_migration_3_repairs_categories_owned_by_another_user(tmp_path):
         )
     assert rows[remap_id] == (other_luz_id, CATEGORY_SOURCE_RULE)
     assert rows[clear_id] == (None, None)
+
+
+def test_migration_4_adds_investment_tables_without_touching_data(tmp_path):
+    db = tmp_path / "profin.db"
+    _make_legacy_db(db)
+    migrate_schema(db)
+    with closing(sqlite3.connect(db)) as conn:       # a v3 file from release 0.4.0
+        conn.execute("DROP TABLE investment_transactions")
+        conn.execute("DROP TABLE price_history")
+        conn.execute("DROP TABLE securities")
+        conn.execute("DROP TABLE fx_rates")
+        conn.execute("PRAGMA user_version = 3")
+        conn.commit()
+        before = conn.execute("SELECT * FROM transactions ORDER BY id").fetchall()
+
+    assert migrate_schema(db) == 3
+    assert _user_version(db) == SCHEMA_VERSION
+    assert list(tmp_path.glob("profin.pre-migration-v*.db"))
+
+    with closing(sqlite3.connect(db)) as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        indexes = {r[1] for r in conn.execute('PRAGMA index_list("investment_transactions")')}
+        after = conn.execute("SELECT * FROM transactions ORDER BY id").fetchall()
+    assert {"securities", "investment_transactions", "price_history", "fx_rates"} <= tables
+    assert {"ix_investment_transactions_user_date",
+            "ix_investment_transactions_user_security"} <= indexes
+    assert after == before
 
 
 def test_migration_is_noop_when_up_to_date(tmp_path):
