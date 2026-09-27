@@ -9,6 +9,8 @@ Layout
             Operaciones  (ledger: filter bar + sortable table, edit/delete)
             Evolución    (value vs invested vs benchmark, investment_charts.py)
             Distribución (donut by security / broker / currency / type)
+            Fiscalidad   (yearly FIFO tax report + Excel, investment_tax.py)
+  banner    dividends/splits found on Yahoo but not registered (after a refresh)
 
 Prices are refreshed in the background by a PriceRefresher when the view
 is shown and they are older than 15 minutes, or on demand. The GUI never
@@ -17,10 +19,11 @@ waits for the network: tables read the local cache only.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import qtawesome as qta
-from PySide6.QtCore import QSortFilterProxyModel, Qt
+from PySide6.QtCore import QSettings, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -46,7 +49,10 @@ from app.config import THEMES
 from app.db.models import InvestmentKind, InvestmentTransaction, User
 from app.gui._format import fmt_date, fmt_eur, fmt_money, fmt_quantity
 from app.gui._style_utils import apply_card_shadow
-from app.gui.investment_dialogs import TransactionDialog
+from app.gui._background import BackgroundRunner
+from app.gui.investment_dialogs import PendingEventsDialog, TransactionDialog
+from app.gui.investment_tax import TaxPanel
+from app.investments.events import fetch_corporate_actions, held_symbols, pending_events
 from app.gui.investment_charts import AllocationPanel, EvolutionPanel
 from app.gui.investment_positions import PositionsPanel
 from app.investments.ledger import (
@@ -61,6 +67,9 @@ from app.investments.prices import RefreshResult
 from app.investments.refresh_worker import PriceRefresher
 
 logger = logging.getLogger(__name__)
+
+# Yahoo dividends/splits are checked after a price refresh, at most this often.
+EVENTS_CHECK_EVERY = timedelta(hours=6)
 
 SORT_ROLE = Qt.ItemDataRole.UserRole + 1
 ID_ROLE = Qt.ItemDataRole.UserRole + 2
@@ -100,6 +109,10 @@ class InvestmentsView(QWidget):
         )
         self._refresher.started.connect(self._on_refresh_started)
         self._refresher.finished.connect(self._on_refresh_finished)
+        self._events_runner = BackgroundRunner(self)
+        self._events_checked_at: Optional[datetime] = None
+        self._actions = None
+        self._pending: list = []
 
         self._build_ui()
         self._apply_theme()
@@ -115,6 +128,7 @@ class InvestmentsView(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         root.addWidget(self._make_topbar())
+        root.addWidget(self._make_events_banner())
 
         self._tabs = QTabWidget()
         self._tabs.setObjectName("invTabs")
@@ -128,6 +142,8 @@ class InvestmentsView(QWidget):
         self._tabs.addTab(self._evolution, "Evolución")
         self._allocation = AllocationPanel(self._session, self._user.id, self._t)
         self._tabs.addTab(self._allocation, "Distribución")
+        self._tax = TaxPanel(self._session, self._user.id, self._user.username, self._t)
+        self._tabs.addTab(self._tax, "Fiscalidad")
         self._charts_dirty = True
         self._tabs.currentChanged.connect(self._reload_charts_if_visible)
         root.addWidget(self._tabs, 1)
@@ -302,13 +318,15 @@ class InvestmentsView(QWidget):
         self._update_status()
 
     def _reload_charts_if_visible(self, *_args) -> None:
-        """Charts replay the whole history: only rebuild them when on screen."""
+        """Charts and the tax report replay the whole history: only rebuild
+        them when one of their tabs is on screen."""
         if not self._charts_dirty:
             return
         current = self._tabs.currentWidget()
-        if current is self._evolution or current is self._allocation:
+        if current in (self._evolution, self._allocation, self._tax):
             self._evolution.reload()
             self._allocation.reload(self._positions.snapshot)
+            self._tax.reload()
             self._charts_dirty = False
 
     def _on_benchmark_changed(self, key) -> None:
@@ -480,6 +498,8 @@ class InvestmentsView(QWidget):
             QMessageBox.warning(self, "No se puede eliminar", str(exc))
             return
         self.reload()
+        self._update_pending()
+        self._refresher.refresh()       # a deleted split reset that security's prices
 
     def _show_context_menu(self, pos) -> None:
         index = self._table.indexAt(pos)
@@ -513,6 +533,7 @@ class InvestmentsView(QWidget):
             self._positions.reload()
             self._charts_dirty = True
             self._reload_charts_if_visible()
+            self.check_corporate_actions()
         self._update_status()
 
     def _update_status(self) -> None:
@@ -542,6 +563,88 @@ class InvestmentsView(QWidget):
     def shutdown(self) -> None:
         """Called by the main window on close: let a running refresh finish."""
         self._refresher.shutdown()
+        self._events_runner.shutdown()
+
+    # ------------------------------------------------------------------
+    # Dividends / splits detected on Yahoo
+    # ------------------------------------------------------------------
+    def _make_events_banner(self) -> QFrame:
+        self._events_banner = QFrame()
+        self._events_banner.setObjectName("eventsBanner")
+        layout = QHBoxLayout(self._events_banner)
+        layout.setContentsMargins(24, 8, 24, 8)
+        self._lbl_events = QLabel("")
+        self._lbl_events.setObjectName("eventsText")
+        layout.addWidget(self._lbl_events)
+        layout.addStretch()
+        self._btn_events = QPushButton(" Revisar")
+        self._btn_events.setObjectName("btnSecondary")
+        self._btn_events.setFixedHeight(30)
+        self._btn_events.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_events.clicked.connect(self.review_pending_events)
+        layout.addWidget(self._btn_events)
+        self._events_banner.setVisible(False)
+        return self._events_banner
+
+    def _dismissed_key(self) -> str:
+        return f"investments/dismissed_events/{self._user.id}"
+
+    def _dismissed(self) -> set:
+        value = QSettings("GEVernova", "FAMILYFIN").value(self._dismissed_key(), [])
+        if isinstance(value, str):
+            value = [value]
+        return set(value or [])
+
+    def _dismiss_event(self, event) -> None:
+        dismissed = self._dismissed() | {event.key}
+        QSettings("GEVernova", "FAMILYFIN").setValue(self._dismissed_key(), sorted(dismissed))
+
+    def check_corporate_actions(self, force: bool = False) -> None:
+        """Ask the provider for dividends/splits of held securities (background)."""
+        now = datetime.now()
+        if (not force and self._events_checked_at is not None
+                and now - self._events_checked_at < EVENTS_CHECK_EVERY):
+            return
+        symbols = held_symbols(self._session, self._user.id)
+        if not symbols:
+            return
+        self._events_checked_at = now
+        provider = self._provider
+        self._events_runner.run(lambda: fetch_corporate_actions(provider, symbols),
+                                self._on_corporate_actions, latest_only=True)
+
+    def _on_corporate_actions(self, actions, error) -> None:
+        if error is not None:
+            logger.info("Sin datos de dividendos/splits: %s", error)
+            return
+        self._actions = actions
+        self._update_pending()
+
+    def _update_pending(self) -> None:
+        if self._actions is None:
+            return
+        self._pending = pending_events(self._session, self._user.id, self._actions,
+                                       self._dismissed())
+        dividends = sum(1 for e in self._pending if e.kind == InvestmentKind.dividend)
+        splits = len(self._pending) - dividends
+        parts = []
+        if dividends:
+            parts.append(f"{dividends} dividendo{'s' if dividends != 1 else ''}")
+        if splits:
+            parts.append(f"{splits} split{'s' if splits != 1 else ''}")
+        self._lbl_events.setText(
+            f"Yahoo Finance indica {' y '.join(parts)} de tus valores que no has registrado."
+            if parts else "")
+        self._events_banner.setVisible(bool(parts))
+
+    def review_pending_events(self) -> None:
+        dialog = PendingEventsDialog(self._session, self._user.id, self._provider, self._t,
+                                     self._pending, self._dismiss_event, parent=self)
+        dialog.exec()
+        if dialog.registered:
+            self.reload()
+            self._refresher.refresh()
+        self._update_pending()
 
     # ------------------------------------------------------------------
     # Theme
@@ -638,3 +741,9 @@ class InvestmentsView(QWidget):
         self._positions.apply_theme(t)
         self._evolution.apply_theme(t)
         self._allocation.apply_theme(t)
+        self._tax.apply_theme(t)
+        self._btn_events.setIcon(qta.icon("mdi.bell-ring-outline", color=t["warning"]))
+        self._events_banner.setStyleSheet(
+            f"QFrame#eventsBanner {{ background-color: {t['bg_secondary']};"
+            f" border-bottom: 1px solid {t['border']}; }}"
+            f"QLabel#eventsText {{ color: {t['text_primary']}; font-size: 13px; }}")

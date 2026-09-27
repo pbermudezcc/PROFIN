@@ -273,6 +273,21 @@ def fx_rate(session: Session, currency: str, on: Optional[date] = None) -> Optio
     return rate * divisor if rate is not None else None
 
 
+def reset_price_history(session: Session, security_id: int) -> int:
+    """Drop a security's downloaded closes so the next refresh fetches them all.
+
+    Needed after a split: Yahoo re-adjusts every close before the split date,
+    while the cache still holds the unadjusted ones. Manual prices are kept.
+    Commits; returns the rows removed.
+    """
+    removed = (session.query(PriceHistory)
+               .filter(PriceHistory.security_id == security_id,
+                       PriceHistory.source != PRICE_SOURCE_MANUAL)
+               .delete(synchronize_session=False))
+    session.commit()
+    return removed
+
+
 def set_manual_price(session: Session, security_id: int, day: date, close: float) -> None:
     """Store a hand-typed price (e.g. a fund NAV); refreshes never overwrite it."""
     if close <= 0:

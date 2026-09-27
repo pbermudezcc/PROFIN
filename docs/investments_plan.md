@@ -34,7 +34,7 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 | F3 | Pestaña Operaciones: diálogo de alta/edición y listado | **hecho** 2026-09-27 |
 | F4 | Pestaña Posiciones + tarjetas + refresco (primera versión usable) | **hecho** 2026-09-27 |
 | F5 | Gráficas de evolución, índice de referencia y distribución | **hecho** 2026-09-27 |
-| F6 | Dividendos, splits e informe fiscal anual FIFO | pendiente |
+| F6 | Dividendos, splits e informe fiscal anual FIFO | **hecho** 2026-09-27 |
 | F7 | Importación CSV (DEGIRO, Trade Republic, MyInvestor, Scalable) — opcional | pendiente |
 | F8 | Retoques finales y versión 0.5.0 | pendiente |
 
@@ -116,6 +116,23 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
   o de barras del panel principal). Solo se recalculan cuando su pestaña está a la vista.
 - Corregido de paso un fallo del gráfico circular de Posición Global (`dashboard._paint_donut`): los sectores
   se superponían.
+
+## Resultados F6 (2026-09-27)
+- Decisiones: proponer los dividendos y splits detectados en Yahoo (el usuario confirma el neto); informe en pantalla
+  y en Excel; marcar la regla antirrecompra; una sola retención (en origen), sin migración.
+- `market_data.corporate_actions` + `app/investments/events.py`: un dividendo se considera pendiente si ese día
+  tenías acciones y no hay ningún dividendo de ese valor registrado entre 5 días antes y 60 días después de la
+  fecha ex-dividendo. Un split, si no hay ninguno registrado en ±7 días. Los descartados se guardan en QSettings
+  (`investments/dismissed_events/<user_id>`). La comprobación se hace tras actualizar las cotizaciones, como mucho cada 6 h.
+- Splits: al guardar o borrar un split se borran los precios descargados de ese valor
+  (`prices.reset_price_history`), porque Yahoo recalcula todo el histórico anterior al split, y se vuelve a descargar.
+  `portfolio.split_factor_after` corrige esos precios en el histórico de la cartera y en la sugerencia de
+  «cierre del día» del formulario.
+- `app/investments/tax_report.py`: ventas por lote FIFO, regla antirrecompra (art. 33.5.f de la Ley del IRPF:
+  2 meses para acciones y ETF cotizados, 1 año para fondos; lo recomprado bloquea en orden FIFO la parte de la pérdida
+  que corresponde), dividendos (íntegro = neto + retención) y `export_xlsx` (hojas Resumen, Ganancias y pérdidas,
+  Dividendos). Pestaña Fiscalidad en `app/gui/investment_tax.py`.
+- Aviso en la vista («Yahoo Finance indica N dividendos… Revisar») → `PendingEventsDialog` → formulario prerrellenado.
 
 ## Riesgos
 - `yfinance` no es oficial y puede dejar de funcionar si Yahoo cambia su web → proveedor aislado, caché local y alternativas (Stooq, Twelve Data).

@@ -41,7 +41,7 @@ from app.db.models import (
 )
 from app.investments.benchmarks import BENCHMARKS
 from app.investments.market_data import fx_pair
-from app.investments.portfolio import build_positions
+from app.investments.portfolio import build_positions, split_factor_after
 from app.investments.snapshot import PortfolioSnapshot, portfolio_snapshot
 
 
@@ -195,7 +195,12 @@ def portfolio_history(
                 fx_values, divisor = fx[security.currency]
                 raw = fx_values.at(day) or fx_values.first_after(day)
                 rate = raw * divisor if raw else None
-            value += qty * close / rate if close is not None and rate else cost
+            if close is not None and rate:
+                # Closes before a later split are split-adjusted by the provider.
+                close *= split_factor_after(transactions, security_id, day)
+                value += qty * close / rate
+            else:
+                value += cost
 
         bench_value = None
         if bench_series is not None:

@@ -401,3 +401,76 @@ def test_choosing_a_benchmark_catalogues_it_and_refreshes(env):
         assert view._evolution.benchmark_key is None
     finally:
         view.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# F6: pending dividends/splits, prefilled entry, Fiscalidad tab
+# ---------------------------------------------------------------------------
+
+def test_pending_events_banner_register_and_dismiss(env, monkeypatch):
+    from app.gui.investment_dialogs import PendingEventsDialog
+    from app.investments.market_data import CorporateActions
+
+    buy(env, env.gev, 4, 1000.0, d=env.day - timedelta(days=200))
+    env.session.add(FxRate(currency="USD", rate_date=env.day - timedelta(days=300), rate=1.25))
+    env.session.commit()
+    ex1, ex2 = env.day - timedelta(days=100), env.day - timedelta(days=10)
+    env.provider.corporate_actions = lambda symbol: CorporateActions(
+        dividends=((ex1, 0.5), (ex2, 0.5)) if symbol == "GEV" else ())
+    view = make_view(env)
+    try:
+        view.check_corporate_actions(force=True)
+        assert wait_until(lambda: view._events_banner.isVisibleTo(view))
+        assert "2 dividendos" in view._lbl_events.text()
+
+        dialog = PendingEventsDialog(env.session, env.user.id, env.provider, env.theme,
+                                     view._pending, view._dismiss_event)
+        assert dialog._table.rowCount() == 2
+        dialog._table.selectRow(0)
+        dialog._dismiss()
+        assert dialog._table.rowCount() == 1
+        view._update_pending()
+        assert "1 dividendo " in view._lbl_events.text() + " "
+
+        # Registering the remaining one through the prefilled form hides the banner.
+        event = view._pending[0]
+        form = TransactionDialog(env.session, env.user.id, env.provider, env.theme,
+                                 default_security_id=event.security_id,
+                                 default_kind=InvestmentKind.dividend,
+                                 prefill={"trade_date": event.ex_date, "amount_eur": event.gross_eur,
+                                          "hint": "Dividendo detectado"})
+        assert form._lbl_prefill.isVisibleTo(form)
+        assert form._amount.value() == pytest.approx(event.gross_eur)
+        form._withheld.setValue(0.3)
+        form._save()
+        view._update_pending()
+        assert not view._events_banner.isVisibleTo(view)
+    finally:
+        view.shutdown()
+
+
+def test_tax_tab_shows_report_and_exports(env, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    buy(env, env.enr, 10, 1500.0, d=date(2025, 1, 10))
+    save_transaction(env.session, env.user.id, TransactionDraft(
+        security_id=env.enr.id, kind=InvestmentKind.sell, trade_date=date(2025, 5, 2),
+        broker="DEGIRO", quantity=10, amount_eur=1000.0))
+    buy(env, env.enr, 4, 420.0, d=date(2025, 6, 20))
+    view = make_view(env)
+    target = tmp_path / "informe.xlsx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: shown.append(a[2]))
+    try:
+        view._tabs.setCurrentWidget(view._tax)
+        tax = view._tax
+        assert tax._cmb_year.currentData() == 2025
+        assert tax._sales_model.rowCount() == 1
+        assert tax._cards["net"]._lbl_value.text() == "−500,00 €"
+        assert tax._cards["blocked"]._lbl_value.text() == "−200,00 €"
+        assert tax._cards["computable"]._lbl_value.text() == "−300,00 €"
+        tax._export()
+        assert target.exists() and shown
+    finally:
+        view.shutdown()

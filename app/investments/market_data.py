@@ -71,6 +71,13 @@ class SecurityInfo:
     country:    Optional[str] = None
 
 
+@dataclass(frozen=True)
+class CorporateActions:
+    """Per-share cash dividends (quote currency) and split ratios, by ex-date."""
+    dividends: Tuple[Tuple[date, float], ...] = ()
+    splits:    Tuple[Tuple[date, float], ...] = ()
+
+
 def fx_pair(currency: str) -> Optional[Tuple[str, float]]:
     """(ISO currency whose EUR rate is needed, divisor for minor units).
 
@@ -95,6 +102,8 @@ class MarketDataProvider(Protocol):
     def daily_closes(
         self, symbols: Sequence[str], start: date, end: Optional[date] = None
     ) -> DailyCloses: ...
+
+    def corporate_actions(self, symbol: str) -> CorporateActions: ...
 
 
 # ---------------------------------------------------------------------------
@@ -191,3 +200,25 @@ class YahooProvider:
             if rows:
                 result[symbol] = rows
         return result
+
+    def corporate_actions(self, symbol: str) -> CorporateActions:
+        """Dividends and splits Yahoo knows for a symbol (whole history).
+
+        Yahoo's `actions` frame has one row per event day with both columns;
+        a 0 in "Stock Splits" (or "Dividends") means no such event that day.
+        """
+        try:
+            frame = self._yf().Ticker(symbol).actions
+        except Exception as exc:
+            logger.warning("Dividendos/splits de %s no disponibles: %s", symbol, exc)
+            raise MarketDataError(self._CONNECTION_ERROR) from exc
+        if frame is None or frame.empty:
+            return CorporateActions()
+        dividends, splits = [], []
+        for index, row in frame.iterrows():
+            day = index.date()
+            if float(row.get("Dividends", 0) or 0) > 0:
+                dividends.append((day, float(row["Dividends"])))
+            if float(row.get("Stock Splits", 0) or 0) > 0:
+                splits.append((day, float(row["Stock Splits"])))
+        return CorporateActions(tuple(dividends), tuple(splits))

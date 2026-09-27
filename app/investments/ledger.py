@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import InvestmentKind, InvestmentTransaction, Security
 from app.investments.portfolio import LedgerError, ledger_error, validate_fields
+from app.investments.prices import reset_price_history
 
 KIND_LABELS = {
     InvestmentKind.buy:      "Compra",
@@ -148,6 +149,9 @@ def save_transaction(
     others = [t for t in _user_ledger(session, user_id, draft.security_id) if t.id != draft.id]
     _check(others + [draft])
 
+    touches_split = draft.kind == InvestmentKind.split or (
+        existing is not None and InvestmentKind(existing.kind) == InvestmentKind.split)
+    old_security_id = existing.security_id if existing is not None else None
     txn = existing or InvestmentTransaction(user_id=user_id)
     for name in _FIELDS:
         setattr(txn, name, getattr(draft, name))
@@ -158,6 +162,11 @@ def save_transaction(
     except Exception:
         session.rollback()
         raise
+    if touches_split:
+        # Cached closes were stored before the provider adjusted them for
+        # this split: download that security's history again.
+        for security_id in {draft.security_id, old_security_id} - {None}:
+            reset_price_history(session, security_id)
     return txn
 
 
@@ -168,12 +177,16 @@ def delete_transaction(session: Session, user_id: int, transaction_id: int) -> N
     error = ledger_error(remaining)
     if error is not None:
         raise LedgerError(f"No se puede borrar esta operación. {error}", error.transaction)
+    was_split = InvestmentKind(txn.kind) == InvestmentKind.split
+    security_id = txn.security_id
     session.delete(txn)
     try:
         session.commit()
     except Exception:
         session.rollback()
         raise
+    if was_split:
+        reset_price_history(session, security_id)
 
 
 def list_transactions(

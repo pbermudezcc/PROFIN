@@ -63,7 +63,7 @@ from app.investments.market_data import (
     fx_pair,
     fx_symbol,
 )
-from app.investments.portfolio import LedgerError, build_positions
+from app.investments.portfolio import LedgerError, build_positions, split_factor_after
 from app.investments.prices import close_on, fx_rate, security_from_info
 
 ASSET_LABELS = {AssetType.stock: "Acción", AssetType.etf: "ETF", AssetType.fund: "Fondo"}
@@ -359,6 +359,7 @@ class TransactionDialog(QDialog):
         transaction: Optional[InvestmentTransaction] = None,
         default_security_id: Optional[int] = None,
         default_kind: InvestmentKind = InvestmentKind.buy,
+        prefill: Optional[dict] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -384,6 +385,8 @@ class TransactionDialog(QDialog):
         self._build()
         self.setStyleSheet(dialog_stylesheet(theme))
         self._load(transaction, default_security_id, default_kind)
+        if transaction is None and prefill:
+            self._apply_prefill(prefill)
 
     # -- construction ------------------------------------------------------
     def _build(self) -> None:
@@ -395,6 +398,12 @@ class TransactionDialog(QDialog):
         title = QLabel(self.windowTitle())
         title.setObjectName("dlgTitle")
         layout.addWidget(title)
+
+        self._lbl_prefill = QLabel("")
+        self._lbl_prefill.setObjectName("dlgHint")
+        self._lbl_prefill.setWordWrap(True)
+        self._lbl_prefill.setVisible(False)
+        layout.addWidget(self._lbl_prefill)
 
         form = QFormLayout()
         form.setHorizontalSpacing(14)
@@ -548,6 +557,21 @@ class TransactionDialog(QDialog):
         self._notes.setText(txn.notes or "")
         self._on_kind_changed()
 
+    def _apply_prefill(self, prefill: dict) -> None:
+        """Values proposed by the app (e.g. a dividend detected on Yahoo)."""
+        if prefill.get("trade_date"):
+            self._date.setDate(_qdate(prefill["trade_date"]))
+        if prefill.get("split_ratio"):
+            self._ratio.setValue(prefill["split_ratio"])
+        if prefill.get("amount_eur") is not None:
+            self._amount_auto = False
+            self._set_amount(prefill["amount_eur"])
+        if prefill.get("notes"):
+            self._notes.setText(prefill["notes"])
+        if prefill.get("hint"):
+            self._lbl_prefill.setText(prefill["hint"])
+            self._lbl_prefill.setVisible(True)
+
     def _select_kind(self, kind: InvestmentKind) -> None:
         index = self._cmb_kind.findData(kind)
         self._cmb_kind.setCurrentIndex(max(index, 0))
@@ -700,8 +724,16 @@ class TransactionDialog(QDialog):
         pair = fx_pair(security.currency)
         fx_fresh = pair is None or rate is not None
         if cached is not None and day - cached.price_date <= _MAX_CACHE_GAP and fx_fresh:
-            return cached.price_date, cached.close, rate
+            return cached.price_date, cached.close * self._split_factor(security, day), rate
         return None
+
+    def _split_factor(self, security: Security, day: date) -> float:
+        """Provider closes before a registered split are adjusted; undo that."""
+        splits = (self._session.query(InvestmentTransaction)
+                  .filter(InvestmentTransaction.user_id == self._user_id,
+                          InvestmentTransaction.security_id == security.id,
+                          InvestmentTransaction.kind == InvestmentKind.split).all())
+        return split_factor_after(splits, security.id, day)
 
     def _update_market_hints(self) -> None:
         security = self._security()
@@ -751,6 +783,8 @@ class TransactionDialog(QDialog):
             else:
                 rows = [r for r in closes.get(security.symbol, []) if r[0] <= day]
                 close_date, close = rows[-1] if rows else (None, None)
+                if close is not None:
+                    close *= self._split_factor(security, day)
                 rate = 1.0
                 if pair:
                     fx_rows = [r for r in closes.get(fx_symbol(pair[0]), []) if r[0] <= day]
@@ -842,3 +876,124 @@ class TransactionDialog(QDialog):
         self._runner.shutdown()
         super().done(result)
 
+
+
+# ---------------------------------------------------------------------------
+# Dividends / splits detected on the provider but not registered
+# ---------------------------------------------------------------------------
+class PendingEventsDialog(QDialog):
+    """List detected events; register one (opens the entry form) or dismiss it."""
+
+    def __init__(self, session: Session, user_id: int, provider: MarketDataProvider,
+                 theme: dict, events: list, on_dismiss, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._session = session
+        self._user_id = user_id
+        self._provider = provider
+        self._t = theme
+        self._events = list(events)
+        self._on_dismiss = on_dismiss
+        self.registered = 0
+
+        self.setWindowTitle("Dividendos y splits pendientes")
+        self.setModal(True)
+        self.resize(820, 440)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(10)
+        title = QLabel("Dividendos y splits pendientes de registrar")
+        title.setObjectName("dlgTitle")
+        layout.addWidget(title)
+        hint = QLabel(
+            "Yahoo Finance indica estos eventos en fechas en las que tenías acciones. El importe es "
+            "una estimación bruta: al registrarlo, escribe el neto cobrado y la retención que "
+            "aparecen en el extracto del bróker. Descarta los que no te correspondan.")
+        hint.setObjectName("dlgHint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self._table = QTableWidget(0, 5)
+        self._table.setHorizontalHeaderLabels(
+            ["Tipo", "Valor", "Fecha ex-dividendo / split", "Acciones", "Estimación"])
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setAlternatingRowColors(True)
+        self._table.setShowGrid(False)
+        header = self._table.horizontalHeader()
+        for col in range(5):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._table.doubleClicked.connect(lambda _: self._register())
+        layout.addWidget(self._table, 1)
+
+        buttons = QHBoxLayout()
+        self._btn_dismiss = QPushButton("Descartar")
+        self._btn_dismiss.setObjectName("btnSecondary")
+        self._btn_dismiss.setToolTip("No volver a proponer este evento")
+        self._btn_dismiss.clicked.connect(self._dismiss)
+        buttons.addWidget(self._btn_dismiss)
+        buttons.addStretch()
+        close = QPushButton("Cerrar")
+        close.setObjectName("btnSecondary")
+        close.clicked.connect(self.accept)
+        buttons.addWidget(close)
+        self._btn_register = QPushButton("Registrar…")
+        self._btn_register.setObjectName("btnPrimary")
+        self._btn_register.clicked.connect(self._register)
+        buttons.addWidget(self._btn_register)
+        layout.addLayout(buttons)
+        self.setStyleSheet(dialog_stylesheet(theme))
+        self._fill()
+
+    def _fill(self) -> None:
+        self._table.setRowCount(len(self._events))
+        for row, event in enumerate(self._events):
+            if event.kind == InvestmentKind.split:
+                estimate = f"{fmt_quantity(event.ratio)} acciones nuevas por cada una"
+            elif event.gross_eur is not None:
+                estimate = (f"≈ {fmt_money(event.gross_eur, 'EUR')} brutos "
+                            f"({fmt_money(event.per_share, event.currency, 4)} por acción)")
+            else:
+                estimate = f"{fmt_money(event.per_share, event.currency, 4)} por acción"
+            values = [KIND_LABELS[event.kind], f"{event.name}  ·  {event.symbol}",
+                      fmt_date(event.ex_date), fmt_quantity(event.shares), estimate]
+            for col, value in enumerate(values):
+                self._table.setItem(row, col, QTableWidgetItem(value))
+        if self._events:
+            self._table.selectRow(0)
+        has = bool(self._events)
+        self._btn_register.setEnabled(has)
+        self._btn_dismiss.setEnabled(has)
+
+    def _selected(self):
+        rows = self._table.selectionModel().selectedRows()
+        return self._events[rows[0].row()] if rows else None
+
+    def _register(self) -> None:
+        event = self._selected()
+        if event is None:
+            return
+        if event.kind == InvestmentKind.split:
+            prefill = {"trade_date": event.ex_date, "split_ratio": event.ratio,
+                       "hint": f"Split de {event.name} detectado en Yahoo Finance."}
+        else:
+            prefill = {"trade_date": event.ex_date, "amount_eur": event.gross_eur,
+                       "hint": ("Dividendo detectado en Yahoo Finance. Cambia la fecha por la de "
+                                "cobro y el importe por el neto del extracto; indica la retención.")}
+        dialog = TransactionDialog(self._session, self._user_id, self._provider, self._t,
+                                   default_security_id=event.security_id,
+                                   default_kind=event.kind, prefill=prefill, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.registered += 1
+            self._events.remove(event)
+            self._fill()
+
+    def _dismiss(self) -> None:
+        event = self._selected()
+        if event is None:
+            return
+        self._on_dismiss(event)
+        self._events.remove(event)
+        self._fill()

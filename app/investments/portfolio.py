@@ -269,6 +269,22 @@ def build_positions(transactions: Iterable) -> Dict[int, Position]:
     return positions
 
 
+def split_factor_after(transactions: Iterable, security_id: int, day: date) -> float:
+    """Product of the ratios of this security's splits dated after `day`.
+
+    Provider closes are split-adjusted: a close from before a 2-for-1 split
+    is half the price actually paid that day. Multiplying such a close by
+    this factor gives the real historical price, and pre-split shares × the
+    adjusted close × factor gives the real value.
+    """
+    factor = 1.0
+    for txn in transactions:
+        if (txn.security_id == security_id and _kind(txn) == InvestmentKind.split
+                and txn.trade_date > day and txn.split_ratio):
+            factor *= float(txn.split_ratio)
+    return factor
+
+
 def ledger_error(transactions: Iterable) -> Optional[LedgerError]:
     """The LedgerError the ledger would raise, or None if it is consistent.
 
