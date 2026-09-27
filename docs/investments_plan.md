@@ -32,7 +32,7 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 | F1 | Esquema (`securities`, `investment_transactions`, `price_history`, `fx_rates`) + migración v4 + cálculos (posiciones, FIFO, P/L, XIRR) + tests | **hecho** 2026-09-27 |
 | F2 | Proveedor de cotizaciones + caché + actualización en segundo plano + tests con proveedor simulado | **hecho** 2026-09-27 |
 | F3 | Pestaña Operaciones: diálogo de alta/edición y listado | **hecho** 2026-09-27 |
-| F4 | Pestaña Posiciones + tarjetas + refresco (primera versión usable) | pendiente |
+| F4 | Pestaña Posiciones + tarjetas + refresco (primera versión usable) | **hecho** 2026-09-27 |
 | F5 | Gráficas de evolución, índice de referencia y distribución | pendiente |
 | F6 | Dividendos, splits e informe fiscal anual FIFO | pendiente |
 | F7 | Importación CSV (DEGIRO, Trade Republic, MyInvestor, Scalable) — opcional | pendiente |
@@ -93,6 +93,17 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 - `app/gui/_background.py`: llamadas a internet en hilos propios que se retienen hasta terminar; la ventana
   principal espera a que acaben al cerrarse (`closeEvent`). Los hilos de refresco abren su sesión sobre la misma
   base de datos que la vista.
+
+## Resultados F4 (2026-09-27)
+- `app/investments/snapshot.py`: `portfolio_snapshot(session, user_id, as_of, broker)` → filas por valor
+  (valor de mercado en EUR, coste FIFO, ganancia no realizada, variación del día con el tipo de cambio de cada día,
+  peso, realizado, dividendos) y totales (realizado y dividendos del año y totales, XIRR). Un valor sin precio
+  o sin tipo de cambio se valora a coste y se avisa; un precio de más de 7 días se marca como antiguo.
+- `app/gui/investment_positions.py`: 7 tarjetas (reutilizan `_KPICard` del panel principal), aviso de precios
+  que faltan o están antiguos, tabla ordenable por valor, opción de mostrar posiciones cerradas y filtro por bróker.
+  Doble clic en una posición → Operaciones filtradas por ese valor. La XIRR solo se muestra con al menos 30 días de historial.
+- La vista abre en Posiciones si el usuario ya tiene operaciones, y en Operaciones si todavía no tiene ninguna.
+  Las posiciones se recargan después de cada actualización de cotizaciones.
 
 ## Riesgos
 - `yfinance` no es oficial y puede dejar de funcionar si Yahoo cambia su web → proveedor aislado, caché local y alternativas (Stooq, Twelve Data).

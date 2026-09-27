@@ -293,3 +293,61 @@ def test_search_dialog_adds_security_to_catalogue(env):
     assert wait_until(lambda: dlg.security is not None)
     security = env.session.query(Security).filter_by(symbol="TKE.DE").one()
     assert (security.currency, security.isin) == ("EUR", "US8740541094")
+
+
+# ---------------------------------------------------------------------------
+# Positions tab
+# ---------------------------------------------------------------------------
+
+def test_positions_tab_shows_cards_and_rows(env):
+    buy(env, env.enr, 10, 1000.0, d=env.day - timedelta(days=40))
+    buy(env, env.gev, 2, 1200.0, d=env.day - timedelta(days=40))
+    view = make_view(env)
+    try:
+        assert view._tabs.currentIndex() == 0          # has operations → Posiciones
+        panel = view._positions
+        assert panel._model.rowCount() == 2
+        top = [panel._proxy.index(0, c).data() for c in range(panel._proxy.columnCount())]
+        assert "GEV" in top[0]                          # sorted by value: 2×957.63/1.25 = 1532.21
+        assert top[5] == "1.532,21 €" and top[7] == "+332,21 €"
+        cards = panel._cards
+        assert cards["value"]._lbl_value.text() == "2.958,21 €"
+        assert cards["cost"]._lbl_value.text() == "2.200,00 €"
+        assert cards["gain"]._lbl_value.text() == "+758,21 €"
+        assert cards["xirr"]._lbl_value.text() != "—"
+        assert not panel._banner.isVisibleTo(panel)
+
+        index = panel._proxy.index(0, 0)
+        panel._on_double_click(index)
+        assert view._tabs.currentIndex() == 1 and view._inp_search.text() == "GEV"
+    finally:
+        view.shutdown()
+
+
+def test_positions_banner_for_missing_price_and_closed_toggle(env):
+    tke = Security(symbol="TKE.DE", name="Take-Two", currency="EUR")
+    env.session.add(tke)
+    env.session.commit()
+    buy(env, tke, 8, 1455.2)
+    buy(env, env.enr, 5, 500.0, d=env.day - timedelta(days=10))
+    save_transaction(env.session, env.user.id, TransactionDraft(
+        security_id=env.enr.id, kind=InvestmentKind.sell, trade_date=env.day,
+        broker="DEGIRO", quantity=5, amount_eur=700.0))
+    view = make_view(env)
+    try:
+        panel = view._positions
+        assert panel._banner.isVisibleTo(panel) and "TKE.DE" in panel._banner.text()
+        assert panel._model.rowCount() == 1
+        panel._chk_closed.setChecked(True)
+        assert panel._model.rowCount() == 2
+        assert panel._cards["realized"]._lbl_value.text() == "+200,00 €"
+    finally:
+        view.shutdown()
+
+
+def test_new_user_starts_on_operations_tab(env):
+    view = make_view(env)
+    try:
+        assert view._tabs.currentIndex() == 1
+    finally:
+        view.shutdown()

@@ -5,7 +5,7 @@ FAMILYFIN — Inversiones view (per user).
 
 Layout
   top bar   title · price status ("Precios de las 18:52") · refresh · "+ Operación"
-  tabs      Posiciones  (F4 — placeholder until then)
+  tabs      Posiciones  (KPI cards + positions table, investment_positions.py)
             Operaciones (ledger: filter bar + sortable table, edit/delete)
 
 Prices are refreshed in the background by a PriceRefresher when the view
@@ -45,6 +45,7 @@ from app.db.models import InvestmentKind, InvestmentTransaction, User
 from app.gui._format import fmt_date, fmt_eur, fmt_money, fmt_quantity
 from app.gui._style_utils import apply_card_shadow
 from app.gui.investment_dialogs import TransactionDialog
+from app.gui.investment_positions import PositionsPanel
 from app.investments.ledger import (
     KIND_LABELS,
     delete_transaction,
@@ -100,6 +101,8 @@ class InvestmentsView(QWidget):
         self._build_ui()
         self._apply_theme()
         self.reload()
+        # A user without operations starts on the tab that lets them add one.
+        self._tabs.setCurrentIndex(0 if self._ops_stack.currentIndex() == 1 else 1)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -113,9 +116,10 @@ class InvestmentsView(QWidget):
         self._tabs = QTabWidget()
         self._tabs.setObjectName("invTabs")
         self._tabs.setDocumentMode(True)
-        self._tabs.addTab(self._make_positions_placeholder(), "Posiciones")
+        self._positions = PositionsPanel(self._session, self._user.id, self._t)
+        self._positions.security_activated.connect(self._show_operations_of)
+        self._tabs.addTab(self._positions, "Posiciones")
         self._tabs.addTab(self._make_operations_tab(), "Operaciones")
-        self._tabs.setCurrentIndex(1)
         root.addWidget(self._tabs, 1)
 
     def _make_topbar(self) -> QFrame:
@@ -152,22 +156,6 @@ class InvestmentsView(QWidget):
         self._btn_add.clicked.connect(lambda: self.open_transaction_dialog())
         layout.addWidget(self._btn_add)
         return bar
-
-    def _make_positions_placeholder(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addStretch()
-        self._lbl_positions_icon = QLabel()
-        self._lbl_positions_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._lbl_positions_icon)
-        text = QLabel("La vista de posiciones, con el valor actual de la cartera, "
-                      "llegará en la siguiente fase.\nMientras tanto puedes ir "
-                      "registrando tus operaciones.")
-        text.setObjectName("emptyText")
-        text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(text)
-        layout.addStretch()
-        return page
 
     def _make_operations_tab(self) -> QWidget:
         page = QWidget()
@@ -248,6 +236,7 @@ class InvestmentsView(QWidget):
         for col in range(len(COLUMNS)):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._table.sortByColumn(0, Qt.SortOrder.DescendingOrder)     # newest first
         self._table.selectionModel().selectionChanged.connect(self._update_action_buttons)
         QShortcut(QKeySequence.StandardKey.Delete, self._table, activated=self._delete_selected)
         self._ops_stack.addWidget(self._table)
@@ -297,7 +286,14 @@ class InvestmentsView(QWidget):
     def reload(self) -> None:
         self._load_brokers()
         self._load_operations()
+        self._positions.reload()
         self._update_status()
+
+    def _show_operations_of(self, symbol: str) -> None:
+        self._cmb_kind.setCurrentIndex(0)
+        self._cmb_broker.setCurrentIndex(0)
+        self._inp_search.setText(symbol)
+        self._tabs.setCurrentIndex(1)
 
     def _load_brokers(self) -> None:
         current = self._cmb_broker.currentData()
@@ -334,10 +330,7 @@ class InvestmentsView(QWidget):
         for txn in rows:
             self._model.appendRow(self._make_row(txn, t))
         self._table.setSortingEnabled(True)
-        if sort_column < 0:
-            self._table.sortByColumn(0, Qt.SortOrder.DescendingOrder)
-        else:
-            self._table.sortByColumn(sort_column, sort_order)
+        self._table.sortByColumn(sort_column, sort_order)
 
         total = len(rows)
         self._lbl_count.setText(f"{total} operación" if total == 1 else f"{total} operaciones")
@@ -483,6 +476,8 @@ class InvestmentsView(QWidget):
         self._btn_refresh.setEnabled(True)
         if result.missing:
             logger.info("Sin cotización para: %s", ", ".join(result.missing))
+        if result.ok:
+            self._positions.reload()
         self._update_status()
 
     def _update_status(self) -> None:
@@ -539,8 +534,6 @@ class InvestmentsView(QWidget):
         self._btn_delete.setIcon(qta.icon("mdi.delete-outline", color=t["text_secondary"]))
         self._lbl_empty_icon.setPixmap(
             qta.icon("mdi.chart-line", color=t["investment"]).pixmap(56, 56))
-        self._lbl_positions_icon.setPixmap(
-            qta.icon("mdi.briefcase-outline", color=t["text_secondary"]).pixmap(48, 48))
         self.setStyleSheet(f"""
             QWidget {{ background-color: {t["bg_primary"]}; }}
             QLabel {{ background: transparent; }}
@@ -607,3 +600,4 @@ class InvestmentsView(QWidget):
             QLabel#pageLabel {{ color: {t["text_secondary"]}; font-size: 12px; }}
         """)
         apply_card_shadow(self._filter_bar, t, blur_radius=12, y_offset=2)
+        self._positions.apply_theme(t)

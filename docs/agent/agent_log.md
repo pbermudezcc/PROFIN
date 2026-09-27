@@ -129,3 +129,11 @@ Entry format:
 - Validation: `python -m pytest -q` → 234 passed (200 before). Screenshots rendered with the real Windows platform (WA_DontShowOnScreen) in both themes; fixed label backgrounds, decimal comma, field widths and a truncated hint.
 - Lesson: in PySide6 a signal connected to a lambda/plain function runs in the emitting thread; deliver worker results through a bound method of a GUI-thread QObject. The price-refresh worker must bind its Session to the view's engine, not the module default (the GUI smoke test caught this).
 - Follow-up: F4 positions tab + KPI cards. Spin boxes do not show thousands separators (display only).
+
+## 2026-09-27 — Inversiones F4: positions tab and KPI cards
+- Type: feature
+- Files touched: new app/investments/snapshot.py, new app/gui/investment_positions.py, app/gui/investments_view.py (positions panel, default tab, explicit default sort), new tests/test_investments_snapshot.py, tests/test_investments_gui.py, docs/investments_plan.md, this file.
+- Summary: portfolio_snapshot prices the FIFO positions from the local cache (EUR via the FX rate of each close, day change against the previous close and its FX rate, weights, YTD/total realized and dividends, XIRR). Missing price/FX → valued at cost and listed in a banner; prices older than 7 days are flagged. The Posiciones tab shows 7 KPI cards (dashboard _KPICard), the banner, and a positions table (closed positions toggle, broker filter, double-click → operations of that security).
+- Validation: `python -m pytest -q` → 246 passed (234 before). Screenshots with real Yahoo prices on a temp DB in both themes.
+- Lesson: QTableView.setSortingEnabled(True) immediately sorts by the header's current indicator (column 0), so "sortColumn() < 0" never means "not sorted yet"; set the default order explicitly with sortByColumn when building the table.
+- Follow-up: F5 charts (portfolio value vs invested capital over time, benchmark, allocation donut).
