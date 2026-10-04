@@ -213,3 +213,13 @@ Entry format:
 - Snapshot: `versions/FAMILYFIN.R.0.6.0.md/.prj`; CHANGELOG entry with the full notes.
 - Validation: preflight → 454 passed; verify-notes OK; postflight OK (local) and OK `--published`.
 - Note: no schema migration.
+
+## 2026-10-05 — Session close: web parity W6–W8 shipped in v0.6.0; next goal = W9 (investments admin)
+- Type: session summary
+- Done this session:
+  1. Plan agreed with the user: professional design refresh first (W6), then categories & rules (W7) and CaixaBank import by upload (W8); investments admin and settings/account deferred to W9/W10.
+  2. W6–W8 implemented, tested in Chrome on a demo DB at desktop / iPad / iPhone widths, light and dark (see the "Web parity W6–W8" entry above).
+  3. Release v0.6.0 (stable, main), tag `v0.6.0`, zip on GitHub, local copy in dist/. 454 tests.
+  4. New dev tool `tools/web_preview.py`: web preview on a demo DB (localhost only, demo/demo-pass) with live CSS/JS reload, device-width frame and a demo statement for /importar.
+- Not verified yet: a real CaixaBank statement uploaded from the iPad (the user will try it on v0.6.0).
+- Next session: W9 — investments admin from the web. Brief with the existing Qt-free functions, what must be extracted and the risks (shared price-refresh lock with the desktop, dismissed events moving from QSettings to the DB = schema migration): `docs/web_parity_plan.md` → "W9".
