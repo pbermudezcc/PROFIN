@@ -5,6 +5,62 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.5.0.md`  |  **Files:** 111  |  **Handler:** v1.0.0
+**Date:** 2026-10-04 19:19  |  **Type:** Release
+**Description:** FAMILYFIN 0.5.0 trae dos grandes novedades. La primera es la nueva sección de Inversiones: registra compras, ventas, dividendos y splits, ve el valor de la cartera con cotizaciones actualizadas, compárala con un índice, consulta el informe fiscal del año e importa los extractos de DEGIRO y MyInvestor. La segunda es el acceso desde iPhone e iPad en la red de casa, con conexión cifrada (HTTPS): cada uno entra con su usuario, consulta resumen, gastos, ingresos, movimientos e inversiones, y puede cambiar categorías y registrar operaciones desde el móvil.
+
+### Antes de actualizar
+
+- La base de datos se actualiza automáticamente del esquema v3 al v5 la primera vez que se abre la aplicación. Antes se guarda una copia `profin.pre-migration-v5.<fecha>.db` junto a la base.
+
+### Novedades
+
+- Acceso desde iPhone e iPad en la red de casa, activándolo en Configuración → Acceso web. La conexión es siempre cifrada con un certificado propio de casa, que se instala una sola vez en cada dispositivo escaneando un código QR. Cada persona entra con su usuario y solo ve sus datos. Desde el móvil se puede consultar el resumen, gastos e ingresos con gráficos, los movimientos con buscador y filtros, y las inversiones, y además cambiar la categoría de un movimiento con un toque o añadir y corregir operaciones de inversión. Se puede añadir a la pantalla de inicio como una app, y la sesión se cierra sola tras 30 minutos sin uso (`0f9f5c0`).
+- Nueva sección Inversiones con el registro de operaciones y una cartera calculada con el método FIFO, como exige Hacienda (`ceff2a2`). Las cotizaciones y los tipos de cambio se descargan solos en segundo plano y se guardan para usarlos sin conexión (`7c26ce5`).
+- Pestaña de Operaciones con formulario de alta y buscador de valores por nombre, ticker o ISIN (`998c9e1`). Pestaña de Posiciones con tarjetas de valor, plusvalía, rentabilidad anual (TIR), realizado y dividendos (`96b5de0`).
+- Gráfico de evolución del valor frente al capital invertido, comparado con el MSCI World, el S&P 500 o el IBEX 35 con las mismas aportaciones, y distribución por valor, bróker, divisa o tipo de activo (`5385227`).
+- Detección de dividendos y splits pendientes de registrar, e informe fiscal anual de ventas y dividendos con la regla de recompra de dos meses (un año en fondos) y exportación a Excel (`7c9e0f9`).
+- Importación del «Estado de cuenta» de DEGIRO: junta las ejecuciones parciales, añade comisiones e impuestos, valora los dividendos con los euros realmente recibidos y no duplica lo ya importado (`6468adb`). También importa los movimientos de MyInvestor: propone el tipo de cada movimiento, el valor y el número de participaciones, y todo se puede corregir antes de importar (`82e73b2`).
+
+### Mejoras
+
+- Las preferencias (tema, último usuario, carpeta de datos, copias) se guardan ahora con el nombre FAMILYFIN y se copian solas desde la ubicación anterior la primera vez, sin perder nada (`36f2d08`).
+
+### Interno
+
+- Nueva dependencia para descargar cotizaciones (Yahoo Finance) y plan de trabajo de Inversiones (`a7a8297`). Registro de la publicación de la versión 0.4.0 (`36c59f1`).
+
+### Áreas afectadas
+
+- **Base de datos y migraciones**: `app/db/database.py`, `app/db/models.py`
+- **Categorías y reglas**: `app/categorization/category_manager.py`
+- **Informes y gráficos**: `app/analytics/dashboard_summary.py`, `app/analytics/transaction_search.py`
+- **Configuración y copias de seguridad**: `app/settings/settings_manager.py`
+- **Interfaz**: `app/gui/_background.py`, `app/gui/_format.py`, `app/gui/dashboard.py`, `app/gui/investment_charts.py`, `app/gui/investment_dialogs.py`, `app/gui/investment_import.py` y 9 más
+- **Instalación y compilación Windows**: `build_profin.spec`, `requirements.txt`
+- **Tests**: `conftest.py`, `tests/test_backup_and_migrations.py`, `tests/test_gui_smoke.py`, `tests/test_investments_gui.py`, `tests/test_investments_import.py`, `tests/test_investments_import_myinvestor.py` y 10 más
+- **Herramientas de desarrollo y agentes**: `.claude/agents/familyfin-engineer.md`, `.github/agents/familyfin-developer.agent.md`, `tools/ExportVersionHandler.py`, `tools/make_web_icons.py`
+- **Documentación**: `docs/agent/agent_log.md`, `docs/agent/lessons_learned.md`, `docs/investments_plan.md`
+
+<details><summary>Commits incluidos (12 desde v0.4.0)</summary>
+
+- `0f9f5c0` feat(web): HTTPS LAN access for iPhone/iPad with login, dashboards and light edits
+- `82e73b2` feat(investments): MyInvestor account-movements import (F7b)
+- `36f2d08` refactor(settings): store preferences under FAMILYFIN instead of the former organization name
+- `6468adb` feat(investments): DEGIRO account statement import (F7)
+- `7c9e0f9` feat(investments): dividends/splits detection and yearly tax report (F6)
+- `5385227` feat(investments): evolution chart, benchmark and allocation (F5)
+- `96b5de0` feat(investments): positions tab with KPI cards (F4)
+- `998c9e1` feat(investments): operations tab, entry dialog and security search (F3)
+- `7c26ce5` feat(investments): market-data provider, price/FX cache and background refresh (F2)
+- `ceff2a2` feat(investments): schema v4 and FIFO portfolio engine (F1)
+- `a7a8297` chore(investments): add yfinance dependency and investments plan (F0)
+- `36c59f1` docs(agent_log): record v0.4.0 release
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.4.0.md`  |  **Files:** 54  |  **Handler:** v1.0.0
 **Date:** 2026-09-27 18:02  |  **Type:** Release
 **Description:** FAMILYFIN 0.4.0 hace la aplicación más segura para vuestros datos: las copias de seguridad automáticas por fin se hacen de verdad, las categorías que elegís a mano ya no las cambian las reglas y la base de datos se actualiza sola al abrirla, guardando antes una copia. Además, las pantallas de Gastos e Ingresos cargan más rápido, la importación de extractos es más fiable y se corrigen varios fallos del panel principal.
