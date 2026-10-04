@@ -2,6 +2,7 @@
 {% block title %}Movimientos{% endblock %}
 {% block content %}
 {% call ui.large_title("Movimientos") %}
+  <button class="btn secondary sm" type="button" hx-post="/mas/reglas/aplicar" hx-vals='{"modo": "sin"}' hx-swap="none" title="Categorizar con las reglas los movimientos sin categoría">{{ ui.icon("wand", "sm") }}<span class="hide-sm">Aplicar reglas</span></button>
   <button class="icon-btn" type="button" data-toggle="#filters" aria-label="Filtros" aria-controls="filters">{{ ui.icon("filter", "sm") }}</button>
 {% endcall %}
 

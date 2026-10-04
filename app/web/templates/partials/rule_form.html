@@ -1,0 +1,52 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">{{ "Editar regla" if rule else "Nueva regla" }}</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  <form class="form-grid" id="rule-form" hx-post="/mas/reglas" hx-target="#sheet-body">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    {% if rule %}<input type="hidden" name="rule_id" value="{{ rule.id }}">{% endif %}
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+
+    <div class="field"><span>Si el concepto o el comercio…</span>
+      <div class="seg" role="radiogroup" aria-label="Tipo de coincidencia">
+        {% for value, label in match_types %}
+        <label class="seg-opt"><input type="radio" name="match_type" value="{{ value }}" {% if v.match_type == value %}checked{% endif %}><span>{{ label }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+    <label class="field"><span>Texto a buscar</span>
+      <input class="input" id="rule-pattern" name="pattern" value="{{ v.pattern or '' }}" maxlength="200" required
+             autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="p. ej. MERCADONA" {% if not rule %}autofocus{% endif %}>
+      <small class="help">Sin distinguir mayúsculas. Se busca en el comercio y en el concepto.</small>
+    </label>
+    <label class="field"><span>…asignar la categoría</span>
+      <select class="input" name="category_id" required>
+        <option value="">Elige una categoría…</option>
+        {% for group, cats in groups.items() %}
+        <optgroup label="{{ group }}">
+          {% for c in cats %}<option value="{{ c.id }}" {% if v.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Prioridad</span>
+      <input class="input" name="priority" value="{{ v.priority }}" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+      <small class="help">Número más bajo = se comprueba antes. Por defecto 100.</small>
+    </label>
+
+    <div id="rule-preview" hx-get="/mas/reglas/probar" hx-target="this" hx-include="#rule-pattern, #rule-form [name=match_type]"
+         hx-trigger="load, input from:#rule-pattern delay:400ms, change from:#rule-form" hx-swap="innerHTML" aria-live="polite"></div>
+
+    <div class="sticky-actions">
+      {% if rule %}
+      <button class="btn danger" type="button" hx-post="/mas/reglas/{{ rule.id }}/borrar" hx-swap="none"
+              hx-confirm="¿Borrar esta regla?" data-confirm-detail="Los movimientos que ya categorizó mantienen su categoría." data-confirm-label="Borrar" aria-label="Borrar regla">{{ ui.icon("trash", "sm") }}</button>
+      {% else %}
+      <button class="btn ghost" type="button" data-close-sheet>Cancelar</button>
+      {% endif %}
+      <button class="btn block" type="submit">{{ ui.icon("check", "sm") }} Guardar regla</button>
+    </div>
+  </form>
+</div>

@@ -2,24 +2,48 @@
 {% block title %}Categorías{% endblock %}
 {% block topbar %}{{ ui.topnav("Categorías", "Ajustes", "/mas") }}{% endblock %}
 {% block content %}
-{% call ui.large_title("Categorías", "Toca una para ver sus movimientos") %}{% endcall %}
+{% call ui.large_title("Categorías", "Toca una categoría para renombrarla o borrarla") %}
+  <button class="btn secondary sm hide-sm" type="button" hx-post="/mas/categorias/predeterminadas" hx-swap="none"
+          hx-confirm="¿Cargar las categorías por defecto?" data-confirm-detail="Solo se añaden las categorías y reglas estándar que falten; no se borra ni cambia nada." data-confirm-label="Cargar">{{ ui.icon("wand", "sm") }} Por defecto</button>
+  <button class="btn sm" type="button" hx-get="/mas/categorias/nueva" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>{{ ui.icon("plus", "sm") }} Nueva</button>
+{% endcall %}
+
 {% if not types %}
-<div class="card">{{ ui.empty("Sin categorías", "", "tag") }}</div>
-{% endif %}
-{% for t in types %}
-<div class="section-h"><h2>{{ t.name }}</h2></div>
-<div class="list tree">
-  {% for c in children[t.id] %}
-  <a class="row" href="/movimientos?categoria={{ c.id }}">
-    <div class="ic"><i class="sw" data-swatch="{{ c.name }}"></i></div>
-    <div class="body"><div class="t">{{ c.name }}</div>
-      {% if children[c.id] %}<div class="d faint">{{ children[c.id]|map(attribute="name")|join(" · ") }}</div>{% endif %}
+<div class="card">
+  {% call ui.empty("Sin categorías", "Carga el árbol de categorías y reglas por defecto de FAMILYFIN para empezar.", "tag") %}
+  <button class="btn" type="button" hx-post="/mas/categorias/predeterminadas" hx-swap="none">{{ ui.icon("wand", "sm") }} Cargar categorías por defecto</button>
+  {% endcall %}
+</div>
+{% else %}
+<div class="grid g2">
+  {% for t in types %}
+  <section class="card flush">
+    <div class="card-h">
+      <div>
+        <h3>{{ t.name }}</h3>
+        <div class="sub">{{ children[t.id]|length }} categorías · {{ totals[t.id] }} movimientos</div>
+      </div>
+      <div class="wrap-gap">
+        <button class="icon-btn" type="button" hx-get="/mas/categorias/{{ t.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet title="Renombrar {{ t.name }}" aria-label="Renombrar {{ t.name }}">{{ ui.icon("edit", "sm") }}</button>
+        <button class="icon-btn acc" type="button" hx-get="/mas/categorias/nueva?tipo={{ t.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet title="Nueva categoría en {{ t.name }}" aria-label="Nueva categoría en {{ t.name }}">{{ ui.icon("plus", "sm") }}</button>
+      </div>
     </div>
-    <span class="badge">{{ usage.get(c.id, 0) }}</span>
-  </a>
-  {% else %}
-  <div class="row faint">Sin categorías</div>
+    <div class="list flat">
+      {% for c in children[t.id] %}
+      <button class="row" type="button" hx-get="/mas/categorias/{{ c.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+        <div class="ic"><i class="sw" data-swatch="{{ c.name }}"></i></div>
+        <div class="body"><div class="t">{{ c.name }}</div></div>
+        <span class="faint num t-sm">{{ usage.get(c.id, 0) }}</span>
+        {{ ui.icon("right", "sm chev") }}
+      </button>
+      {% else %}
+      <div class="row faint">Sin categorías todavía</div>
+      {% endfor %}
+    </div>
+  </section>
   {% endfor %}
 </div>
-{% endfor %}
+<button class="btn secondary block section hide-lg" type="button" hx-post="/mas/categorias/predeterminadas" hx-swap="none"
+        hx-confirm="¿Cargar las categorías por defecto?" data-confirm-detail="Solo se añaden las categorías y reglas estándar que falten; no se borra ni cambia nada." data-confirm-label="Cargar">{{ ui.icon("wand", "sm") }} Cargar categorías por defecto</button>
+{% endif %}
 {% endblock %}

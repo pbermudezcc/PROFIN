@@ -1,0 +1,20 @@
+{% import "_ui.html" as ui %}
+{% if pattern.strip() %}
+<div class="card tight">
+  <div class="split">
+    <span class="strong">{{ p.total }} {{ "movimiento coincide" if p.total == 1 else "movimientos coinciden" }}</span>
+    {% if p.manual %}<span class="badge acc">{{ p.manual }} a mano · no cambian</span>{% endif %}
+  </div>
+  {% if p.samples %}
+  <div class="list flat">
+    {% for t in p.samples %}
+    <div class="row compact">
+      <div class="body"><div class="t t-sm">{{ t.issuer_name or t.concept }}</div><div class="d faint t-xs">{{ t.transaction_date|sdate }}</div></div>
+      <span class="num t-sm">{{ t.amount|eur }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% if p.total > p.samples|length %}<p class="note">y {{ p.total - p.samples|length }} más.</p>{% endif %}
+  {% endif %}
+</div>
+{% endif %}

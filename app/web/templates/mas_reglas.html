@@ -2,20 +2,76 @@
 {% block title %}Reglas{% endblock %}
 {% block topbar %}{{ ui.topnav("Reglas", "Ajustes", "/mas") }}{% endblock %}
 {% block content %}
-{% call ui.large_title("Reglas automáticas", "Se aplican en orden de prioridad") %}{% endcall %}
+{% call ui.large_title("Reglas automáticas", "Asignan categoría según el concepto o el comercio. La primera que coincide, por prioridad, gana.") %}
+  <button class="btn sm" type="button" hx-get="/mas/reglas/nueva" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>{{ ui.icon("plus", "sm") }} Nueva regla</button>
+{% endcall %}
+
+<div class="card tight split wrap">
+  <div>
+    <div class="strong">Aplicar las reglas</div>
+    <div class="faint t-sm">{{ uncategorized }} movimientos sin categoría. Las categorías puestas a mano nunca se cambian.</div>
+  </div>
+  <div class="wrap-gap">
+    <button class="btn secondary sm" type="button" hx-post="/mas/reglas/aplicar" hx-vals='{"modo": "todas"}' hx-swap="none"
+            hx-confirm="¿Recalcular todos los movimientos?" data-confirm-detail="Se vuelven a categorizar todos los movimientos según las reglas actuales, también los que ya tenían categoría por regla. Las categorías puestas a mano se mantienen." data-confirm-label="Recalcular">{{ ui.icon("refresh", "sm") }} Recalcular todos</button>
+    <button class="btn sm" type="button" hx-post="/mas/reglas/aplicar" hx-vals='{"modo": "sin"}' hx-swap="none" {% if not uncategorized %}disabled{% endif %}>{{ ui.icon("play", "sm") }} Aplicar a sin categoría</button>
+  </div>
+</div>
+
+{% macro move_buttons(r) -%}
+{% if r.user_id is not none %}
+<div class="row-actions">
+  <button class="icon-btn plain" type="button" hx-post="/mas/reglas/{{ r.id }}/prioridad" hx-vals='{"direccion": "up"}' hx-swap="none" aria-label="Subir prioridad" title="Subir prioridad" {% if r.id == first_id %}disabled{% endif %}>{{ ui.icon("up", "sm") }}</button>
+  <button class="icon-btn plain" type="button" hx-post="/mas/reglas/{{ r.id }}/prioridad" hx-vals='{"direccion": "down"}' hx-swap="none" aria-label="Bajar prioridad" title="Bajar prioridad" {% if r.id == last_id %}disabled{% endif %}>{{ ui.icon("down", "sm") }}</button>
+</div>
+{% endif %}
+{%- endmacro %}
+
 {% if rules %}
-<div class="list">
+<div class="list section hide-lg">
   {% for r in rules %}
   <div class="row">
-    <div class="ic accent">{{ r.priority }}</div>
-    <div class="body">
+    <div class="ic accent num">{{ r.priority }}</div>
+    {% if r.user_id is not none %}
+    <button class="body plain-btn" type="button" hx-get="/mas/reglas/{{ r.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+    {% else %}<div class="body">{% endif %}
       <div class="t">«{{ r.match_pattern }}»</div>
-      <div class="d"><span class="faint">{{ match_labels.get(r.match_type.value if r.match_type.value is defined else r.match_type, r.match_type) }} →</span> {{ ui.chip(names.get(r.category_id)) }}{% if r.user_id is none %}<span class="badge">global</span>{% endif %}</div>
-    </div>
+      <div class="d"><span class="faint">{{ match_labels.get(r.match_type.value, r.match_type.value)|lower }} →</span> {{ ui.chip(names.get(r.category_id)) }}{% if r.user_id is none %}<span class="badge inv">global</span>{% endif %}<span class="faint num">{{ counts.get(r.id, 0) }} mov.</span></div>
+    {% if r.user_id is not none %}</button>{% else %}</div>{% endif %}
+    {{ move_buttons(r) }}
   </div>
   {% endfor %}
 </div>
+
+<div class="card flush section hide-sm">
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr>
+        <th class="min">Prioridad</th><th>Texto a buscar</th><th>Coincidencia</th><th>Categoría</th>
+        <th class="r">Movimientos</th><th>Ámbito</th><th class="min"></th>
+      </tr></thead>
+      <tbody>
+      {% for r in rules %}
+      <tr>
+        <td class="min"><div class="wrap-gap nowrap"><span class="badge outline num">{{ r.priority }}</span>{{ move_buttons(r) }}</div></td>
+        <td><b>«{{ r.match_pattern }}»</b></td>
+        <td class="faint">{{ match_labels.get(r.match_type.value, r.match_type.value) }}</td>
+        <td>{{ ui.chip(names.get(r.category_id)) }}</td>
+        <td class="r num">{% if counts.get(r.id) %}{{ counts.get(r.id) }}{% else %}<span class="faint">0</span>{% endif %}</td>
+        <td>{% if r.user_id is none %}<span class="badge inv">global</span>{% else %}<span class="badge">personal</span>{% endif %}</td>
+        <td class="min">{% if r.user_id is not none %}<button class="btn secondary sm" type="button" hx-get="/mas/reglas/{{ r.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>{{ ui.icon("edit", "sm") }} Editar</button>{% else %}<span class="faint t-xs">solo en el PC</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="note">«Movimientos» indica cuántos de tus movimientos asignaría hoy cada regla. Las reglas globales son de toda la familia y se editan desde la aplicación del PC.</p>
 {% else %}
-<div class="card">{{ ui.empty("Sin reglas", "", "rules") }}</div>
+<div class="card section">
+  {% call ui.empty("Sin reglas", "Crea una regla para categorizar automáticamente los movimientos que contengan un texto.", "rules") %}
+  <button class="btn" type="button" hx-get="/mas/reglas/nueva" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>{{ ui.icon("plus", "sm") }} Nueva regla</button>
+  {% endcall %}
+</div>
 {% endif %}
 {% endblock %}

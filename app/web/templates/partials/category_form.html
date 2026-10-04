@@ -1,0 +1,46 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">{% if not cat %}Nueva categoría{% elif cat.level.value == "type" %}Renombrar tipo{% else %}Categoría{% endif %}</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  <form class="form-grid" hx-post="{{ '/mas/categorias/' ~ cat.id ~ '/renombrar' if cat else '/mas/categorias' }}" hx-target="#sheet-body">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+    {% if not cat %}
+    <label class="field"><span>Tipo</span>
+      <select class="input" name="parent_id" required>
+        <option value="">Elige…</option>
+        {% for t in types %}<option value="{{ t.id }}" {% if parent_id == t.id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="field"><span>Nombre</span>
+      <input class="input" name="name" value="{{ name }}" maxlength="80" required autocomplete="off" {% if not cat %}autofocus{% endif %}>
+    </label>
+    <div class="sticky-actions">
+      <button class="btn ghost" type="button" data-close-sheet>Cancelar</button>
+      <button class="btn block" type="submit">{{ ui.icon("check", "sm") }} {{ "Guardar nombre" if cat else "Crear categoría" }}</button>
+    </div>
+  </form>
+
+  {% if cat and usage is not none %}
+  <div class="section-h"><h2>Uso</h2></div>
+  <dl class="kv card tight">
+    <dt>Movimientos</dt><dd class="num">{{ usage.transactions }}{% if usage.manual %} <span class="faint">({{ usage.manual }} a mano)</span>{% endif %}</dd>
+    <dt>Reglas que la asignan</dt><dd class="num">{{ usage.rules }}</dd>
+  </dl>
+  <div class="wrap-gap section">
+    {% if usage.transactions %}<a class="btn secondary" href="/movimientos?categoria={{ cat.id }}">{{ ui.icon("list", "sm") }} Ver movimientos</a>{% endif %}
+    <a class="btn secondary" href="/mas/reglas">{{ ui.icon("rules", "sm") }} Reglas</a>
+  </div>
+  <div class="section">
+    <button class="btn danger block" type="button" hx-post="/mas/categorias/{{ cat.id }}/borrar" hx-swap="none"
+            hx-confirm="¿Borrar «{{ cat.name }}»?"
+            data-confirm-detail="{{ usage.transactions }} movimientos quedarán sin categoría y volverán a las reglas automáticas.{% if usage.rules %} También se borrarán {{ usage.rules }} reglas que la asignan.{% endif %}"
+            data-confirm-label="Borrar">{{ ui.icon("trash", "sm") }} Borrar categoría</button>
+  </div>
+  {% elif cat %}
+  <p class="note">Los tipos (GASTO, INGRESO…) organizan las categorías y no se pueden borrar.</p>
+  {% endif %}
+</div>

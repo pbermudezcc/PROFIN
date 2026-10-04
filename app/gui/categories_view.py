@@ -26,11 +26,9 @@ from sqlalchemy.orm import Session
 from app.config      import THEMES
 from app.db.models   import Category, CategoryLevel, User
 from app.gui._style_utils import apply_card_shadow
-from app.categorization.category_manager import (
-    get_all_categories, create_category,
-    update_category_name, delete_category,
-    seed_default_categories,
-    seed_default_rules,
+from app.categorization.category_manager import get_all_categories
+from app.categorization.admin_service import (
+    add_category, load_defaults, remove_category, rename_category,
 )
 
 
@@ -275,11 +273,7 @@ class CategoriesView(QWidget):
         if not ok or not name.strip():
             return
         try:
-            create_category(
-                self._session, self._user.id,
-                name.strip(), CategoryLevel.category,
-                parent_id=parent_id,
-            )
+            add_category(self._session, self._user.id, parent_id, name.strip())
             self.refresh()
         except ValueError as exc:
             QMessageBox.warning(self, "Error", str(exc))
@@ -299,7 +293,7 @@ class CategoriesView(QWidget):
         if not ok or not name.strip():
             return
         try:
-            update_category_name(self._session, cat_id, name.strip())
+            rename_category(self._session, self._user.id, cat_id, name.strip())
             self.refresh()
         except ValueError as exc:
             QMessageBox.warning(self, "Error", str(exc))
@@ -322,7 +316,7 @@ class CategoriesView(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            delete_category(self._session, cat_id)
+            remove_category(self._session, self._user.id, cat_id)
             self.refresh()
         except ValueError as exc:
             QMessageBox.warning(self, "Error", str(exc))
@@ -338,12 +332,7 @@ class CategoriesView(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        created = seed_default_categories(
-            self._session, self._user.id
-        )
-        rules_created = seed_default_rules(
-            self._session, self._user.id
-        )
+        created, rules_created = load_defaults(self._session, self._user.id)
         self.refresh()
         if created > 0 or rules_created > 0:
             QMessageBox.information(

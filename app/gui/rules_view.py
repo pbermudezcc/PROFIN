@@ -450,24 +450,14 @@ class RulesView(QWidget):
         _log = logging.getLogger(__name__)
 
         try:
-            from app.db.models import Transaction
-            from app.categorization.rules_engine import apply_rules_and_commit
+            from app.categorization.admin_service import apply_all_rules
 
-            # Get ALL uncategorized transaction IDs for this user
-            # Re-process ALL transactions — overwrite=True ensures
-            # that transactions already categorized by a previous
-            # version of the rule are updated with the new category.
-            # Manually categorized ones (category_source='manual') are
-            # always kept by apply_rules_and_commit.
-            all_ids = [
-                row.id for row in (
-                    self._session.query(Transaction.id)
-                    .filter(Transaction.user_id == self._user.id)
-                    .all()
-                )
-            ]
-
-            if not all_ids:
+            # Re-process ALL transactions — overwrite=True ensures that
+            # transactions already categorized by a previous version of the
+            # rule are updated with the new category. Manually categorized
+            # ones (category_source='manual') are always kept.
+            result = apply_all_rules(self._session, self._user.id, overwrite=True)
+            if not (result.assigned or result.conflicts or result.unmatched):
                 QMessageBox.information(
                     self,
                     "Sin transacciones",
@@ -475,16 +465,9 @@ class RulesView(QWidget):
                 )
                 return
 
-            result = apply_rules_and_commit(
-                self._session,
-                all_ids,
-                self._user.id,
-                overwrite=True,
-            )
-
-            n_assigned  = len(result.assigned)
-            n_conflict  = len(result.conflicts)
-            n_unmatched = len(result.unmatched)
+            n_assigned  = result.assigned
+            n_conflict  = result.conflicts
+            n_unmatched = result.unmatched
 
             _log.info(
                 "Reglas aplicadas: %d asignadas, %d conflictos, %d sin match",

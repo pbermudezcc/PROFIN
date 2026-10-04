@@ -53,8 +53,9 @@
   }, true);
   document.addEventListener("closeSheet", closeSheet);
   document.addEventListener("refreshPage", function () {
+    // Only the page content: the toast and the sheet live outside #main.
     if (window.htmx) htmx.ajax("GET", window.location.pathname + window.location.search,
-                               { target: "body", swap: "innerHTML" });
+                               { target: "#main", select: "#main", swap: "outerHTML" });
     else window.location.reload();
   });
   // ── Master–detail: on wide screens (iPad landscape and up) a page with a
@@ -268,7 +269,7 @@
     var elt = e.detail.elt;
     $("#confirm-title").textContent = question;
     $("[data-confirm-text]", dlg).textContent = elt.getAttribute("data-confirm-detail") || "Esta acción no se puede deshacer.";
-    $("[data-confirm-ok]", dlg).textContent = elt.getAttribute("data-confirm-ok") || "Confirmar";
+    $("[data-confirm-ok]", dlg).textContent = elt.getAttribute("data-confirm-label") || "Confirmar";
     function done(ok) {
       $("[data-confirm-ok]", dlg).onclick = null;
       $("[data-confirm-cancel]", dlg).onclick = null;
@@ -348,7 +349,7 @@
     onScroll();
   }
   document.addEventListener("htmx:load", function (e) {
-    var fresh = e.detail.elt === document.body;
+    var fresh = e.detail.elt === document.body || e.detail.elt.id === "main";
     initAll(e.detail.elt, fresh);
   });
   document.addEventListener("htmx:beforeSwap", function (e) {

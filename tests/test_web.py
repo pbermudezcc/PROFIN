@@ -22,11 +22,13 @@ from app.db.models import (
     Account,
     AssetType,
     AuditLog,
+    AutoCategorizationRule,
     Base,
     Category,
     CategoryLevel,
     InvestmentKind,
     InvestmentTransaction,
+    MatchType,
     Security,
     Transaction,
     TransactionType,
@@ -309,6 +311,7 @@ def test_user_never_sees_or_edits_another_users_data(app, family, factory):
     "/inversiones", "/inversiones?cerradas=1", "/inversiones/evolucion", "/inversiones/distribucion",
     "/inversiones/distribucion?por=broker", "/inversiones/operaciones", "/inversiones/operaciones/nueva",
     "/inversiones/fiscal", "/mas", "/mas/categorias", "/mas/reglas", "/mas/cuentas", "/mas/importaciones",
+    "/mas/categorias/nueva", "/mas/reglas/nueva", "/mas/reglas/probar?pattern=mercado&match_type=contains",
     "/api/resumen", "/api/flujos/gastos", "/api/movimientos", "/api/inversiones/posiciones",
     "/api/inversiones/evolucion", "/manifest.webmanifest", "/sw.js",
 ])
@@ -321,7 +324,8 @@ def test_pages_render(app, path, user):
 
 def test_templates_have_no_inline_script_or_style(app):
     client = logged_in(app, "beto", "clave-beto")
-    for path in ("/", "/gastos", "/movimientos", "/inversiones", "/inversiones/operaciones/nueva", "/mas"):
+    for path in ("/", "/gastos", "/movimientos", "/inversiones", "/inversiones/operaciones/nueva", "/mas",
+                 "/mas/categorias", "/mas/reglas", "/mas/reglas/nueva", "/mas/categorias/nueva"):
         html = client.get(path).text
         assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html), path
         assert " style=" not in html and "<style" not in html, path
@@ -463,3 +467,189 @@ def test_dashboard_summary_matches_desktop_figures(factory, family):
         assert all("BETO" not in (r.issuer_name or "") for r in s.recent)
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Administración: categories and rules (W7)
+# ---------------------------------------------------------------------------
+
+def _hx(client: TestClient) -> dict:
+    return {**ORIGIN, "X-CSRF-Token": csrf_of(client), "HX-Request": "true"}
+
+
+def _gasto_type(factory, user_id: int) -> int:
+    db = factory()
+    try:
+        return db.query(Category.id).filter(Category.user_id == user_id, Category.name == "GASTO").scalar()
+    finally:
+        db.close()
+
+
+def test_category_create_rename_delete(app, family, factory):
+    client = logged_in(app)
+    headers = _hx(client)
+    gasto = _gasto_type(factory, family["ana"])
+
+    response = client.post("/mas/categorias", data={"parent_id": gasto, "name": "  Farmacia "}, headers=headers)
+    assert response.status_code == 204 and "refreshPage" in response.headers["hx-trigger"]
+    db = factory()
+    try:
+        farmacia = db.query(Category).filter(Category.user_id == family["ana"], Category.name == "Farmacia").one()
+    finally:
+        db.close()
+
+    # Duplicates in the same group are refused with a message in the form.
+    response = client.post("/mas/categorias", data={"parent_id": gasto, "name": "farmacia"}, headers=headers)
+    assert response.status_code == 200 and "Ya existe" in response.text
+
+    response = client.post(f"/mas/categorias/{farmacia.id}/renombrar", data={"name": "Salud"}, headers=headers)
+    assert response.status_code == 204
+
+    # Deleting a used category: its transactions go back to the rules
+    # (uncategorized, source cleared) and the rules pointing at it go too.
+    db = factory()
+    try:
+        txn = db.get(Transaction, family["ana_txn"])
+        txn.category_id, txn.category_source = farmacia.id, CATEGORY_SOURCE_MANUAL
+        db.add(AutoCategorizationRule(user_id=family["ana"], category_id=farmacia.id,
+                                      match_pattern="FARMA", match_type=MatchType.contains, priority=100))
+        db.commit()
+    finally:
+        db.close()
+    sheet = client.get(f"/mas/categorias/{farmacia.id}").text
+    assert "1 movimientos quedarán sin categoría" in sheet and "1 reglas" in sheet
+    response = client.post(f"/mas/categorias/{farmacia.id}/borrar", headers=headers)
+    assert response.status_code == 204
+    db = factory()
+    try:
+        assert db.get(Category, farmacia.id) is None
+        txn = db.get(Transaction, family["ana_txn"])
+        assert txn.category_id is None and txn.category_source is None
+        assert db.query(AutoCategorizationRule).filter_by(category_id=farmacia.id).count() == 0
+        actions = [a.action.value for a in db.query(AuditLog).filter(AuditLog.table_affected == "categories")]
+        assert actions == ["insert", "update", "delete"]
+    finally:
+        db.close()
+    assert (family["ana"], "transactions") in app.state.changes
+
+    # Type nodes cannot be deleted.
+    response = client.post(f"/mas/categorias/{gasto}/borrar", headers=headers)
+    assert response.status_code == 204 and "toastError" in response.headers["hx-trigger"]
+
+
+def test_categories_and_rules_of_another_user_are_off_limits(app, family, factory):
+    db = factory()
+    try:
+        rule = AutoCategorizationRule(user_id=family["beto"], category_id=family["beto_cat"],
+                                      match_pattern="MERCADO", match_type=MatchType.contains, priority=10)
+        shared = AutoCategorizationRule(user_id=None, category_id=family["beto_cat"],
+                                        match_pattern="SUPER", match_type=MatchType.contains, priority=20)
+        db.add_all([rule, shared])
+        db.commit()
+        rule_id, shared_id = rule.id, shared.id
+    finally:
+        db.close()
+
+    client = logged_in(app)          # ana
+    headers = _hx(client)
+    beto_cat = family["beto_cat"]
+    assert client.get(f"/mas/categorias/{beto_cat}").status_code == 404
+    assert client.post(f"/mas/categorias/{beto_cat}/renombrar", data={"name": "X"}, headers=headers).status_code == 404
+    assert client.post(f"/mas/categorias/{beto_cat}/borrar", headers=headers).status_code == 404
+    assert client.get(f"/mas/reglas/{rule_id}").status_code == 404
+    assert client.post(f"/mas/reglas/{rule_id}/borrar", headers=headers).status_code == 404
+    assert client.post("/mas/reglas", data={"rule_id": rule_id, "category_id": family["ana_cat"],
+                                            "pattern": "X"}, headers=headers).status_code == 404
+    # A rule can only point at one of your own categories.
+    response = client.post("/mas/reglas", data={"category_id": beto_cat, "pattern": "X"}, headers=headers)
+    assert response.status_code == 200 and "categoría válida" in response.text
+    # Global rules are visible but read-only on the web.
+    page = client.get("/mas/reglas").text
+    assert "«SUPER»" in page and "«MERCADO»" not in page
+    response = client.post(f"/mas/reglas/{shared_id}/borrar", headers=headers)
+    assert "toastError" in response.headers["hx-trigger"]
+    db = factory()
+    try:
+        assert db.get(Category, beto_cat).name == "Supermercados"
+        assert db.get(AutoCategorizationRule, rule_id) is not None
+        assert db.get(AutoCategorizationRule, shared_id) is not None
+    finally:
+        db.close()
+
+
+def test_rule_crud_priority_preview_and_apply(app, family, factory):
+    client = logged_in(app)
+    headers = _hx(client)
+    response = client.post("/mas/reglas", data={"category_id": family["ana_cat"], "pattern": "mercado",
+                                                "match_type": "contains", "priority": "50"}, headers=headers)
+    assert response.status_code == 204
+    response = client.post("/mas/reglas", data={"category_id": family["ana_cat"], "pattern": "[",
+                                                "match_type": "regex"}, headers=headers)
+    assert "Expresión regular no válida" in response.text
+    db = factory()
+    try:
+        first = db.query(AutoCategorizationRule).filter_by(user_id=family["ana"]).one()
+        assert first.priority == 50 and first.match_pattern == "mercado"
+        second = AutoCategorizationRule(user_id=family["ana"], category_id=family["ana_cat"],
+                                        match_pattern="NOMINA", match_type=MatchType.exact, priority=60)
+        db.add(second)
+        db.commit()
+        first_id, second_id = first.id, second.id
+    finally:
+        db.close()
+
+    preview = client.get("/mas/reglas/probar", params={"pattern": "MERCADO", "match_type": "contains"}).text
+    assert "1 movimiento coincide" in preview and "MERCADO ANA" in preview and "BETO" not in preview
+
+    assert client.post(f"/mas/reglas/{second_id}/prioridad", data={"direccion": "up"},
+                       headers=headers).status_code == 204
+    db = factory()
+    try:
+        assert db.get(AutoCategorizationRule, second_id).priority < db.get(AutoCategorizationRule, first_id).priority
+    finally:
+        db.close()
+
+    # Apply only to uncategorized: the expense matches «mercado».
+    response = client.post("/mas/reglas/aplicar", data={"modo": "sin"}, headers=headers)
+    assert response.status_code == 204
+    db = factory()
+    try:
+        txn = db.get(Transaction, family["ana_txn"])
+        assert txn.category_id == family["ana_cat"] and txn.category_source == "rule"
+        beto_txn = db.get(Transaction, family["beto_txn"])
+        assert beto_txn.category_id is None                      # other users untouched
+    finally:
+        db.close()
+
+    response = client.post(f"/mas/reglas/{first_id}/borrar", headers=headers)
+    assert response.status_code == 204
+    db = factory()
+    try:
+        assert db.get(AutoCategorizationRule, first_id) is None
+    finally:
+        db.close()
+
+
+def test_apply_all_rules_never_overwrites_manual_categories(factory, family):
+    from app.categorization.admin_service import add_category, add_rule, apply_all_rules
+
+    db = factory()
+    try:
+        gasto = db.query(Category).filter_by(user_id=family["ana"], name="GASTO").one()
+        other = add_category(db, family["ana"], gasto.id, "Otros")
+        assign_user_transaction_category(db, family["ana"], family["ana_txn"], other.id)
+        add_rule(db, family["ana"], family["ana_cat"], "MERCADO")
+        apply_all_rules(db, family["ana"], overwrite=True)
+        txn = db.get(Transaction, family["ana_txn"])
+        assert txn.category_id == other.id and txn.category_source == CATEGORY_SOURCE_MANUAL
+    finally:
+        db.close()
+
+
+def test_admin_writes_require_csrf(app, family):
+    client = logged_in(app)
+    for path, data in (("/mas/categorias", {"parent_id": "1", "name": "X"}),
+                       ("/mas/reglas", {"pattern": "X"}), ("/mas/reglas/aplicar", {"modo": "sin"}),
+                       ("/mas/categorias/predeterminadas", {})):
+        response = client.post(path, data=data, headers=ORIGIN)
+        assert response.status_code == 403, path

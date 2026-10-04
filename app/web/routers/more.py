@@ -1,8 +1,5 @@
-"""Más: categories, rules, accounts, import history, sessions (read-only for now)."""
+"""Ajustes hub, accounts and import history (categories and rules: routers/admin.py)."""
 from __future__ import annotations
-
-from collections import defaultdict
-from typing import Dict, List
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
@@ -22,8 +19,6 @@ from app.web.render import render
 
 router = APIRouter()
 
-MATCH_LABELS = {"contains": "contiene", "exact": "es exactamente", "regex": "expresión regular"}
-
 
 @router.get("/mas")
 def more(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
@@ -42,40 +37,6 @@ def more(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
     sessions = [s for s in request.app.state.sessions.active() if s.user_id == user.id]
     return render(request, "mas.html", {"counts": counts, "sessions": sessions, "last_import": last_import},
                   user=user, active="mas")
-
-
-@router.get("/mas/categorias")
-def categories(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
-    rows = db.query(Category).filter(Category.user_id == user.id).order_by(Category.name).all()
-    usage: Dict[int, int] = dict(
-        db.query(Transaction.category_id, func.count(Transaction.id))
-        .filter(Transaction.user_id == user.id, Transaction.category_id.isnot(None))
-        .group_by(Transaction.category_id).all()
-    )
-    children: Dict[int, List[Category]] = defaultdict(list)
-    for cat in rows:
-        if cat.parent_id is not None:
-            children[cat.parent_id].append(cat)
-    types = [c for c in rows if c.level == CategoryLevel.type]
-    return render(request, "mas_categorias.html", {
-        "types": types, "children": children, "usage": usage,
-    }, user=user, active="categorias")
-
-
-@router.get("/mas/reglas")
-def rules(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
-    rows = (
-        db.query(AutoCategorizationRule)
-        .filter(or_(AutoCategorizationRule.user_id == user.id, AutoCategorizationRule.user_id.is_(None)))
-        .order_by(AutoCategorizationRule.priority, AutoCategorizationRule.id).all()
-    )
-    names = dict(
-        db.query(Category.id, Category.name)
-        .filter(Category.id.in_({r.category_id for r in rows})).all()
-    )
-    return render(request, "mas_reglas.html", {
-        "rules": rows, "names": names, "match_labels": MATCH_LABELS,
-    }, user=user, active="reglas")
 
 
 @router.get("/mas/cuentas")

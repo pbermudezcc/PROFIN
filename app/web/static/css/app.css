@@ -471,6 +471,12 @@ a.kpi:active { transform: scale(.98); }
 .row .row-actions { display: flex; gap: var(--s-1); flex: none; }
 .day-h { padding: 8px var(--s-4) 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-3);
          text-transform: uppercase; letter-spacing: .07em; background: var(--surface-2); position: sticky; top: 0; }
+.list.flat { border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.row.compact { min-height: 48px; padding: 8px 0; background: transparent; cursor: default; }
+.plain-btn { all: unset; cursor: pointer; display: block; min-width: 0; flex: 1; -webkit-tap-highlight-color: transparent; }
+.plain-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.split.wrap { flex-wrap: wrap; }
+.nowrap { flex-wrap: nowrap; }
 .tree .row { padding-left: calc(var(--s-4) + var(--lvl, 0) * 18px); }
 
 /* Bar share rows (category breakdown) */

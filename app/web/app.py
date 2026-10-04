@@ -140,8 +140,8 @@ def create_app(
                         media_type="text/javascript",
                         headers={"Service-Worker-Allowed": "/"})
 
-    from app.web.routers import auth, dashboard, flows, investments, more, transactions
+    from app.web.routers import admin, auth, dashboard, flows, investments, more, transactions
 
-    for router in (auth, dashboard, flows, transactions, investments, more):
+    for router in (auth, dashboard, flows, transactions, investments, admin, more):
         app.include_router(router.router)
     return app
