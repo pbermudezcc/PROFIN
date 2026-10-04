@@ -311,6 +311,26 @@
     rows.forEach(function (r) { body.appendChild(r); });
   });
 
+  // ── Statement import: live total + busy buttons ─────────────────────
+  // Possible duplicates appear twice (phone list + tablet table): keep both
+  // checkboxes of a row in sync and count each row once.
+  document.addEventListener("change", function (e) {
+    if (!e.target.matches("[data-review]")) return;
+    var form = e.target.closest("[data-import-form]");
+    if (!form) return;
+    $$('[data-review][value="' + e.target.value + '"]', form).forEach(function (c) { c.checked = e.target.checked; });
+    var chosen = {};
+    $$("[data-review]:checked", form).forEach(function (c) { chosen[c.value] = true; });
+    var total = parseInt(form.getAttribute("data-clean"), 10) + Object.keys(chosen).length;
+    $$("[data-import-total]", form).forEach(function (el) { el.textContent = total; });
+  });
+  document.addEventListener("submit", function (e) {
+    var button = e.submitter;
+    if (!button || !button.hasAttribute("data-busy-label") || e.defaultPrevented) return;
+    // After the browser has collected the form data: disable to avoid a double import.
+    setTimeout(function () { button.disabled = true; button.textContent = button.getAttribute("data-busy-label"); }, 0);
+  });
+
   // ── Topbar shadow + small title once the large title scrolls away ───
   function onScroll() {
     var bar = $("[data-topbar]");

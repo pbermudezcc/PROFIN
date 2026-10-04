@@ -26,6 +26,7 @@ from app.db.models import (
     Base,
     Category,
     CategoryLevel,
+    ImportBatch,
     InvestmentKind,
     InvestmentTransaction,
     MatchType,
@@ -312,6 +313,7 @@ def test_user_never_sees_or_edits_another_users_data(app, family, factory):
     "/inversiones/distribucion?por=broker", "/inversiones/operaciones", "/inversiones/operaciones/nueva",
     "/inversiones/fiscal", "/mas", "/mas/categorias", "/mas/reglas", "/mas/cuentas", "/mas/importaciones",
     "/mas/categorias/nueva", "/mas/reglas/nueva", "/mas/reglas/probar?pattern=mercado&match_type=contains",
+    "/importar",
     "/api/resumen", "/api/flujos/gastos", "/api/movimientos", "/api/inversiones/posiciones",
     "/api/inversiones/evolucion", "/manifest.webmanifest", "/sw.js",
 ])
@@ -325,7 +327,7 @@ def test_pages_render(app, path, user):
 def test_templates_have_no_inline_script_or_style(app):
     client = logged_in(app, "beto", "clave-beto")
     for path in ("/", "/gastos", "/movimientos", "/inversiones", "/inversiones/operaciones/nueva", "/mas",
-                 "/mas/categorias", "/mas/reglas", "/mas/reglas/nueva", "/mas/categorias/nueva"):
+                 "/mas/categorias", "/mas/reglas", "/mas/reglas/nueva", "/mas/categorias/nueva", "/importar"):
         html = client.get(path).text
         assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html), path
         assert " style=" not in html and "<style" not in html, path
@@ -653,3 +655,140 @@ def test_admin_writes_require_csrf(app, family):
                        ("/mas/categorias/predeterminadas", {})):
         response = client.post(path, data=data, headers=ORIGIN)
         assert response.status_code == 403, path
+
+
+# ---------------------------------------------------------------------------
+# Importar: CaixaBank statement upload (W8)
+# ---------------------------------------------------------------------------
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@pytest.fixture
+def statement(tmp_path):
+    from tests.test_import_pipeline import EXPORT_ROWS, _write_export
+
+    path = tmp_path / "extracto septiembre.xlsx"
+    _write_export(path, EXPORT_ROWS)
+    return path.read_bytes()
+
+
+def _upload(client: TestClient, content: bytes, name: str = "extracto.xlsx", **data):
+    return client.post("/importar", files={"fichero": (name, content, XLSX)},
+                       data={"csrf_token": csrf_of(client), **data}, headers=ORIGIN, follow_redirects=False)
+
+
+def _token(response) -> str:
+    assert response.status_code == 303, response.text[:400]
+    return response.headers["location"].rsplit("/", 1)[1]
+
+
+def test_import_upload_preview_confirm(app, family, factory, statement):
+    client = logged_in(app)
+    token = _token(_upload(client, statement, "extracto septiembre.xlsx"))
+    item = app.state.imports.get(token, family["ana"], next(iter(app.state.sessions.active())).sid)
+    assert item is not None and item.directory.exists()
+
+    preview = client.get(f"/importar/{token}").text
+    assert "IBERDROLA CLIENTES" in preview and "extracto septiembre.xlsx" in preview
+    assert "Importar <span data-import-total>5</span> movimientos" in preview
+    assert 'name="importar"' not in preview                     # nothing to review on a first import
+
+    response = client.post(f"/importar/{token}/confirmar", data={"csrf_token": csrf_of(client)},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 303 and "/importar/hecho/" in response.headers["location"]
+    assert not item.directory.exists() and len(app.state.imports) == 0
+    done = client.get(response.headers["location"]).text
+    assert "5 movimientos importados" in done
+
+    db = factory()
+    try:
+        batch = db.query(ImportBatch).filter(ImportBatch.user_id == family["ana"]).one()
+        assert batch.rows_imported == 5 and batch.filename == "extracto septiembre.xlsx"
+        assert db.query(Transaction).filter(Transaction.import_batch_id == batch.id,
+                                            Transaction.user_id == family["ana"]).count() == 5
+        log = db.query(AuditLog).filter(AuditLog.table_affected == "import_batches").one()
+        assert "web 192.168.1.50" in log.new_value
+    finally:
+        db.close()
+    assert (family["ana"], "transactions") in app.state.changes
+
+    # The same file again: nothing new; the zero-amount row needs a decision.
+    token = _token(_upload(client, statement))
+    preview = client.get(f"/importar/{token}").text
+    assert "¿duplicado?" in preview and 'name="importar"' in preview
+    idx = re.search(r'name="importar" value="(\d+)"', preview).group(1)
+    response = client.post(f"/importar/{token}/confirmar", data={"csrf_token": csrf_of(client), "importar": idx},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 303
+    db = factory()
+    try:
+        second = db.query(ImportBatch).filter(ImportBatch.user_id == family["ana"]).order_by(ImportBatch.id.desc()).first()
+        assert second.rows_imported == 1 and second.rows_skipped == 4
+    finally:
+        db.close()
+
+
+def test_import_cancel_removes_the_temp_file(app, family, statement):
+    client = logged_in(app)
+    token = _token(_upload(client, statement))
+    item = next(iter(app.state.imports._items.values()))
+    response = client.post(f"/importar/{token}/cancelar", data={"csrf_token": csrf_of(client)},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 303
+    assert not item.directory.exists() and len(app.state.imports) == 0
+    assert client.get(f"/importar/{token}").status_code == 404
+
+
+def test_import_rejects_bad_files(app, family, statement):
+    client = logged_in(app)
+    page = _upload(client, b"fecha;importe\n", "extracto.csv")
+    assert page.status_code == 200 and "Excel (.xls o .xlsx)" in page.text
+    page = _upload(client, b"not really excel", "extracto.xlsx")
+    assert "no es un Excel válido" in page.text
+    page = _upload(client, b"PK\x03\x04" + b"0" * (5 * 1024 * 1024), "grande.xlsx")
+    assert "demasiado grande" in page.text
+    page = _upload(client, b"PK\x03\x04garbage", "roto.xlsx")
+    assert "No se pudo leer el extracto" in page.text
+    assert len(app.state.imports) == 0
+    # Bodies over the upload cap are refused before they are read.
+    response = client.post("/importar", content=b"x" * (6 * 1024 * 1024 + 10),
+                           headers={**ORIGIN, "content-type": "application/octet-stream"})
+    assert response.status_code == 413
+    # Ordinary forms have a much smaller cap.
+    response = client.post("/mas/reglas", content=b"x" * (300 * 1024),
+                           headers={**ORIGIN, "content-type": "application/x-www-form-urlencoded"})
+    assert response.status_code == 413
+
+
+def test_import_preview_is_private_to_the_uploader(app, family, factory, statement):
+    ana = logged_in(app)
+    token = _token(_upload(ana, statement))
+    beto = logged_in(app, "beto", "clave-beto")
+    assert beto.get(f"/importar/{token}").status_code == 404
+    response = beto.post(f"/importar/{token}/confirmar", data={"csrf_token": csrf_of(beto)},
+                         headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 404
+    # Another browser session of the same user cannot use it either.
+    ana2 = logged_in(app)
+    assert ana2.get(f"/importar/{token}").status_code == 404
+    # Nor can anyone import into someone else's account.
+    db = factory()
+    try:
+        beto_account = db.query(Account.id).filter(Account.user_id == family["beto"]).scalar()
+    finally:
+        db.close()
+    assert _upload(ana, statement, cuenta=str(beto_account)).status_code == 404
+    db = factory()
+    try:
+        assert db.query(ImportBatch).count() == 0
+    finally:
+        db.close()
+
+
+def test_import_upload_requires_csrf(app, family, statement):
+    client = logged_in(app)
+    response = client.post("/importar", files={"fichero": ("e.xlsx", statement, XLSX)},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 403
+    assert len(app.state.imports) == 0

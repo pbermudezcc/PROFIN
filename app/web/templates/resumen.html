@@ -76,6 +76,10 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="card">{{ ui.empty("Todavía no hay movimientos", "Importa tus extractos desde la aplicación del PC.", "upload") }}</div>
+<div class="card">
+  {% call ui.empty("Todavía no hay movimientos", "Sube el extracto de CaixaBank en Excel para empezar.", "upload") %}
+  <a class="btn" href="/importar">{{ ui.icon("upload", "sm") }} Importar extracto</a>
+  {% endcall %}
+</div>
 {% endif %}
 {% endblock %}

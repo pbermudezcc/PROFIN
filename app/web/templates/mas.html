@@ -28,9 +28,9 @@
     <div><div class="t">Cuentas</div><div class="s">saldos y periodos</div></div>
     <div class="v num">{{ counts.cuentas }}</div>
   </a>
-  <a class="tile" href="/mas/importaciones">
+  <a class="tile" href="/importar">
     <div class="ic">{{ ui.icon("upload", "sm") }}</div>
-    <div><div class="t">Importaciones</div><div class="s">{% if last_import %}última {{ last_import.strftime("%d/%m/%Y") }}{% else %}ninguna todavía{% endif %}</div></div>
+    <div><div class="t">Importar extracto</div><div class="s">{% if last_import %}última {{ last_import.strftime("%d/%m/%Y") }}{% else %}ninguna todavía{% endif %}</div></div>
     <div class="v num">{{ counts.importaciones }}</div>
   </a>
 </div>

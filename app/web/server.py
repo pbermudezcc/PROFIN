@@ -242,6 +242,9 @@ class WebServer:
             if self._thread is not None:
                 self._thread.join(timeout=5)
             if self._server is not None:
+                imports = getattr(self._server.config.app.state, "imports", None)
+                if imports is not None:
+                    imports.clear()        # uploaded statements never confirmed
                 logger.info("Web: servidor detenido")
             self._server = None
             self._thread = None

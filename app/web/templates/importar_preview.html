@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Revisar extracto{% endblock %}
+{% block topbar %}{{ ui.topnav("Revisar", "Importar extracto", "/importar") }}{% endblock %}
+{% block content %}
+{% call ui.large_title("Revisar antes de importar", item.filename) %}{% endcall %}
+
+<div class="card tight split wrap">
+  <div class="wrap-gap">
+    <span class="badge outline">{{ ui.icon("bank", "xs") }} {{ account.account_name if account else "—" }}</span>
+    {% if iban %}<span class="badge outline num">{{ iban }}</span>{% endif %}
+    {% if first %}<span class="badge outline">{{ ui.icon("calendar", "xs") }} {{ first|fdate }} – {{ last|fdate }}</span>{% endif %}
+  </div>
+  <span class="faint t-sm">{{ n_total }} filas en el fichero</span>
+</div>
+
+<div class="kpis section">
+  {{ ui.kpi("Nuevos", n_clean, "se importarán", "income") }}
+  {{ ui.kpi("Posibles duplicados", n_review, "tú decides", "warning") }}
+  {{ ui.kpi("Ya importados", n_skip, "se omiten solos", "") }}
+</div>
+
+{% for w in warnings %}
+<div class="alert warn section">{{ ui.icon("alert", "sm") }}<span>{{ w.message }}</span></div>
+{% endfor %}
+
+<form method="post" action="/importar/{{ token }}/confirmar" hx-boost="false" data-import-form data-clean="{{ n_clean }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+
+  {% if rows %}
+  {% if n_review %}
+  <div class="alert info section">{{ ui.icon("info", "sm") }}<span>Los <b>posibles duplicados</b> coinciden con un movimiento ya guardado pero con importe 0 o datos parecidos. Marca solo los que de verdad sean nuevos.</span></div>
+  {% endif %}
+
+  <div class="list section hide-lg">
+    {% for r in rows %}
+    {% if r.status == "revisar" %}
+    <label class="row">
+      <input class="check-lg" type="checkbox" name="importar" value="{{ r.idx }}" data-review>
+    {% else %}
+    <div class="row">
+      <div class="ic income">{{ ui.icon("check", "sm") }}</div>
+    {% endif %}
+      <div class="body">
+        <div class="t">{{ r.issuer or r.concept or "—" }}</div>
+        <div class="d"><span class="faint">{{ r.date|sdate if r.date else "—" }}</span>{% if r.status == "revisar" %}<span class="badge warn">¿duplicado?</span>{% endif %}</div>
+      </div>
+      <div class="end">{{ ui.amount(r.amount) }}</div>
+    {% if r.status == "revisar" %}</label>{% else %}</div>{% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="card flush section hide-sm">
+    <div class="table-wrap scroll">
+      <table class="data">
+        <thead><tr>
+          <th class="min">Importar</th><th>Fecha</th><th>Comercio / concepto</th><th class="r">Importe</th><th class="r">Saldo</th><th>Estado</th>
+        </tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="min c">{% if r.status == "revisar" %}<input class="check-lg" type="checkbox" name="importar" value="{{ r.idx }}" data-review aria-label="Importar este movimiento">{% else %}{{ ui.icon("check", "sm pos") }}{% endif %}</td>
+          <td class="num">{{ r.date|fdate if r.date else "—" }}</td>
+          <td><b>{{ r.issuer or "—" }}</b>{% if r.concept and r.concept != r.issuer %}<div class="sub">{{ r.concept[:90] }}</div>{% endif %}</td>
+          <td class="r">{{ ui.signed(r.amount) }}</td>
+          <td class="r num faint">{{ r.balance|eur if r.balance is not none else "—" }}</td>
+          <td>{% if r.status == "revisar" %}<span class="badge warn" title="{{ r.reason }}">¿duplicado?</span>{% else %}<span class="badge pos">nuevo</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card section">{{ ui.empty("Nada nuevo que importar", "Todos los movimientos de este extracto ya estaban guardados.", "check") }}</div>
+  {% endif %}
+
+  {% if skipped %}
+  <details class="card tight section">
+    <summary class="strong">{{ n_skip }} ya importados (se omiten)</summary>
+    <div class="list flat">
+      {% for r in skipped[:200] %}
+      <div class="row compact">
+        <div class="body"><div class="t t-sm">{{ r.issuer or r.concept or "—" }}</div><div class="d faint t-xs">{{ r.date|sdate if r.date else "—" }}</div></div>
+        <span class="num t-sm faint">{{ r.amount|eur }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  <div class="page-actions">
+    <button class="btn secondary" type="submit" formaction="/importar/{{ token }}/cancelar" formnovalidate>Cancelar</button>
+    {% if rows %}
+    <button class="btn" type="submit" data-busy-label="Importando…">{{ ui.icon("check", "sm") }} Importar <span data-import-total>{{ n_clean }}</span> movimientos</button>
+    {% endif %}
+  </div>
+</form>
+<p class="note">La vista previa caduca a los 15 minutos. Las categorías se asignan con tus reglas al importar.</p>
+{% endblock %}

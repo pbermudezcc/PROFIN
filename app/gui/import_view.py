@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 import qtawesome as qta
 
 from app.config      import THEMES
-from app.db.models   import User, Account, TransactionType
+from app.db.models   import User, TransactionType
 from sqlalchemy.orm  import Session
 
 
@@ -629,27 +629,14 @@ class ImportView(QWidget):
             return
 
         try:
-            from app.ingestion.importer import commit_import
-            from app.categorization.rules_engine import apply_rules_and_commit
+            from app.ingestion.import_service import run_import
 
-            result = commit_import(
-                preview        = self._preview,
-                session        = self._session,
-                user_id        = self._user.id,
-                account_id     = self._account_id,
-                user_decisions = self._decisions,
+            outcome = run_import(
+                self._session, self._user.id, self._preview,
+                self._account_id, self._decisions,
             )
-
-            # Auto-categorize imported transactions
-            if result.imported_ids:
-                rules_result = apply_rules_and_commit(
-                    self._session,
-                    result.imported_ids,
-                    self._user.id,
-                )
-                auto_cat = len(rules_result.assigned)
-            else:
-                auto_cat = 0
+            result   = outcome.summary
+            auto_cat = outcome.auto_categorized
 
             self._show_summary(
                 success     = True,
@@ -699,24 +686,8 @@ class ImportView(QWidget):
 
     def _ensure_account(self) -> None:
         """Get or create default account for this user."""
-        account = (
-            self._session.query(Account)
-            .filter(Account.user_id == self._user.id)
-            .first()
-        )
-        if account:
-            self._account_id = account.id
-        else:
-            # Create default account on first import
-            acct = Account(
-                user_id      = self._user.id,
-                account_name = "CaixaBank Principal",
-                iban_last4   = "0000",
-            )
-            self._session.add(acct)
-            self._session.commit()
-            self._session.refresh(acct)
-            self._account_id = acct.id
+        from app.ingestion.import_service import ensure_default_account
+        self._account_id = ensure_default_account(self._session, self._user.id).id
 
     @staticmethod
     def _fmt_amount(value: float) -> str:

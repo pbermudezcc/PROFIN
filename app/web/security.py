@@ -37,6 +37,11 @@ IDLE_TIMEOUT = 30 * 60
 ABSOLUTE_TIMEOUT = 12 * 3600
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
+# Request body caps: forms are tiny; only statement uploads are bigger.
+MAX_BODY = 256 * 1024
+MAX_UPLOAD_BODY = 6 * 1024 * 1024
+UPLOAD_PATHS = ("/importar",)
+
 
 # ---------------------------------------------------------------------------
 # Sessions
@@ -222,6 +227,24 @@ def _same_origin(headers: Headers, scheme: str) -> bool:
     return parts.scheme == scheme and parts.netloc == host
 
 
+def _capped_receive(receive: Receive, limit: int) -> Receive:
+    """Stop reading a body (chunked or lying Content-Length) past limit:
+    the app sees a client disconnect and abandons the request."""
+    received = 0
+
+    async def wrapped() -> Message:
+        nonlocal received
+        message = await receive()
+        if message["type"] == "http.request":
+            received += len(message.get("body", b""))
+            if received > limit:
+                logger.warning("Web: cuerpo de petición demasiado grande, cortado")
+                return {"type": "http.disconnect"}
+        return message
+
+    return wrapped
+
+
 class HardeningMiddleware:
     """Pure ASGI (no BaseHTTPMiddleware): cheap and streaming-safe."""
 
@@ -252,6 +275,15 @@ class HardeningMiddleware:
 
         path = scope.get("path", "")
         is_static = path.startswith("/static/")
+
+        if scope["method"] not in SAFE_METHODS:
+            limit = MAX_UPLOAD_BODY if path.startswith(UPLOAD_PATHS) else MAX_BODY
+            declared = headers.get("content-length")
+            if declared is not None and (not declared.isdigit() or int(declared) > limit):
+                logger.warning("Web: %s %s rechazado por tamaño (%s bytes)", scope["method"], path, declared)
+                await PlainTextResponse("Payload Too Large", status_code=413)(scope, receive, send)
+                return
+            receive = _capped_receive(receive, limit)
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":

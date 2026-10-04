@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Importar extracto{% endblock %}
+{% block topbar %}{{ ui.topnav("Importar extracto") }}{% endblock %}
+{% block content %}
+{% call ui.large_title("Importar extracto", "Extracto de CaixaBank en Excel (.xls o .xlsx). Verás una vista previa antes de guardar nada.") %}{% endcall %}
+
+<div class="grid g-main">
+  <section class="card">
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+    <form class="form-grid {{ 'section' if error else '' }}" method="post" action="/importar" enctype="multipart/form-data" hx-boost="false" data-upload-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <label class="field"><span>Fichero del extracto</span>
+        <input class="input" type="file" name="fichero" required
+               accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        <small class="help">Máximo {{ max_mb }} MB. En el iPad se abre la app Archivos: busca el extracto en Descargas o iCloud Drive.</small>
+      </label>
+      {% if accounts|length > 1 %}
+      <label class="field"><span>Cuenta</span>
+        <select class="input" name="cuenta">
+          {% for a in accounts %}<option value="{{ a.id }}" {% if account_id == a.id %}selected{% endif %}>{{ a.account_name }}{% if a.iban_last4 %} ··{{ a.iban_last4 }}{% endif %}</option>{% endfor %}
+        </select>
+      </label>
+      {% elif accounts %}
+      <input type="hidden" name="cuenta" value="{{ accounts[0].id }}">
+      <p class="faint t-sm">{{ ui.icon("bank", "xs") }} Se importará en <b>{{ accounts[0].account_name }}</b>.</p>
+      {% else %}
+      <p class="faint t-sm">{{ ui.icon("bank", "xs") }} Se creará la cuenta «CaixaBank Principal» con la primera importación.</p>
+      {% endif %}
+      <button class="btn block" type="submit" data-busy-label="Leyendo el extracto…">{{ ui.icon("upload", "sm") }} Subir y revisar</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h3 class="t-md strong">Cómo conseguir el extracto</h3>
+    <ol class="steps">
+      <li>Entra en CaixaBankNow y abre la cuenta.</li>
+      <li>En «Movimientos», elige el periodo y exporta a <b>Excel</b>.</li>
+      <li>Súbelo aquí. Los movimientos que ya estén guardados se detectan y no se duplican.</li>
+    </ol>
+    <div class="alert info section">{{ ui.icon("shield", "sm") }}<span>El fichero se procesa en el PC de casa y se borra al terminar. Nada se guarda hasta que confirmes.</span></div>
+  </section>
+</div>
+
+<div class="section-h"><h2>Últimas importaciones</h2><a href="/mas/importaciones">Ver historial</a></div>
+{% if batches %}
+<div class="list">
+  {% for b in batches %}
+  {% set st = b.status.value %}
+  <div class="row">
+    <div class="ic {{ 'income' if st == 'completed' else ('expense' if st == 'failed' else 'accent') }}">{{ ui.icon("file", "sm") }}</div>
+    <div class="body">
+      <div class="t">{{ b.filename }}</div>
+      <div class="d faint">{{ b.import_timestamp.strftime("%d/%m/%Y %H:%M") }} · {{ b.rows_imported }} importados · {{ b.rows_skipped }} omitidos</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ ui.empty("Aún no has importado nada", "", "upload") }}</div>
+{% endif %}
+{% endblock %}

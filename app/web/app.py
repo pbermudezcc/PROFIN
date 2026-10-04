@@ -27,6 +27,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.gui._format import fmt_date, fmt_eur, fmt_number, fmt_pct, fmt_quantity
 from app.web.deps import CsrfFailed, LoginRequired
 from app.web.security import HardeningMiddleware, LoginLimiter, SessionStore
+from app.web.uploads import PendingImports
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,9 @@ def create_app(
     app.state.sessions = sessions or SessionStore()
     app.state.limiter = limiter or LoginLimiter()
     app.state.on_change = on_change
+    # Uploaded statements waiting for confirmation (temp files on this PC).
+    # WebServer.stop() clears it (deletes the temp files).
+    app.state.imports = PendingImports()
     app.state.templates = build_templates()
 
     app.add_middleware(HardeningMiddleware, lan_only=lan_only)
@@ -140,8 +144,8 @@ def create_app(
                         media_type="text/javascript",
                         headers={"Service-Worker-Allowed": "/"})
 
-    from app.web.routers import admin, auth, dashboard, flows, investments, more, transactions
+    from app.web.routers import admin, auth, dashboard, flows, imports, investments, more, transactions
 
-    for router in (auth, dashboard, flows, transactions, investments, admin, more):
+    for router in (auth, dashboard, flows, transactions, investments, admin, imports, more):
         app.include_router(router.router)
     return app

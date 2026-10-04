@@ -30,10 +30,10 @@ NAV = [
 # Sidebar only (tablets): the desktop's bottom NAV_ITEMS group. On phones
 # these pages live under the «Más» tab.
 ADMIN_NAV = [
+    ("importar", "Importar extracto", "/importar", "upload"),
     ("categorias", "Categorías", "/mas/categorias", "tag"),
     ("reglas", "Reglas", "/mas/reglas", "rules"),
     ("cuentas", "Cuentas", "/mas/cuentas", "bank"),
-    ("importaciones", "Importaciones", "/mas/importaciones", "upload"),
 ]
 ADMIN_KEYS = {key for key, *_ in ADMIN_NAV}
 

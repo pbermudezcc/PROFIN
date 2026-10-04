@@ -68,4 +68,4 @@ def imports(request: Request, user: WebUser = USER, db: Session = DB) -> Respons
         db.query(ImportBatch).filter(ImportBatch.user_id == user.id)
         .order_by(ImportBatch.import_timestamp.desc()).limit(200).all()
     )
-    return render(request, "mas_importaciones.html", {"batches": rows}, user=user, active="importaciones")
+    return render(request, "mas_importaciones.html", {"batches": rows}, user=user, active="importar")

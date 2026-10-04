@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Importaciones{% endblock %}
-{% block topbar %}{{ ui.topnav("Importaciones", "Ajustes", "/mas") }}{% endblock %}
+{% block topbar %}{{ ui.topnav("Historial", "Importar", "/importar") }}{% endblock %}
 {% block content %}
-{% call ui.large_title("Importaciones", "Extractos importados en esta cuenta") %}{% endcall %}
+{% call ui.large_title("Historial de importaciones", "Extractos importados en tu usuario") %}
+  <a class="btn sm" href="/importar">{{ ui.icon("upload", "sm") }} Importar extracto</a>
+{% endcall %}
 {% set labels = {"completed": "completa", "failed": "fallida", "partial": "parcial", "pending": "pendiente"} %}
 {% if batches %}
 <div class="list hide-lg">

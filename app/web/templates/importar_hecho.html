@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Importación completada{% endblock %}
+{% block topbar %}{{ ui.topnav("Completada", "Importar extracto", "/importar") }}{% endblock %}
+{% block content %}
+<div class="card done section">
+  <div class="art">{{ ui.icon("check") }}</div>
+  <h1 class="display">{{ batch.rows_imported }} movimientos importados</h1>
+  <p class="muted">{{ batch.filename }}{% if first %} · {{ first|fdate }} – {{ last|fdate }}{% endif %}</p>
+</div>
+
+<div class="kpis section">
+  {{ ui.kpi("Importados", batch.rows_imported, "nuevos en tu cuenta", "income") }}
+  {{ ui.kpi("Categorizados", auto, "por tus reglas", "") }}
+  {{ ui.kpi("Omitidos", batch.rows_skipped, "duplicados", "") }}
+</div>
+
+<div class="wrap-gap section">
+  {% if batch.rows_imported %}
+  <a class="btn" href="/movimientos?desde={{ first }}&hasta={{ last }}">{{ ui.icon("list", "sm") }} Ver los movimientos</a>
+  {% endif %}
+  {% if batch.rows_imported > auto %}
+  <a class="btn secondary" href="/movimientos?categoria=sin">{{ ui.icon("tag", "sm") }} Categorizar los pendientes</a>
+  {% endif %}
+  <a class="btn secondary" href="/importar">{{ ui.icon("upload", "sm") }} Importar otro</a>
+</div>
+{% endblock %}
