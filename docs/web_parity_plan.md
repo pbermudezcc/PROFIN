@@ -22,15 +22,27 @@ Base técnica ya hecha (ver `app/web/`, `docs/agent/agent_log.md` 2026-10-04):
 |---|---|---|
 | Posición Global (dashboard) | Resumen completo | — (revisar KPIs que falten) |
 | Gastos / Ingresos | Completo (periodos, gráficos, detalle) | — |
-| Transacciones | Lista, filtros, cambiar categoría | Re-aplicar reglas, marcar/resolver duplicados, edición de campos si procede |
+| Transacciones | Lista, filtros, cambiar categoría, aplicar reglas, detalle lateral en iPad (W6–W7) | Marcar/resolver duplicados, edición de campos si procede (no existen en escritorio) |
 | Inversiones | Posiciones, evolución, distribución, operaciones (alta/edición/borrado), fiscalidad + Excel | Buscar y dar de alta valores nuevos (Yahoo), actualizar cotizaciones, eventos pendientes (dividendos/splits), importar extractos DEGIRO/MyInvestor con vista previa editable, precio manual de fondos |
-| Categorías | Solo lectura | Crear, renombrar, borrar, cargar categorías por defecto |
-| Reglas | Solo lectura | Crear, editar, borrar, priorizar, aplicar reglas (con protección de categorías manuales) |
-| Importar (extractos CaixaBank) | No existe | Subida de fichero, vista previa con duplicados, confirmación (reutilizar `app/ingestion`) |
+| Categorías | **Hecho (W7)**: crear, renombrar, borrar con aviso de uso, cargar por defecto | — |
+| Reglas | **Hecho (W7)**: crear, editar, borrar, prioridad ↑↓, vista previa de coincidencias, aplicar (protege manuales) | Reglas globales solo desde el PC (decisión) |
+| Importar (extractos CaixaBank) | **Hecho (W8)**: subida, vista previa con duplicados, confirmación, historial | Probar con un extracto real desde el iPad |
 | Exportar | No existe (también es placeholder en escritorio) | Definir con el usuario |
 | Previsiones | No existe (placeholder en escritorio) | Definir con el usuario |
 | Configuración | No existe | Ajustes de usuario (contraseña, tema por defecto); copias de seguridad (crear/descargar); lo que afecte al PC (carpeta de datos, acceso web) probablemente solo en escritorio |
 | Cuenta de usuario (menú de MainWindow) | No existe | Cambiar contraseña; borrar cuenta (con confirmación fuerte) |
+
+## Avance 2026-10-04 (W6–W8)
+
+- **W6** rediseño profesional: Inter, barra lateral de iconos (iPad vertical) / completa, grupo
+  Administración, migas de pan, tablas ordenables, maestro-detalle en Movimientos, diálogo de
+  confirmación propio, «Más» → «Ajustes».
+- **W7** categorías y reglas (`app/categorization/admin_service.py`, compartido con el escritorio).
+- **W8** importación de extractos por subida (`app/ingestion/import_service.py`, `app/web/uploads.py`).
+- Pendiente: **W9** inversiones (alta de valores Yahoo, cotizaciones en segundo plano, eventos
+  pendientes con descartes en BD, importar DEGIRO/MyInvestor) y **W10** ajustes y cuenta (cambiar
+  contraseña, borrar cuenta revocando sesiones web, exportación de copia **por usuario**: la copia
+  actual incluye a toda la familia y no debe descargarse desde la web).
 
 ## Directrices para la sesión
 

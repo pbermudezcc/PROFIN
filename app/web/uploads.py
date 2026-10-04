@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 TTL = 15 * 60
 MAX_PER_USER = 3
+PREFIX = "familyfin-import-"
 
 
 @dataclass
@@ -50,7 +51,7 @@ class PendingImports:
     @staticmethod
     def new_directory() -> Path:
         """Private temp folder for one upload (user-only permissions)."""
-        return Path(tempfile.mkdtemp(prefix="familyfin-import-"))
+        return Path(tempfile.mkdtemp(prefix=PREFIX))
 
     def add(self, user_id: int, sid: str, account_id: int, filename: str,
             directory: Path, preview: Any) -> str:
@@ -96,6 +97,21 @@ class PendingImports:
         item = self._items.pop(token, None)
         if item is not None:
             remove_directory(item.directory)
+
+
+def sweep_orphans(max_age: float = TTL) -> int:
+    """Delete upload folders left behind by a crash or a killed process
+    (older than any live preview can be). Returns how many were removed."""
+    removed = 0
+    now = time.time()
+    for directory in Path(tempfile.gettempdir()).glob(PREFIX + "*"):
+        try:
+            if directory.is_dir() and now - directory.stat().st_mtime > max_age:
+                remove_directory(directory)
+                removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def remove_directory(directory: Path) -> None:

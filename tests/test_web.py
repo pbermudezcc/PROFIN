@@ -111,7 +111,8 @@ def app(factory, family):
 
     application.dependency_overrides[get_db] = _db
     application.state.changes = changes
-    return application
+    yield application
+    application.state.imports.clear()       # temp folders of unconfirmed uploads
 
 
 def client_for(app) -> TestClient:
@@ -792,3 +793,21 @@ def test_import_upload_requires_csrf(app, family, statement):
                            headers=ORIGIN, follow_redirects=False)
     assert response.status_code == 403
     assert len(app.state.imports) == 0
+
+
+def test_orphaned_upload_folders_are_swept(tmp_path, monkeypatch):
+    import os
+    import time
+
+    from app.web import uploads
+
+    monkeypatch.setattr(uploads.tempfile, "gettempdir", lambda: str(tmp_path))
+    old = tmp_path / (uploads.PREFIX + "old")
+    fresh = tmp_path / (uploads.PREFIX + "fresh")
+    for d in (old, fresh):
+        d.mkdir()
+        (d / "extracto.xlsx").write_bytes(b"PK")
+    past = time.time() - uploads.TTL - 60
+    os.utime(old, (past, past))
+    assert uploads.sweep_orphans() == 1
+    assert not old.exists() and fresh.exists()

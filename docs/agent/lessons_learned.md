@@ -107,3 +107,24 @@ Entry format:
 - Root cause: the button was disabled while the server was off, with no hint why; disabled Qt buttons give no feedback on click.
 - Fix: the button is always enabled; when the server is off it offers to start it and then opens the onboarding; a PC without a LAN address gets an explicit message (app/gui/web_access_view.py, app/web/server.py).
 - Prevention: `tests/test_web_tls.py::test_configure_button_is_usable_while_server_is_off`. Prefer an enabled control that explains the prerequisite over a silently disabled one.
+
+## 2026-10-04 — Web: htmx attributes inherit (live preview replaced the whole sheet)
+- Area: web / htmx
+- Symptom: opening "Nueva regla" showed an empty sheet.
+- Root cause: the live-preview `<div hx-get>` sat inside a form with `hx-target="#sheet-body"`; htmx inherits `hx-target`, so the (empty) preview response replaced the whole sheet on load.
+- Fix: explicit `hx-target="this"` on the preview element (partials/rule_form.html).
+- Prevention: every nested htmx element inside a form/container that sets hx-target must declare its own target; test the form open → type → preview flow in a browser.
+
+## 2026-10-04 — Web: a "Saved" toast vanished after the page refresh
+- Area: web / js
+- Symptom: after saving a rule the toast never appeared.
+- Root cause: the `refreshPage` event swapped the whole `<body>`, including the toast element that had just been shown.
+- Fix: refresh only `#main` (`select: "#main"`, outerHTML); toast, sheet and confirm dialog live outside it (static/js/app.js).
+- Prevention: keep global UI (toast, dialogs) outside the region that partial refreshes replace.
+
+## 2026-10-04 — Upload temp folders left behind by tests / a killed process
+- Area: web / imports
+- Symptom: `familyfin-import-*` folders with statements stayed in %TEMP%.
+- Root cause: a preview that was never confirmed nor cancelled is only cleaned on expiry or WebServer.stop(); tests (and a crash) never call stop(). FastAPI here has no `add_event_handler`, so a shutdown hook was not an option.
+- Fix: `sweep_orphans()` removes folders older than the preview TTL when the app is created; the test fixture clears the store on teardown (app/web/uploads.py, app/web/app.py, tests/test_web.py).
+- Prevention: `tests/test_web.py::test_orphaned_upload_folders_are_swept`; check %TEMP% after test runs that touch uploads.

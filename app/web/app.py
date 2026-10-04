@@ -27,7 +27,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.gui._format import fmt_date, fmt_eur, fmt_number, fmt_pct, fmt_quantity
 from app.web.deps import CsrfFailed, LoginRequired
 from app.web.security import HardeningMiddleware, LoginLimiter, SessionStore
-from app.web.uploads import PendingImports
+from app.web.uploads import PendingImports, sweep_orphans
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +94,10 @@ def create_app(
     app.state.limiter = limiter or LoginLimiter()
     app.state.on_change = on_change
     # Uploaded statements waiting for confirmation (temp files on this PC).
-    # WebServer.stop() clears it (deletes the temp files).
+    # WebServer.stop() clears it (deletes the temp files); folders orphaned
+    # by a crash are swept when the app is created.
     app.state.imports = PendingImports()
+    sweep_orphans()
     app.state.templates = build_templates()
 
     app.add_middleware(HardeningMiddleware, lan_only=lan_only)
