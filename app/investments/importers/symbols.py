@@ -22,6 +22,7 @@ suggest_symbols() calls the provider: run it in a worker thread.
 """
 from __future__ import annotations
 
+import difflib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -29,6 +30,7 @@ from datetime import date, timedelta
 from statistics import median
 from typing import Dict, List, Optional, Tuple
 
+from app.db.models import AssetType
 from app.investments.market_data import MarketDataError, MarketDataProvider
 
 logger = logging.getLogger(__name__)
@@ -39,7 +41,9 @@ _EUR_SUFFIXES = {"DE", "F", "SG", "DU", "MU", "BE", "HM", "HA", "AS", "PA", "BR"
                  "MI", "VI", "LS", "IR", "HE"}
 _SUFFIX_CURRENCY = {**{s: "EUR" for s in _EUR_SUFFIXES}, "L": "GBP", "SW": "CHF", "": "USD"}
 # Lower is preferred when two listings price equally well.
-_VENUE_RANK = {"DE": 0, "AS": 1, "PA": 1, "MC": 1, "MI": 1, "BR": 2, "F": 3, "L": 3}
+# Milan ranks below the other main venues: its "1XXXX.MI" segment re-lists
+# foreign shares (1ROVI.MI for the Madrid-listed ROVI.MC).
+_VENUE_RANK = {"DE": 0, "AS": 1, "PA": 1, "MC": 1, "MI": 2, "BR": 2, "F": 3, "L": 3}
 
 
 @dataclass
@@ -70,6 +74,16 @@ def _suffix(symbol: str) -> str:
     return symbol.rsplit(".", 1)[1] if "." in symbol else ""
 
 
+def _name_score(name: str, spellings: List[str]) -> float:
+    upper = (name or "").upper()
+    score = max(difflib.SequenceMatcher(None, upper, s).ratio() for s in spellings)
+    if " EUR" in upper:
+        score += 0.3
+    if re.search(r"\bH\)?$|HEDGED", upper):      # "... EUR P Acc H": currency-hedged class
+        score -= 0.2
+    return score
+
+
 def _rank(candidate: "Candidate") -> int:
     return _VENUE_RANK.get(_suffix(candidate.symbol), 4)
 
@@ -87,18 +101,39 @@ _NOISE = re.compile(
     r"|\s+(USD|EUR)\s+(Dis|Acc|A|D)$|\s+UCITS ETF.*$", re.IGNORECASE)
 
 
-def search_queries(isin: str, info: dict) -> List[str]:
-    """ISIN first, then name variants Yahoo's search matches better.
+# Abbreviations brokers use in truncated names → the words Yahoo's names use.
+_ABBREVIATIONS = {"DEVL": "DEV", "DEVELOPED": "DEV", "WRLD": "WLD", "WORLD": "WLD",
+                  "INDX": "IDX", "INDEX": "IDX", "S P": "S&P",
+                  "IT": "INFORMATION TECHNOLOGY"}
+
+
+def search_queries(key: str, info: dict) -> List[str]:
+    """ISIN first (when there is one), then name variants Yahoo matches better.
 
     Yahoo finds "Take-Two Interactive Software" but not "... Software, Inc.",
-    and DEGIRO's truncated upper-case product names work surprisingly well.
+    DEGIRO's truncated upper-case product names work surprisingly well, and
+    fund names match in Yahoo's own abbreviations ("ISHARES DEV WLD IDX").
     """
     name = info.get("name") or ""
-    queries = [isin, info.get("product") or "", name]
+    spellings = list(info.get("spellings") or [])
+    queries = [key if not key.startswith("NAME:") else "", info.get("product") or "", name]
+    queries += spellings
     cleaned = name
     for _ in range(3):
         cleaned = _NOISE.sub("", cleaned).strip()
     queries.append(cleaned)
+    words = name.split()
+    while len(words) > 2 and len(words[-1]) <= 3:      # "... INDEX P AC" → "... INDEX"
+        words = words[:-1]
+    queries.append(" ".join(words))
+    abbreviated = " ".join(_ABBREVIATIONS.get(w.upper(), w) for w in words)
+    queries.append(abbreviated)
+    if info.get("fund"):
+        queries.append(" ".join(words) + " EUR")        # Yahoo lists each currency class
+    else:
+        spelled = re.sub(r"S P", "S&P", " ".join(words))
+        queries.append(" ".join(_ABBREVIATIONS.get(w.upper(), w) if w.upper() == "IT" else w
+                                for w in spelled.split()))
     queries.append(" ".join(name.split()[:3]))
     result: List[str] = []
     for query in queries:
@@ -124,8 +159,11 @@ def suggest_symbols(
             choice.from_catalogue = True
             continue
         seen: Dict[str, Candidate] = {}
+        wants_fund = bool(info.get("fund"))
         for index, query in enumerate(search_queries(isin, info)):
-            if seen and index >= 2:         # the ISIN and one name query found listings
+            # Stocks: the ISIN and one name query that finds listings are enough.
+            # Funds: keep going, each query surfaces other share classes.
+            if seen and index >= 2 and not wants_fund:
                 break
             try:
                 results = provider.search(query, limit=15)
@@ -133,7 +171,9 @@ def suggest_symbols(
                 logger.info("Búsqueda de %s fallida: %s", query, exc)
                 continue
             for result in results:
-                if result.symbol not in seen and listing_currency(result.symbol) == info["currency"]:
+                is_fund = result.asset_type == AssetType.fund
+                if (result.symbol not in seen and is_fund == wants_fund
+                        and listing_currency(result.symbol) == info["currency"]):
                     seen[result.symbol] = Candidate(result.symbol, result.exchange, result.name)
         choice.candidates = list(seen.values())
         to_price[isin] = choice.candidates
@@ -172,9 +212,26 @@ def suggest_symbols(
              or (_rank(best) >= 3 and _rank(c) <= 1 and abs(c.gap) <= abs(best.gap) + 0.005)),
             key=lambda c: (_rank(c), abs(c.gap)))
         choice = choices[isin]
+        wants_fund = bool(products[isin].get("fund"))
         choice.candidates.sort(key=lambda c: (c.gap is None, abs(c.gap or 0)))
         if ranked:
             choice.chosen = ranked[0].symbol
         elif not trades and candidates:
-            choice.chosen = candidates[0].symbol    # only dividends: no price to compare
+            # No price paid to compare (funds, dividends only): closest name,
+            # preferring a EUR class over a currency-hedged one.
+            spellings = [s.upper() for s in (products[isin].get("spellings") or [choice.name])]
+            # Fund classes differ in a word ("EUR P Acc" / "EUR P Acc H"): compare
+            # names finely. Listings of one share differ only in how each venue
+            # spells the name: compare coarsely and let the main venue win.
+            if wants_fund:
+                def order(c):
+                    return (-round(_name_score(c.name, spellings), 2), _rank(c), c.symbol)
+            else:
+                top = max(_name_score(c.name, spellings) for c in candidates)
+
+                def order(c):
+                    close_enough = _name_score(c.name, spellings) >= top - 0.15
+                    return (not close_enough, _rank(c), -_name_score(c.name, spellings), c.symbol)
+            candidates.sort(key=order)
+            choice.chosen = candidates[0].symbol
     return choices

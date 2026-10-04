@@ -1,15 +1,21 @@
 """
 app/gui/investment_import.py
 ============================
-FAMILYFIN — "Importar extracto" dialog of the Inversiones view (DEGIRO).
+FAMILYFIN — "Importar extracto" dialog of the Inversiones view.
 
-  1. Choose the "Estado de cuenta" (.xlsx / .csv). It is parsed locally.
-  2. Each security's Yahoo symbol is looked up in the background; the
-     proposal and its alternatives (with how well their price matches what
-     was paid) appear in an editable combo — any symbol can be typed.
-  3. Preview of every operation and dividend, marked "Nueva" or "Ya
-     importada" (same DEGIRO order id / dividend key), plus what is ignored.
-  4. "Importar": data of new securities is fetched in the background, then
+Supported files (detected from their header, see importers.service.parse_any):
+  * DEGIRO "Estado de cuenta" (.xlsx / .csv): exact operations;
+  * MyInvestor account movements (.csv / .xlsx): amounts only — the kind of
+    each movement is guessed and quantities are estimated from the day's
+    price, both editable here.
+
+  1. Choose the file. It is parsed locally.
+  2. Each product's Yahoo symbol is looked up in the background; the
+     proposal and its alternatives appear in an editable combo.
+  3. When quantities are missing, they are estimated in the background from
+     the chosen symbols' closes (again after a symbol is changed).
+  4. Preview of every movement, marked "Nueva" or "Ya importada".
+  5. "Importar": data of new securities is fetched in the background, then
      everything is written for the logged-in user in one transaction.
 """
 from __future__ import annotations
@@ -18,7 +24,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import qtawesome as qta
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -39,24 +45,30 @@ from sqlalchemy.orm import Session
 from app.gui._background import BackgroundRunner
 from app.gui._format import fmt_date, fmt_eur, fmt_money, fmt_quantity
 from app.gui.investment_dialogs import dialog_stylesheet
-from app.investments.importers.degiro import ParsedStatement, StatementError, parse_statement
+from app.investments.importers.base import KIND_BUY, KIND_DIVIDEND, KIND_IGNORE, KIND_SELL
+from app.investments.importers.degiro import StatementError
 from app.investments.importers.service import (
     ImportSummary,
     already_imported,
     apply_import,
     catalogue_isins,
+    estimate_quantities,
+    fetch_closes,
     fetch_security_infos,
+    parse_any,
     symbols_to_fetch,
 )
 from app.investments.importers.symbols import listing_currency, suggest_symbols
 from app.investments.market_data import MarketDataError, MarketDataProvider
 from app.investments.portfolio import LedgerError
 
-_KIND = {"buy": "Compra", "sell": "Venta"}
+KIND_LABELS = {KIND_BUY: "Compra", KIND_SELL: "Venta", KIND_DIVIDEND: "Dividendo",
+               KIND_IGNORE: "Ignorar"}
+COL_KIND, COL_QTY = 2, 3
 
 
 def _item(text: str, right: bool = False, color: Optional[str] = None,
-          tooltip: Optional[str] = None) -> QTableWidgetItem:
+          tooltip: Optional[str] = None, editable: bool = False) -> QTableWidgetItem:
     item = QTableWidgetItem(text)
     if right:
         item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -64,6 +76,9 @@ def _item(text: str, right: bool = False, color: Optional[str] = None,
         item.setForeground(QColor(color))
     if tooltip:
         item.setToolTip(tooltip)
+    flags = item.flags()
+    item.setFlags(flags | Qt.ItemFlag.ItemIsEditable if editable
+                  else flags & ~Qt.ItemFlag.ItemIsEditable)
     return item
 
 
@@ -71,15 +86,22 @@ def _table(headers) -> QTableWidget:
     table = QTableWidget(0, len(headers))
     table.setHorizontalHeaderLabels(headers)
     table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked
+                          | QAbstractItemView.EditTrigger.EditKeyPressed)
     table.verticalHeader().setVisible(False)
+    table.verticalHeader().setDefaultSectionSize(36)
     table.setAlternatingRowColors(True)
     table.setShowGrid(False)
-    header = table.horizontalHeader()
-    for col in range(len(headers)):
-        header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
-    header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
     return table
+
+
+def _parse_quantity(text: str) -> Optional[float]:
+    text = (text or "").strip().replace(".", "").replace(",", ".")
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 class ImportStatementDialog(QDialog):
@@ -92,25 +114,33 @@ class ImportStatementDialog(QDialog):
         self._provider = provider
         self._t = theme
         self._runner = BackgroundRunner(self)
-        self.statement: Optional[ParsedStatement] = None
+        self._prices = BackgroundRunner(self)
+        self.statement = None
         self.summary: Optional[ImportSummary] = None
         self._combos: Dict[str, QComboBox] = {}
         self._known_refs: set = set()
+        self._filling = False
+        self._estimate_timer = QTimer(self)
+        self._estimate_timer.setSingleShot(True)
+        self._estimate_timer.setInterval(500)
+        self._estimate_timer.timeout.connect(self._estimate)
 
-        self.setWindowTitle("Importar extracto de DEGIRO")
+        self.setWindowTitle("Importar extracto del bróker")
         self.setModal(True)
-        self.resize(1080, 720)
+        self.resize(1120, 740)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 18)
         layout.setSpacing(10)
 
-        title = QLabel(f"Importar extracto de DEGIRO · {username}")
+        title = QLabel(f"Importar extracto del bróker · {username}")
         title.setObjectName("dlgTitle")
         layout.addWidget(title)
         hint = QLabel(
-            "Exporta en DEGIRO «Actividad → Estado de cuenta» (desde la apertura de la cuenta) como "
-            "Excel o CSV. Las operaciones se añaden al usuario con el que has iniciado sesión; las "
-            "que ya importaste antes se reconocen y no se duplican.")
+            "Admite el «Estado de cuenta» de DEGIRO y los movimientos de cuenta de MyInvestor "
+            "(Excel o CSV, desde la apertura de la cuenta). Las operaciones se añaden al usuario con "
+            "el que has iniciado sesión; las ya importadas se reconocen y no se duplican. En "
+            "MyInvestor revisa el tipo de cada movimiento y las acciones estimadas (doble clic para "
+            "corregirlas).")
         hint.setObjectName("dlgHint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -129,9 +159,7 @@ class ImportStatementDialog(QDialog):
         self._lbl_securities = QLabel("Valores y su cotización en Yahoo Finance")
         self._lbl_securities.setObjectName("sectionTitle")
         layout.addWidget(self._lbl_securities)
-        self._securities = _table(["ISIN", "Valor", "Cotización (Yahoo)", "Precio frente a lo pagado"])
-        self._securities.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self._securities.setColumnWidth(2, 260)
+        self._securities = _table(["Clave", "Valor", "Cotización (Yahoo)", "Comprobación"])
         self._securities.verticalHeader().setDefaultSectionSize(40)    # room for the combos
         layout.addWidget(self._securities, 2)
 
@@ -140,6 +168,7 @@ class ImportStatementDialog(QDialog):
         layout.addWidget(self._lbl_ops)
         self._ops = _table(["Fecha", "Valor", "Tipo", "Acciones", "Precio", "Importe (EUR)",
                             "Comisiones / retención", "Estado"])
+        self._ops.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._ops, 3)
 
         self._lbl_status = QLabel("")
@@ -164,6 +193,10 @@ class ImportStatementDialog(QDialog):
         """)
 
     # ------------------------------------------------------------------
+    @property
+    def busy(self) -> bool:
+        return self._runner.busy or self._prices.busy or self._estimate_timer.isActive()
+
     def _set_status(self, text: str, error: bool = False) -> None:
         self._lbl_status.setText(text)
         self._lbl_status.setStyleSheet(
@@ -172,21 +205,22 @@ class ImportStatementDialog(QDialog):
     def _choose_file(self) -> None:
         start = str(Path.home() / "Downloads")
         path, _ = QFileDialog.getOpenFileName(
-            self, "Estado de cuenta de DEGIRO", start, "Extracto DEGIRO (*.xlsx *.csv)")
+            self, "Extracto del bróker", start, "Extracto DEGIRO / MyInvestor (*.xlsx *.csv)")
         if path:
             self.load_file(path)
 
     def load_file(self, path) -> None:
         path = Path(path)
         try:
-            statement = parse_statement(path)
+            statement = parse_any(path)
         except (StatementError, OSError) as exc:
             self._set_status(str(exc), error=True)
             return
         self.statement = statement
         self._known_refs = already_imported(self._session, self._user_id, statement)
         self._lbl_file.setText(
-            f"{path.name} · del {fmt_date(statement.first_day)} al {fmt_date(statement.last_day)}")
+            f"{path.name} · {statement.broker} · del {fmt_date(statement.first_day)} "
+            f"al {fmt_date(statement.last_day)}")
         self._fill_operations()
         self._fill_securities({})
         self._set_status("Buscando la cotización de cada valor en Yahoo Finance…")
@@ -202,17 +236,22 @@ class ImportStatementDialog(QDialog):
                              "de cada valor a mano.", error=True)
             choices = {}
         self._fill_securities(choices)
+        if self.statement.needs_prices:
+            self._estimate()
         self._update_ready()
 
-    # ------------------------------------------------------------------
+    # -- securities ------------------------------------------------------
     def _fill_securities(self, choices) -> None:
         products = self.statement.products
         self._securities.setRowCount(len(products))
         self._combos = {}
-        for row, (isin, info) in enumerate(sorted(products.items(), key=lambda kv: kv[1]["name"])):
-            choice = choices.get(isin)
-            self._securities.setItem(row, 0, _item(isin))
-            self._securities.setItem(row, 1, _item(info["name"]))
+        for row, (key, info) in enumerate(sorted(products.items(), key=lambda kv: kv[1]["name"])):
+            choice = choices.get(key)
+            label = key[5:] if key.startswith("NAME:") else key
+            spellings = " / ".join(info.get("spellings") or [info["name"]])
+            self._securities.setItem(row, 0, _item(label if not key.startswith("NAME:") else
+                                                   ("Fondo" if info.get("fund") else "Nombre")))
+            self._securities.setItem(row, 1, _item(info["name"], tooltip=spellings))
             combo = QComboBox()
             combo.setEditable(True)
             combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
@@ -221,100 +260,182 @@ class ImportStatementDialog(QDialog):
                 for candidate in choice.candidates:
                     combo.addItem(f"{candidate.symbol}", candidate.symbol)
                     combo.setItemData(combo.count() - 1,
-                                      f"{candidate.exchange} · {candidate.gap_text}",
+                                      f"{candidate.name} · {candidate.exchange} · {candidate.gap_text}",
                                       Qt.ItemDataRole.ToolTipRole)
                 if choice.chosen and combo.findData(choice.chosen) < 0:
                     combo.insertItem(0, choice.chosen, choice.chosen)
                 combo.setCurrentText(choice.chosen or "")
+                best = next((c for c in choice.candidates if c.symbol == choice.chosen), None)
                 if choice.from_catalogue:
                     detail = "Ya está en tu catálogo"
+                elif best is None:
+                    detail = "Sin coincidencia: escribe el símbolo de Yahoo"
+                elif best.gap is not None:
+                    detail = f"{best.exchange} · precio {best.gap_text}"
                 else:
-                    best = next((c for c in choice.candidates if c.symbol == choice.chosen), None)
-                    detail = (f"{best.exchange} · {best.gap_text}" if best else
-                              "Sin coincidencia: escribe el símbolo de Yahoo")
-            combo.currentTextChanged.connect(lambda _t, i=isin: self._on_symbol_edited(i))
-            self._combos[isin] = combo
+                    detail = f"{best.name} · {best.exchange} · compruébalo"
+            combo.currentTextChanged.connect(lambda _t, k=key: self._on_symbol_edited(k))
+            self._combos[key] = combo
             self._securities.setCellWidget(row, 2, combo)
             self._securities.setItem(row, 3, _item(detail))
-        self._fit(self._securities)
+        self._fit(self._securities, stretch=3)
+        self._securities.setColumnWidth(2, 220)
 
-    def _on_symbol_edited(self, isin: str) -> None:
-        text = self._combos[isin].currentText().strip().upper()
-        currency = self.statement.products[isin]["currency"]
+    def _row_of(self, key: str) -> int:
+        keys = sorted(self.statement.products, key=lambda k: self.statement.products[k]["name"])
+        return keys.index(key)
+
+    def _on_symbol_edited(self, key: str) -> None:
+        text = self._combos[key].currentText().strip().upper()
+        currency = self.statement.products[key]["currency"]
         listing = listing_currency(text) if text else None
-        for row in range(self._securities.rowCount()):
-            if self._securities.item(row, 0).text() == isin:
-                note = ("Cotiza en otra divisa que la compra" if listing and listing != currency
-                        else "Elegido a mano")
-                self._securities.setItem(row, 3, _item(note, color=self._t["warning"]
-                                                       if "divisa" in note else None))
+        note = ("Cotiza en otra divisa que la compra" if listing and listing != currency
+                else "Elegido a mano")
+        self._securities.setItem(self._row_of(key), 3, _item(
+            note, color=self._t["warning"] if "divisa" in note else None))
+        if self.statement.needs_prices:
+            self._estimate_timer.start()
         self._update_ready()
 
+    # -- quantity estimation (MyInvestor) --------------------------------
+    def _estimate(self) -> None:
+        self._estimate_timer.stop()
+        statement, symbols, provider = self.statement, self.symbols(), self._provider
+        self._set_status("Estimando las acciones con los precios de Yahoo Finance…")
+        self._prices.run(lambda: fetch_closes(provider, statement, symbols),
+                         lambda closes, error: self._on_closes(symbols, closes, error),
+                         latest_only=True)
+
+    def _on_closes(self, symbols, closes, error) -> None:
+        if error is not None:
+            self._set_status(f"No se pudieron obtener precios para estimar las acciones ({error}). "
+                             "Escríbelas a mano con doble clic.", error=True)
+            closes = {}
+        estimate_quantities(self.statement, symbols, closes)
+        self._fill_operations()
+        self._update_ready()
+
+    # -- operations ------------------------------------------------------
     def _fill_operations(self) -> None:
-        statement = self.statement
-        t = self._t
-        rows = ([("trade", x) for x in statement.trades]
-                + [("dividend", x) for x in statement.dividends])
-        rows.sort(key=lambda r: r[1].trade_date if r[0] == "trade" else r[1].pay_date)
+        statement, t = self.statement, self._t
+        self._filling = True
+        rows = sorted(statement.rows, key=lambda r: (r.day, r.ref))
+        self._rows = rows
         self._ops.setRowCount(len(rows))
-        new = 0
-        for row, (kind, x) in enumerate(rows):
-            known = x.ref in self._known_refs
-            new += not known
-            state = _item("Ya importada" if known else "Nueva",
-                          color=t["text_secondary"] if known else t["income"])
-            if kind == "trade":
-                cash = -x.amount_eur if x.kind == "buy" else x.amount_eur
-                values = [
-                    _item(fmt_date(x.trade_date)), _item(x.name),
-                    _item(_KIND[x.kind] + (f" ({x.fills} ejec.)" if x.fills > 1 else "")),
-                    _item(fmt_quantity(x.quantity), right=True),
-                    _item(fmt_money(x.price, x.currency, 2), right=True),
-                    _item(fmt_eur(cash, signed=True), right=True,
-                          color=t["income"] if cash > 0 else t["expense"]),
-                    _item(fmt_eur(x.fees_eur), right=True), state]
+        for index, row in enumerate(rows):
+            known = row.ref in self._known_refs
+            if known:
+                state = _item("Ya importada", color=t["text_secondary"])
+            elif row.kind == KIND_IGNORE:
+                state = _item("Se ignora", color=t["text_secondary"], tooltip=row.note)
             else:
-                values = [
-                    _item(fmt_date(x.pay_date)), _item(x.name), _item("Dividendo"),
-                    _item("—", right=True),
-                    _item(fmt_money(x.gross, x.currency, 2) + " brutos", right=True),
-                    _item(fmt_eur(x.net_eur, signed=True) if x.net_eur is not None else "se estimará",
-                          right=True, color=t["income"]),
-                    _item(fmt_eur(x.withheld_eur) if x.withheld_eur else "—", right=True), state]
+                state = _item("Nueva", color=t["income"], tooltip=row.note or None)
+            trade = row.kind in (KIND_BUY, KIND_SELL)
+            if trade and row.quantity:
+                qty_text = fmt_quantity(row.quantity)
+            elif trade:
+                qty_text = "¿?"
+            else:
+                qty_text = "—"
+            qty = _item(qty_text, right=True, editable=trade and not known,
+                        color=t["warning"] if trade and (row.quantity_estimated or not row.quantity)
+                        else None,
+                        tooltip=("Estimada: doble clic para corregirla" if row.quantity_estimated
+                                 else None))
+            sign = -1 if row.kind == KIND_BUY else 1
+            amount = row.amount_eur
+            values = [
+                _item(fmt_date(row.day)), _item(row.name, tooltip=row.note or None), None, qty,
+                _item(fmt_money(row.price, row.currency, 2) if trade and row.price else
+                      (row.gross_text or "—"), right=True),
+                _item("se estimará" if amount is None else
+                      fmt_eur(sign * amount, signed=True) if row.kind != KIND_IGNORE else fmt_eur(amount),
+                      right=True, color=(t["text_secondary"] if row.kind == KIND_IGNORE else
+                                         t["expense"] if row.kind == KIND_BUY else t["income"])),
+                _item(fmt_eur(row.fees_eur) if row.fees_eur else
+                      fmt_eur(row.withheld_eur) if row.withheld_eur else "—", right=True),
+                state,
+            ]
             for col, item in enumerate(values):
-                self._ops.setItem(row, col, item)
-        self._fit(self._ops)
-        ignored = ", ".join(f"{label} ({count})" for label, count in statement.ignored.items())
-        self._lbl_ops.setText(
-            f"Operaciones · {len(statement.trades)} compras/ventas y {len(statement.dividends)} "
-            f"dividendos · {new} nuevas")
-        self._ops.setToolTip(f"Se ignoran: {ignored}" if ignored else "")
-        self._new = new
+                if item is not None:
+                    self._ops.setItem(index, col, item)
+            if row.kind_editable and not known:
+                combo = QComboBox()
+                for kind, label in KIND_LABELS.items():
+                    combo.addItem(label, kind)
+                combo.setCurrentIndex(combo.findData(row.kind))
+                combo.currentIndexChanged.connect(
+                    lambda _i, r=row, c=combo: self._on_kind_changed(r, c.currentData()))
+                self._ops.setCellWidget(index, COL_KIND, combo)
+            else:
+                self._ops.removeCellWidget(index, COL_KIND)
+                self._ops.setItem(index, COL_KIND, _item(
+                    KIND_LABELS[row.kind] + (f" ({row.fills} ejec.)" if row.fills > 1 else "")))
+        self._filling = False
+        self._fit(self._ops, stretch=1)
+        self._ops.setColumnWidth(COL_KIND, max(self._ops.columnWidth(COL_KIND), 120))
+        new = [r for r in rows if r.ref not in self._known_refs and r.kind != KIND_IGNORE]
+        trades = sum(1 for r in new if r.kind in (KIND_BUY, KIND_SELL))
+        self._lbl_ops.setText(f"Movimientos · {trades} compras/ventas y {len(new) - trades} "
+                              f"dividendos nuevos · {len(rows) - len(new)} ya importados o ignorados")
+        self._new = len(new)
+
+    def _on_kind_changed(self, row, kind) -> None:
+        row.kind = kind
+        if kind in (KIND_BUY, KIND_SELL) and not row.quantity:
+            row.quantity_estimated = True
+            self._estimate_timer.start()
+        if kind not in (KIND_BUY, KIND_SELL):
+            row.quantity = row.price = None
+        QTimer.singleShot(0, self._refresh_after_edit)
+
+    def _refresh_after_edit(self) -> None:
+        self._fill_operations()
+        self._update_ready()
+
+    def _on_item_changed(self, item: QTableWidgetItem) -> None:
+        if self._filling or item.column() != COL_QTY:
+            return
+        row = self._rows[item.row()]
+        quantity = _parse_quantity(item.text())
+        row.quantity = quantity
+        row.quantity_estimated = False           # typed by the user: keep it
+        row.price = round(row.amount_eur / quantity, 4) if quantity and row.amount_eur else None
+        QTimer.singleShot(0, self._refresh_after_edit)
 
     @staticmethod
-    def _fit(table: QTableWidget) -> None:
+    def _fit(table: QTableWidget, stretch: int) -> None:
         table.resizeColumnsToContents()
-        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(stretch, QHeaderView.ResizeMode.Stretch)
 
     def symbols(self) -> Dict[str, str]:
-        return {isin: combo.currentText().strip().upper() for isin, combo in self._combos.items()}
+        return {key: combo.currentText().strip().upper() for key, combo in self._combos.items()}
 
     def _update_ready(self) -> None:
-        missing = [isin for isin, symbol in self.symbols().items() if not symbol]
-        warnings = list(self.statement.warnings) if self.statement else []
+        if self.statement is None:
+            return
+        used = {r.key for r in self.statement.rows if r.kind != KIND_IGNORE
+                and r.ref not in self._known_refs}
+        missing = [k for k, s in self.symbols().items() if not s and k in used]
+        no_qty = [r for r in self.statement.rows if r.kind in (KIND_BUY, KIND_SELL)
+                  and not r.quantity and r.ref not in self._known_refs]
         if missing:
             text = f"Falta el símbolo de {len(missing)} valor(es)."
+        elif no_qty:
+            text = (f"Faltan las acciones de {len(no_qty)} movimiento(s): escríbelas con doble clic "
+                    "en la columna «Acciones».")
         elif not self._new:
             text = "Todas las operaciones de este extracto ya estaban importadas."
         else:
-            text = f"Listo para importar {self._new} operaciones nuevas."
-        ignored = self.statement.ignored if self.statement else {}
-        if ignored:
-            text += " Se ignoran: " + ", ".join(f"{k} ({v})" for k, v in ignored.items()) + "."
-        if warnings:
-            text += " Avisos: " + " ".join(warnings)
+            text = f"Listo para importar {self._new} movimientos nuevos."
+        if self.statement.ignored:
+            text += " Se ignoran: " + ", ".join(
+                f"{k} ({v})" for k, v in self.statement.ignored.items()) + "."
+        if self.statement.warnings:
+            text += " Avisos: " + " ".join(self.statement.warnings)
         self._set_status(text)
-        self._btn_import.setEnabled(bool(self._new) and not missing and not self._runner.busy)
+        self._btn_import.setEnabled(bool(self._new) and not missing and not no_qty
+                                    and not self.busy)
 
     # ------------------------------------------------------------------
     def _import(self) -> None:
@@ -341,5 +462,7 @@ class ImportStatementDialog(QDialog):
         self.accept()
 
     def done(self, result: int) -> None:
+        self._estimate_timer.stop()
         self._runner.shutdown()
+        self._prices.shutdown()
         super().done(result)

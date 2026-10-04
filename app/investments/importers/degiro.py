@@ -34,6 +34,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from app.investments.importers.base import KIND_BUY, KIND_DIVIDEND, KIND_SELL, ImportRow
+
 BROKER = "DEGIRO"
 
 _TRADE = re.compile(
@@ -88,6 +90,29 @@ class ParsedStatement:
     first_day: Optional[date] = None
     last_day:  Optional[date] = None
     broker:    str = BROKER
+
+    needs_prices = False                  # DEGIRO gives exact quantities
+
+    @property
+    def rows(self) -> List[ImportRow]:
+        """Trades and dividends as the importer's common rows."""
+        result: List[ImportRow] = []
+        for trade in self.trades:
+            result.append(ImportRow(
+                ref=trade.ref, day=trade.trade_date, key=trade.isin, name=trade.name,
+                kind=KIND_BUY if trade.kind == "buy" else KIND_SELL,
+                amount_eur=trade.amount_eur, quantity=trade.quantity, price=trade.price,
+                currency=trade.currency, fees_eur=trade.fees_eur, fills=trade.fills,
+                note=f"{trade.fills} ejecuciones" if trade.fills > 1 else ""))
+        for dividend in self.dividends:
+            gross = f"{dividend.gross:.2f}".replace(".", ",") + f" {dividend.currency} brutos"
+            result.append(ImportRow(
+                ref=dividend.ref, day=dividend.pay_date, key=dividend.isin, name=dividend.name,
+                kind=KIND_DIVIDEND, amount_eur=dividend.net_eur, currency=dividend.currency,
+                withheld_eur=dividend.withheld_eur or 0.0, gross_text=gross,
+                foreign_gross=dividend.gross, foreign_withheld=dividend.withheld,
+                note="" if dividend.net_eur is not None else "EUR estimado"))
+        return sorted(result, key=lambda r: (r.day, r.ref))
 
     @property
     def products(self) -> Dict[str, dict]:

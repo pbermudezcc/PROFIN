@@ -227,7 +227,7 @@ class InvestmentsView(QWidget):
         self._btn_import = QPushButton(" Importar extracto…")
         self._btn_import.setObjectName("btnSecondary")
         self._btn_import.setFixedHeight(34)
-        self._btn_import.setToolTip("Importar el «Estado de cuenta» de DEGIRO (.xlsx o .csv)")
+        self._btn_import.setToolTip("Importar un extracto de DEGIRO o MyInvestor (.xlsx o .csv)")
         self._btn_import.clicked.connect(self.open_import_dialog)
         bar.addWidget(self._btn_import)
 
@@ -309,7 +309,7 @@ class InvestmentsView(QWidget):
         button.clicked.connect(lambda: self.open_transaction_dialog())
         self._btn_empty_add = button
         row.addWidget(button)
-        importer = QPushButton(" Importar extracto de DEGIRO…")
+        importer = QPushButton(" Importar extracto del bróker…")
         importer.setObjectName("btnSecondary")
         importer.setFixedHeight(36)
         importer.setCursor(Qt.CursorShape.PointingHandCursor)

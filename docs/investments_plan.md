@@ -35,7 +35,7 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 | F4 | Pestaña Posiciones + tarjetas + refresco (primera versión usable) | **hecho** 2026-09-27 |
 | F5 | Gráficas de evolución, índice de referencia y distribución | **hecho** 2026-09-27 |
 | F6 | Dividendos, splits e informe fiscal anual FIFO | **hecho** 2026-09-27 |
-| F7 | Importación de extractos: **DEGIRO hecho** 2026-09-27 (Trade Republic / MyInvestor / Scalable pendientes) | parcial |
+| F7 | Importación de extractos: **DEGIRO y MyInvestor hechos** 2026-09-27 (Trade Republic / Scalable pendientes) | parcial |
 | F8 | Retoques finales y versión 0.5.0 | pendiente |
 
 ## Resultados F0 (2026-09-27, yfinance 1.7.0)
@@ -150,6 +150,31 @@ Sustituye al `_PlaceholderView("Inversiones")` de `app/gui/main_window.py`.
 - Ensayo sobre una copia de la base real: v4→v5, 21 operaciones importadas en PEDRO, reimportación = 0 nuevas,
   transacciones bancarias intactas. Resultado de 2026: +487,21 €.
   Símbolos: AMZ.DE, IDR.MC, MSF.DE, NVD.DE, ENR.DE, TKE.DE, VUSA.AS, 0V6.F, QDVE.DE.
+
+## Resultados F7b (2026-09-27) — importación de MyInvestor
+- Formato: los movimientos de la cuenta de efectivo (`Fecha de operación;Fecha de valor;Concepto;Importe;Divisa`,
+  coma decimal). El concepto viene recortado a unos 30 caracteres y no hay ISIN ni precio. «NOMBRE @ N» indica la
+  cantidad N; sin «@» (o con «@» vacío) hay que estimarla.
+- Reglas (`app/investments/importers/myinvestor.py`):
+  - importe negativo = compra;
+  - importe positivo = dividendo si es menor que el 5 % de lo invertido en ese producto, y venta en otro caso;
+  - «PERIODO…» = intereses, y los conceptos en minúsculas o que empiezan por «Transferencia» = movimientos de dinero
+    (se ignoran ambos);
+  - las distintas grafías recortadas se agrupan: parecido ≥ 0,85, o en fondos los 10 primeros caracteres una vez
+    unificadas las abreviaturas.
+- Cantidades: importe ÷ cierre (o valor liquidativo) del día del símbolo elegido. Las acciones se redondean si están
+  a menos del 3 % de un número entero, y una venta ≥ 95 % de lo que había se toma como venta total.
+  `estimate_quantities` se vuelve a ejecutar cada vez que se cambia un símbolo.
+- Importador común: `importers/base.py` (`ImportRow`, `Statement`) y `service.parse_any` detecta el formato por la
+  cabecera. En la vista previa de MyInvestor el tipo se elige en un desplegable y la cantidad se corrige con doble clic.
+- Símbolos: solo se proponen fondos para los fondos y acciones/ETF para el resto; se prueban variantes con las
+  abreviaturas desarrolladas (DEVL→DEV, IT→INFORMATION TECHNOLOGY…). Sin precio con que comparar, en fondos gana
+  el nombre más parecido (EUR sin cubrir) y en acciones la bolsa principal.
+- Ensayo sobre una copia de la base real (MARIA): 14 movimientos importados (11 compras/ventas y 3 dividendos),
+  reimportación = 0 nuevos. Símbolos: AMZ.DE, QDVE.DE, NVD.DE, ROVI.MC (7 acciones estimadas), 0P0001AINF.F
+  (6,148 participaciones), 0P0001CLDI.F (43,44 participaciones). Resultado de 2026: +23,26 €.
+- Límites: el extracto no da las retenciones de los dividendos (se guarda el neto), ni la clase exacta de los fondos
+  (conviene comprobar el ISIN en la app de MyInvestor).
 
 ## Riesgos
 - `yfinance` no es oficial y puede dejar de funcionar si Yahoo cambia su web → proveedor aislado, caché local y alternativas (Stooq, Twelve Data).
