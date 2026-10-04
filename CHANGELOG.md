@@ -5,6 +5,45 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.6.0.md`  |  **Files:** 116  |  **Handler:** v1.0.0
+**Date:** 2026-10-04 21:46  |  **Type:** Release
+**Description:** La web de FAMILYFIN para el iPad y el iPhone estrena un diseño más profesional y pasa a permitir la gestión completa de categorías y reglas automáticas. Además, ya se pueden importar los extractos de CaixaBank directamente desde el iPad, con vista previa y detección de duplicados antes de guardar nada. No hay cambios en la base de datos: basta con instalar la nueva versión.
+
+### Novedades
+
+- Importar extractos desde la web: se sube el Excel de CaixaBank desde la app Archivos del iPad, se revisa una vista previa (nuevos, posibles duplicados y ya importados) y solo se guarda al confirmar; las categorías se asignan con tus reglas y el fichero se borra del PC al terminar (`177fbc9`).
+- Categorías y reglas desde la web: crear, renombrar y borrar categorías (avisando de cuántos movimientos y reglas usan cada una), cargar las categorías por defecto, crear y editar reglas viendo al momento qué movimientos coinciden, cambiar su prioridad y aplicarlas sin tocar nunca las categorías puestas a mano. La aplicación del PC usa la misma lógica (`3d628a1`).
+- Nuevo diseño de la web: tipografía y espaciado renovados, barra lateral con sección «Administración» (solo iconos en el iPad en vertical), tablas ordenables en el iPad, detalle del movimiento al lado de la lista en el iPad en horizontal, diálogo de confirmación propio para borrar y una página «Ajustes» con accesos directos (`2275e11`).
+
+### Correcciones
+
+- Los ficheros temporales de importaciones que nunca se confirmaron (por un cierre inesperado) se borran solos al arrancar el servidor web; también se limita el tamaño de lo que se puede enviar a la web (`7e43f71`).
+
+### Interno
+
+- Documentación del plan para igualar la web con la aplicación del PC y registro de la versión 0.5.0 (`c1f66af`, `663d52d`).
+
+### Áreas afectadas
+
+- **Categorías y reglas**: `app/categorization/admin_service.py`
+- **Importación de extractos**: `app/ingestion/import_service.py`
+- **Interfaz**: `app/gui/categories_view.py`, `app/gui/import_view.py`, `app/gui/rules_view.py`
+- **Tests**: `tests/test_web.py`
+- **Documentación**: `docs/agent/agent_log.md`, `docs/agent/lessons_learned.md`, `docs/web_parity_plan.md`
+
+<details><summary>Commits incluidos (6 desde v0.5.0)</summary>
+
+- `7e43f71` fix(web): sweep orphaned upload folders; docs: W6-W8 session log and parity status
+- `177fbc9` feat(web): CaixaBank statement import by upload (W8)
+- `3d628a1` feat(web): categories and rules management (W7)
+- `2275e11` feat(web): professional design refresh (W6)
+- `c1f66af` docs: close web-access session and brief the full web-parity goal
+- `663d52d` docs(agent_log): record v0.5.0 release
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.5.0.md`  |  **Files:** 111  |  **Handler:** v1.0.0
 **Date:** 2026-10-04 19:19  |  **Type:** Release
 **Description:** FAMILYFIN 0.5.0 trae dos grandes novedades. La primera es la nueva sección de Inversiones: registra compras, ventas, dividendos y splits, ve el valor de la cartera con cotizaciones actualizadas, compárala con un índice, consulta el informe fiscal del año e importa los extractos de DEGIRO y MyInvestor. La segunda es el acceso desde iPhone e iPad en la red de casa, con conexión cifrada (HTTPS): cada uno entra con su usuario, consulta resumen, gastos, ingresos, movimientos e inversiones, y puede cambiar categorías y registrar operaciones desde el móvil.

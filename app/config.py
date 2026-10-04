@@ -5,7 +5,7 @@ FAMILYFIN — Application configuration constants.
 """
 
 APP_NAME    = "FAMILYFIN"
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 APP_RELEASE_DATE = "2026-10-04"
 
 # ---------------------------------------------------------------------------
