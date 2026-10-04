@@ -100,3 +100,10 @@ Entry format:
 - Root cause: UX, not the write path. The sheet listed ~50 categories and saving needed a "Guardar" button placed at the end of that list (sticky with a negative offset, i.e. off-screen); tapping a category only selected it. Also, requests rejected by the hardening middleware were not logged, which made it look like a silent write failure.
 - Fix: the picker saves on tap (`hx-trigger="change"`), has a search box and shows the transaction's own type group first with the count of categories; middleware 403s are logged with host/origin/referer (app/web/templates/partials/tx_sheet.html, app/web/security.py).
 - Prevention: `tests/test_web.py::test_category_sheet_saves_on_tap_and_lists_every_category`; verify touch flows end to end in a browser (tap → request → DB), not only the endpoint.
+
+## 2026-10-04 — Disabled button looked like "nothing happens"
+- Area: gui / web_access_view
+- Symptom: the user pressed "Configurar dispositivo" and nothing happened; the logs showed the web server had never been started.
+- Root cause: the button was disabled while the server was off, with no hint why; disabled Qt buttons give no feedback on click.
+- Fix: the button is always enabled; when the server is off it offers to start it and then opens the onboarding; a PC without a LAN address gets an explicit message (app/gui/web_access_view.py, app/web/server.py).
+- Prevention: `tests/test_web_tls.py::test_configure_button_is_usable_while_server_is_off`. Prefer an enabled control that explains the prerequisite over a silently disabled one.

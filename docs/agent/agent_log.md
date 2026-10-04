@@ -185,3 +185,14 @@ Entry format:
 - Snapshot: `versions/FAMILYFIN.R.0.5.0.md/.prj` (ExportVersionHandler); CHANGELOG entry with the full notes.
 - Validation: preflight → 430 passed; verify-notes OK; postflight OK (local) and OK `--published`.
 - Note: schema v3 → v5 on first start for 0.4.0 installs (automatic copy `profin.pre-migration-v5.*.db`).
+
+## 2026-10-04 — Session close: LAN web access shipped in v0.5.0; next goal = full web parity
+- Type: session summary
+- Done this session:
+  1. Plan for LAN web access (FastAPI embedded, HTTPS mandatory, iOS-first UI) approved by the user; W1–W5 implemented (see the entry "Acceso web en la red local" above).
+  2. Verification in a browser at iPhone/iPad sizes (headless Chrome over CDP on a synthetic demo DB); fixed: forms rejected under `Referrer-Policy: no-referrer` (Origin null), Chart.js resize loop that froze the tab, chip class clash, stale assets behind the service worker (content-hashed static URLs), login page ignoring `hx-boost="false"`.
+  3. User feedback after onboarding: the "Configurar dispositivo" button looked dead while the server was off (it was disabled) → it now offers to start the server; missing LAN address gives an explicit error.
+  4. User feedback from the iPad: choosing a category did not save it → the picker saves on tap, has a search box and the transaction's type first; middleware 403s are logged. Category list verified complete against the real DB (read-only): PEDRO 49, MARIA 54.
+  5. Release v0.5.0 (stable, main): commits `36f2d08` (settings rename), `82e73b2` (MyInvestor F7b), `0f9f5c0` (web), `0f411fd` (release), tag `v0.5.0`, zip on GitHub, ExportVersionHandler snapshot. 430 tests.
+  6. User validated: the exe from the zip opens, login as PEDRO works, the web service keeps running; iPad onboarded and working.
+- Next session goal (user): turn the web app into full management with the same capabilities as the desktop app, optimised for iPad (main use), iPhone still supported. Starting brief with the gap inventory and guidelines: `docs/web_parity_plan.md`.
