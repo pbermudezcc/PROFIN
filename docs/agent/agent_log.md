@@ -204,3 +204,12 @@ Entry format:
 - Validation: full `pytest` → 453 passed before the last fixes; tests/test_web.py → 100 passed after them. Browser (Chrome, demo DB, localhost preview): every page at desktop / iPad portrait (820) / iPhone (390), light and dark; rule create with live preview, apply, priority move; category delete through the confirm dialog; detail pane save; statement upload → preview → confirm (5 imported, 3 categorized) → same file again (0 new, 1 to review, 4 skipped).
 - Lessons: see lessons_learned.md (inherited hx-target, data-attribute clash with the confirm dialog, refresh swapping body wiped the toast, FastAPI without add_event_handler).
 - Follow-up: user uploads a real CaixaBank statement from the iPad and compares counts with a desktop import. Later phases: W9 investments admin, W10 settings & account (see docs/web_parity_plan.md).
+
+## 2026-10-04 — Release v0.6.0
+- Type: release
+- Version / channel / tag: 0.6.0 / R (stable, main) / `v0.6.0` (annotated, notes as message)
+- Commit: `b7faa45` chore(release): v0.6.0 — on top of `7e43f71`, `177fbc9` (W8 import), `3d628a1` (W7 categories/rules), `2275e11` (W6 design).
+- Asset: `PROFIN.R.0.6.0-windows.zip` attached to https://github.com/pbermudezcc/PROFIN/releases/tag/v0.6.0 (local copy kept in dist/)
+- Snapshot: `versions/FAMILYFIN.R.0.6.0.md/.prj`; CHANGELOG entry with the full notes.
+- Validation: preflight → 454 passed; verify-notes OK; postflight OK (local) and OK `--published`.
+- Note: no schema migration.
