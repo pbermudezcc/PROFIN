@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Distribución · Inversiones{% endblock %}
+{% block topbar %}{{ ui.topnav("Distribución", "Inversiones", "/inversiones") }}{% endblock %}
 {% block content %}
 {% include "_inv_head.html" %}
 
@@ -12,7 +13,7 @@
 {% if not items %}
 <div class="card">{{ ui.empty("Sin posiciones abiertas", "", "pie") }}</div>
 {% else %}
-<div class="grid-2">
+<div class="grid g2">
   <section class="card chart-card">
     <div class="head"><h3>Distribución</h3><span class="num faint">{{ total|eur }}</span></div>
     {{ ui.chart("ch-alloc", chart, "Distribución de la cartera", "donut") }}

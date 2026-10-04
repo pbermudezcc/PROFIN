@@ -49,8 +49,9 @@
   </div>
 </form>
 
+<div class="md has-pane section">
 <div id="tx-results">
-<p class="faint section">{{ total }} {{ "resultado" if total == 1 else "resultados" }}</p>
+<p class="faint">{{ total }} {{ "resultado" if total == 1 else "resultados" }}</p>
 {% if has_filters %}
 <div class="wrap-gap section">
   {% if params.get('cat_nombre') %}<span class="badge acc">{{ ui.icon("tag", "xs") }} {{ params.get('cat_nombre') }}</span>{% endif %}
@@ -69,4 +70,9 @@
 {% endif %}
 </div>
 </div>
+<aside id="detail" class="detail-pane" aria-label="Detalle del movimiento" aria-live="polite">
+  <div class="placeholder">{{ ui.icon("list") }}<p>Elige un movimiento para ver el detalle y cambiar su categoría.</p></div>
+</aside>
+</div>
+<template id="detail-empty"><div class="placeholder">{{ ui.icon("list") }}<p>Elige un movimiento para ver el detalle y cambiar su categoría.</p></div></template>
 {% endblock %}

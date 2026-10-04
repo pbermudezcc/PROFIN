@@ -36,8 +36,11 @@ def more(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
         "cuentas": db.query(func.count(Account.id)).filter(Account.user_id == user.id).scalar() or 0,
         "importaciones": db.query(func.count(ImportBatch.id)).filter(ImportBatch.user_id == user.id).scalar() or 0,
     }
+    last_import = (
+        db.query(func.max(ImportBatch.import_timestamp)).filter(ImportBatch.user_id == user.id).scalar()
+    )
     sessions = [s for s in request.app.state.sessions.active() if s.user_id == user.id]
-    return render(request, "mas.html", {"counts": counts, "sessions": sessions},
+    return render(request, "mas.html", {"counts": counts, "sessions": sessions, "last_import": last_import},
                   user=user, active="mas")
 
 
@@ -56,7 +59,7 @@ def categories(request: Request, user: WebUser = USER, db: Session = DB) -> Resp
     types = [c for c in rows if c.level == CategoryLevel.type]
     return render(request, "mas_categorias.html", {
         "types": types, "children": children, "usage": usage,
-    }, user=user, active="mas")
+    }, user=user, active="categorias")
 
 
 @router.get("/mas/reglas")
@@ -72,7 +75,7 @@ def rules(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
     )
     return render(request, "mas_reglas.html", {
         "rules": rows, "names": names, "match_labels": MATCH_LABELS,
-    }, user=user, active="mas")
+    }, user=user, active="reglas")
 
 
 @router.get("/mas/cuentas")
@@ -95,7 +98,7 @@ def accounts(request: Request, user: WebUser = USER, db: Session = DB) -> Respon
             .limit(1).scalar()
         )
     return render(request, "mas_cuentas.html", {"accounts": rows, "stats": stats, "balances": balances},
-                  user=user, active="mas")
+                  user=user, active="cuentas")
 
 
 @router.get("/mas/importaciones")
@@ -104,4 +107,4 @@ def imports(request: Request, user: WebUser = USER, db: Session = DB) -> Respons
         db.query(ImportBatch).filter(ImportBatch.user_id == user.id)
         .order_by(ImportBatch.import_timestamp.desc()).limit(200).all()
     )
-    return render(request, "mas_importaciones.html", {"batches": rows}, user=user, active="mas")
+    return render(request, "mas_importaciones.html", {"batches": rows}, user=user, active="importaciones")

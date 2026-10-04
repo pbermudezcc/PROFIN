@@ -1,5 +1,5 @@
 {% import "_ui.html" as ui %}
-<button class="row" id="tx-{{ row.id }}" type="button" {% if oob %}hx-swap-oob="outerHTML"{% endif %} hx-get="/movimientos/{{ row.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+<button class="row" id="tx-{{ row.id }}" type="button" {% if oob %}hx-swap-oob="outerHTML"{% endif %} hx-get="/movimientos/{{ row.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet data-pane>
   <div class="ic {{ 'income' if row.amount > 0 else ('investment' if row.txn_type.value == 'investment' else 'expense') }}">{{ ui.initials(row.description) }}</div>
   <div class="body">
     <div class="t">{{ row.description }}</div>

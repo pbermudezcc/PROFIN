@@ -1,21 +1,46 @@
 {% extends "base.html" %}
 {% block title %}Cuentas{% endblock %}
-{% block topbar %}<a class="back" href="/mas">{{ ui.icon("left", "sm") }} Más</a><span class="title-sm">Cuentas</span>{% endblock %}
+{% block topbar %}{{ ui.topnav("Cuentas", "Ajustes", "/mas") }}{% endblock %}
 {% block content %}
-{% call ui.large_title("Cuentas") %}{% endcall %}
+{% call ui.large_title("Cuentas", "Saldo según el último movimiento importado") %}{% endcall %}
 {% if accounts %}
-<div class="list">
+<div class="list hide-lg">
   {% for a in accounts %}
   {% set st = stats.get(a.id) %}
   <a class="row" href="/movimientos?cuenta={{ a.id }}">
     <div class="ic accent">{{ ui.icon("bank", "sm") }}</div>
     <div class="body">
       <div class="t">{{ a.account_name }}{% if a.iban_last4 %} <span class="faint">··{{ a.iban_last4 }}</span>{% endif %}</div>
-      <div class="d faint">{{ a.bank }}{% if st %} · {{ st[0] }} movimientos · {{ st[1]|fdate }} – {{ st[2]|fdate }}{% endif %}</div>
+      <div class="d faint">{{ a.bank }}{% if st %} · {{ st[0] }} movimientos{% endif %}</div>
     </div>
     <div class="end">{% if balances[a.id] is not none %}<span class="num amt">{{ balances[a.id]|eur }}</span>{% endif %}</div>
   </a>
   {% endfor %}
+</div>
+
+<div class="card flush hide-sm">
+  <div class="table-wrap">
+    <table class="data" data-sortable>
+      <thead><tr>
+        <th data-sort>Cuenta</th><th data-sort>Banco</th><th data-sort class="r">Movimientos</th>
+        <th data-sort>Desde</th><th data-sort>Hasta</th><th data-sort class="r">Saldo</th><th class="min"></th>
+      </tr></thead>
+      <tbody>
+      {% for a in accounts %}
+      {% set st = stats.get(a.id) %}
+      <tr>
+        <td><b>{{ a.account_name }}</b>{% if a.iban_last4 %}<div class="sub">··{{ a.iban_last4 }}</div>{% endif %}</td>
+        <td>{{ a.bank }}</td>
+        <td class="r num">{{ st[0] if st else 0 }}</td>
+        <td class="num" data-value="{{ st[1] if st else '' }}">{{ st[1]|fdate if st else "—" }}</td>
+        <td class="num" data-value="{{ st[2] if st else '' }}">{{ st[2]|fdate if st else "—" }}</td>
+        <td class="r num" data-value="{{ balances[a.id] if balances[a.id] is not none else '' }}"><b>{{ balances[a.id]|eur if balances[a.id] is not none else "—" }}</b></td>
+        <td class="min"><a class="btn secondary sm" href="/movimientos?cuenta={{ a.id }}">Movimientos</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% else %}
 <div class="card">{{ ui.empty("Sin cuentas", "Aparecen al importar el primer extracto.", "bank") }}</div>

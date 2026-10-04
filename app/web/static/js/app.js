@@ -17,21 +17,23 @@
   document.addEventListener("htmx:responseError", function (e) {
     var status = e.detail.xhr.status;
     if (status === 401) { window.location.href = "/login"; return; }
-    toast(status === 403 ? "Petición no permitida" : "No se pudo completar. Inténtalo de nuevo.");
+    toast(status === 403 ? "Petición no permitida" : "No se pudo completar. Inténtalo de nuevo.", "err");
   });
-  document.addEventListener("htmx:sendError", function () { toast("Sin conexión con el PC de casa"); });
+  document.addEventListener("htmx:sendError", function () { toast("Sin conexión con el PC de casa", "err"); });
 
   // ── Toast ───────────────────────────────────────────────────────────
   var toastTimer;
-  function toast(message) {
+  function toast(message, kind) {
     var el = $(".toast");
     if (!el) return;
     el.textContent = message;
+    el.classList.toggle("err", kind === "err");
     el.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { el.classList.remove("show"); }, 2400);
   }
   document.addEventListener("toast", function (e) { toast(e.detail.value); });
+  document.addEventListener("toastError", function (e) { toast(e.detail.value, "err"); });
 
   // ── Bottom sheet ────────────────────────────────────────────────────
   function sheet() { return $("#sheet"); }
@@ -55,9 +57,37 @@
                                { target: "body", swap: "innerHTML" });
     else window.location.reload();
   });
+  // ── Master–detail: on wide screens (iPad landscape and up) a page with a
+  // #detail pane shows the item there instead of in the bottom sheet.
+  var WIDE = window.matchMedia("(min-width: 1180px)");
+  function pane() { var p = $("#detail"); return p && WIDE.matches ? p : null; }
+  document.addEventListener("click", function (e) {
+    var opener = e.target.closest && e.target.closest("[data-open-sheet][data-pane]");
+    if (!opener) return;
+    opener.setAttribute("hx-target", pane() ? "#detail" : "#sheet-body");
+    if (pane()) {
+      $$(".row.sel").forEach(function (r) { r.classList.remove("sel"); });
+      opener.classList.add("sel");
+      pane().setAttribute("data-url", opener.getAttribute("hx-get"));
+    }
+  }, true);
+  function clearPane() {
+    var p = $("#detail"); if (!p) return;
+    p.removeAttribute("data-url");
+    var tpl = $("#detail-empty");
+    p.innerHTML = tpl ? tpl.innerHTML : "";
+    $$(".row.sel").forEach(function (r) { r.classList.remove("sel"); });
+  }
+  // After a save from the pane, reload it so it shows the new values.
+  function refreshPane() {
+    var p = pane();
+    if (p && p.getAttribute("data-url") && window.htmx) htmx.ajax("GET", p.getAttribute("data-url"), { target: "#detail" });
+  }
+  document.addEventListener("closeSheet", refreshPane);
+
   document.addEventListener("htmx:beforeRequest", function (e) {
     var trigger = e.detail.elt;
-    if (trigger && trigger.hasAttribute && trigger.hasAttribute("data-open-sheet")) {
+    if (trigger && trigger.hasAttribute && trigger.hasAttribute("data-open-sheet") && e.detail.target && e.detail.target.id !== "detail") {
       var body = $("#sheet-body");
       if (body) {
         body.innerHTML = '<div class="sheet-b"><div class="skel-row"><div class="skel a"></div><div class="skel b"></div></div>' +
@@ -68,7 +98,10 @@
   });
   document.addEventListener("click", function (e) {
     var t = e.target;
-    if (t.closest("[data-close-sheet]")) { closeSheet(); return; }
+    if (t.closest("[data-close-sheet]")) {
+      if (t.closest("#detail")) clearPane(); else closeSheet();
+      return;
+    }
     if (t === sheet()) { closeSheet(); return; }   // tap on the backdrop
 
     var toggle = t.closest("[data-toggle]");
@@ -224,6 +257,58 @@
       sync();
     });
   }
+
+  // ── Confirmation dialog for hx-confirm (no blocking window.confirm) ──
+  document.addEventListener("htmx:confirm", function (e) {
+    var question = e.detail.question;
+    if (!question) return;
+    var dlg = $("#confirm");
+    if (!dlg || !dlg.showModal) return;          // fall back to the browser dialog
+    e.preventDefault();
+    var elt = e.detail.elt;
+    $("#confirm-title").textContent = question;
+    $("[data-confirm-text]", dlg).textContent = elt.getAttribute("data-confirm-detail") || "Esta acción no se puede deshacer.";
+    $("[data-confirm-ok]", dlg).textContent = elt.getAttribute("data-confirm-ok") || "Confirmar";
+    function done(ok) {
+      $("[data-confirm-ok]", dlg).onclick = null;
+      $("[data-confirm-cancel]", dlg).onclick = null;
+      dlg.close();
+      if (ok) e.detail.issueRequest(true);
+    }
+    $("[data-confirm-ok]", dlg).onclick = function () { done(true); };
+    $("[data-confirm-cancel]", dlg).onclick = function () { done(false); };
+    dlg.showModal();
+  });
+
+  // ── Sortable tables: <table data-sortable> + <th data-sort> ─────────
+  // Cells may carry data-value (raw number/ISO date); otherwise the text is
+  // read as a Spanish-formatted number when it looks like one.
+  function cellKey(td) {
+    if (!td) return "";
+    var raw = td.hasAttribute("data-value") ? td.getAttribute("data-value") : td.textContent.trim();
+    var t = raw.replace(/[\s€%]/g, "").replace(/−/g, "-");
+    if (/^[-+]?[\d.]*,?\d+$/.test(t) && !td.hasAttribute("data-value")) t = t.replace(/\./g, "").replace(",", ".");
+    var n = parseFloat(t);
+    return (t !== "" && !isNaN(n) && /^[-+]?[\d.]+(e[-+]?\d+)?$/i.test(t)) ? n : raw.toLowerCase();
+  }
+  document.addEventListener("click", function (e) {
+    var th = e.target.closest && e.target.closest("table[data-sortable] th[data-sort]");
+    if (!th) return;
+    var table = th.closest("table"), body = table.tBodies[0];
+    var col = Array.prototype.indexOf.call(th.parentNode.children, th);
+    var asc = th.getAttribute("aria-sort") !== "ascending";
+    $$("th[aria-sort]", table).forEach(function (h) { h.removeAttribute("aria-sort"); });
+    th.setAttribute("aria-sort", asc ? "ascending" : "descending");
+    var rows = Array.prototype.slice.call(body.rows);
+    rows.sort(function (a, b) {
+      var x = cellKey(a.cells[col]), y = cellKey(b.cells[col]);
+      if (x === "" && y !== "") return 1;
+      if (y === "" && x !== "") return -1;
+      var r = (typeof x === "number" && typeof y === "number") ? x - y : String(x).localeCompare(String(y), "es");
+      return asc ? r : -r;
+    });
+    rows.forEach(function (r) { body.appendChild(r); });
+  });
 
   // ── Topbar shadow + small title once the large title scrolls away ───
   function onScroll() {

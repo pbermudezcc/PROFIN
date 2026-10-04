@@ -27,6 +27,15 @@ NAV = [
     ("inversiones", "Inversiones", "/inversiones", "trend"),
     ("mas", "Más", "/mas", "more"),
 ]
+# Sidebar only (tablets): the desktop's bottom NAV_ITEMS group. On phones
+# these pages live under the «Más» tab.
+ADMIN_NAV = [
+    ("categorias", "Categorías", "/mas/categorias", "tag"),
+    ("reglas", "Reglas", "/mas/reglas", "rules"),
+    ("cuentas", "Cuentas", "/mas/cuentas", "bank"),
+    ("importaciones", "Importaciones", "/mas/importaciones", "upload"),
+]
+ADMIN_KEYS = {key for key, *_ in ADMIN_NAV}
 
 
 def is_htmx(request: Request) -> bool:
@@ -45,7 +54,10 @@ def render(
         "user": user,
         "csrf": user.session.csrf if user else "",
         "nav": NAV,
+        "admin_nav": ADMIN_NAV,
         "active": active,
+        # The phone tab bar has no admin entries: they light up «Más».
+        "tab_active": "mas" if active in ADMIN_KEYS else active,
         "today": date.today(),
     }
     ctx.update(context or {})

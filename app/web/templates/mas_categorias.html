@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Categorías{% endblock %}
-{% block topbar %}<a class="back" href="/mas">{{ ui.icon("left", "sm") }} Más</a><span class="title-sm">Categorías</span>{% endblock %}
+{% block topbar %}{{ ui.topnav("Categorías", "Ajustes", "/mas") }}{% endblock %}
 {% block content %}
 {% call ui.large_title("Categorías", "Toca una para ver sus movimientos") %}{% endcall %}
 {% if not types %}

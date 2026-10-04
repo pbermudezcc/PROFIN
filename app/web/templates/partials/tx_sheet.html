@@ -7,7 +7,7 @@
   <div class="stack">
     <div>
       <div class="amount-xl num {{ 'pos' if row.amount > 0 else '' }}">{{ row.amount|eur(signed=True) if row.amount > 0 else row.amount|eur }}</div>
-      <div class="title-lg">{{ row.description }}</div>
+      <div class="lead">{{ row.description }}</div>
     </div>
     <dl class="kv card">
       <dt>Fecha</dt><dd>{{ row.transaction_date|ldate }}</dd>

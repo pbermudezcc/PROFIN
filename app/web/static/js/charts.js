@@ -63,8 +63,10 @@
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: css("--text"), titleColor: css("--bg"), bodyColor: css("--bg"),
-          padding: 10, cornerRadius: 10, boxPadding: 4, usePointStyle: true,
+          backgroundColor: css("--surface"), titleColor: css("--text"), bodyColor: css("--text-2"),
+          borderColor: css("--border-strong"), borderWidth: 1,
+          titleFont: { weight: "600", size: 12 }, bodyFont: { size: 12 },
+          padding: 12, cornerRadius: 10, boxPadding: 5, usePointStyle: true, caretSize: 0,
           callbacks: {
             label: function (ctx) {
               var v = ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
@@ -76,8 +78,8 @@
       },
       scales: {
         x: { grid: { display: false }, border: { display: false },
-             ticks: { color: text2, maxRotation: 0, autoSkip: true, autoSkipPadding: 14, maxTicksLimit: 6, font: { size: 11 } } },
-        y: { grid: { color: border, drawTicks: false }, border: { display: false },
+             ticks: { color: text2, maxRotation: 0, autoSkip: true, autoSkipPadding: 14, maxTicksLimit: 8, font: { size: 11 } } },
+        y: { grid: { color: border, drawTicks: false }, border: { display: false, dash: [3, 4] },
              ticks: { color: text2, padding: 8, maxTicksLimit: 5, font: { size: 11 },
                       callback: function (v) { return isMoney ? short(v) : v; } } }
       }
@@ -96,8 +98,8 @@
       cfg = {
         type: "doughnut",
         data: { labels: data.labels, datasets: [{ data: data.values, backgroundColor: colors,
-                borderColor: css("--surface"), borderWidth: 2, hoverOffset: 6 }] },
-        options: Object.assign(opts, { cutout: "68%", scales: {}, interaction: { mode: "nearest", intersect: true } })
+                borderColor: css("--surface"), borderWidth: 3, borderRadius: 4, hoverOffset: 6 }] },
+        options: Object.assign(opts, { cutout: "72%", scales: {}, interaction: { mode: "nearest", intersect: true } })
       };
       var total = data.values.reduce(function (a, b) { return a + b; }, 0);
       cfg.plugins = [{
@@ -106,9 +108,9 @@
           var area = chart.chartArea, ctx = chart.ctx;
           ctx.save();
           ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.fillStyle = css("--text-2"); ctx.font = "600 12px " + css("--font");
+          ctx.fillStyle = css("--text-3"); ctx.font = "500 12px " + css("--font");
           ctx.fillText("Total", (area.left + area.right) / 2, (area.top + area.bottom) / 2 - 12);
-          ctx.fillStyle = css("--text"); ctx.font = "750 18px " + css("--font-display");
+          ctx.fillStyle = css("--text"); ctx.font = "700 18px " + css("--font");
           ctx.fillText(money(total), (area.left + area.right) / 2, (area.top + area.bottom) / 2 + 9);
           ctx.restore();
         }

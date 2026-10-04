@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Importaciones{% endblock %}
-{% block topbar %}<a class="back" href="/mas">{{ ui.icon("left", "sm") }} Más</a><span class="title-sm">Importaciones</span>{% endblock %}
+{% block topbar %}{{ ui.topnav("Importaciones", "Ajustes", "/mas") }}{% endblock %}
 {% block content %}
-{% call ui.large_title("Importaciones") %}{% endcall %}
+{% call ui.large_title("Importaciones", "Extractos importados en esta cuenta") %}{% endcall %}
+{% set labels = {"completed": "completa", "failed": "fallida", "partial": "parcial", "pending": "pendiente"} %}
 {% if batches %}
-<div class="list">
+<div class="list hide-lg">
   {% for b in batches %}
   {% set st = b.status.value if b.status.value is defined else b.status %}
   <div class="row">
@@ -13,9 +14,32 @@
       <div class="t">{{ b.filename }}</div>
       <div class="d faint">{{ b.import_timestamp.strftime("%d/%m/%Y %H:%M") }} · {{ b.rows_imported }} importados · {{ b.rows_skipped }} omitidos</div>
     </div>
-    <span class="badge {{ 'pos' if st == 'completed' else ('neg' if st == 'failed' else 'warn') }}">{{ {"completed": "completa", "failed": "fallida", "partial": "parcial", "pending": "pendiente"}.get(st, st) }}</span>
+    <span class="badge {{ 'pos' if st == 'completed' else ('neg' if st == 'failed' else 'warn') }}">{{ labels.get(st, st) }}</span>
   </div>
   {% endfor %}
+</div>
+
+<div class="card flush hide-sm">
+  <div class="table-wrap">
+    <table class="data" data-sortable>
+      <thead><tr>
+        <th data-sort>Fecha</th><th data-sort>Fichero</th><th data-sort class="r">Importados</th>
+        <th data-sort class="r">Omitidos</th><th data-sort>Estado</th>
+      </tr></thead>
+      <tbody>
+      {% for b in batches %}
+      {% set st = b.status.value if b.status.value is defined else b.status %}
+      <tr>
+        <td class="num" data-value="{{ b.import_timestamp.isoformat() }}">{{ b.import_timestamp.strftime("%d/%m/%Y %H:%M") }}</td>
+        <td><b>{{ b.filename }}</b></td>
+        <td class="r num">{{ b.rows_imported }}</td>
+        <td class="r num">{{ b.rows_skipped }}</td>
+        <td><span class="badge {{ 'pos' if st == 'completed' else ('neg' if st == 'failed' else 'warn') }}">{{ labels.get(st, st) }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% else %}
 <div class="card">{{ ui.empty("Sin importaciones", "", "upload") }}</div>

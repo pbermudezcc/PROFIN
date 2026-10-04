@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}FAMILYFIN{% endblock %} · FAMILYFIN</title>
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#F3F5FA" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0A1120" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F4F6FA" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0A0F1A" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -18,6 +18,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ asset('icons/icon-192.png') }}">
   <link rel="apple-touch-icon" href="{{ asset('icons/apple-touch-icon.png') }}">
+  <link rel="preload" href="/static/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ asset('css/app.css') }}">
   <script src="{{ asset('js/theme.js') }}"></script>
   <script src="{{ asset('vendor/htmx.min.js') }}" defer></script>
@@ -37,12 +38,18 @@
       <div><b>FAMILYFIN</b><small>Finanzas familiares</small></div>
     </div>
     <nav>
-      {% for key, label, href, icon_name in nav %}
-      <a href="{{ href }}" class="{{ 'on' if active == key else '' }}" {% if active == key %}aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}<span>{{ label }}</span></a>
+      {% for key, label, href, icon_name in nav if key != "mas" %}
+      <a href="{{ href }}" class="{{ 'on' if active == key else '' }}" title="{{ label }}" {% if active == key %}aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}<span>{{ label }}</span></a>
       {% endfor %}
+      <div class="group eyebrow">Administración</div><div class="group-sep"></div>
+      {% for key, label, href, icon_name in admin_nav %}
+      <a href="{{ href }}" class="{{ 'on' if active == key else '' }}" title="{{ label }}" {% if active == key %}aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}<span>{{ label }}</span></a>
+      {% endfor %}
+      <div class="group eyebrow">Cuenta</div><div class="group-sep"></div>
+      <a href="/mas" class="{{ 'on' if active == 'mas' else '' }}" title="Ajustes y sesiones" {% if active == 'mas' %}aria-current="page"{% endif %}>{{ ui.icon("more") }}<span>Ajustes</span></a>
     </nav>
     <div class="foot">
-      <button class="btn ghost sm" type="button" data-theme-toggle>{{ ui.icon("moon", "sm") }}<span>Tema</span></button>
+      <button class="btn ghost sm" type="button" data-theme-toggle title="Cambiar tema">{{ ui.icon("moon", "sm") }}<span>Tema claro / oscuro</span></button>
       <div class="who">
         <div class="avatar">{{ ui.initials(user.username) }}</div>
         <div class="meta"><b>{{ user.username }}</b><small>{{ ui.icon("lock", "xs") }} Cifrado</small></div>
@@ -56,9 +63,7 @@
 
   <main class="main" id="main">
     <header class="topbar" data-topbar>
-      {% block topbar %}
-      <span class="title-sm">{{ self.title() }}</span>
-      {% endblock %}
+      {% block topbar %}{{ ui.topnav(self.title()) }}{% endblock %}
       <div class="actions">{% block actions %}{% endblock %}</div>
     </header>
     {% block content %}{% endblock %}
@@ -67,7 +72,7 @@
 
 <nav class="tabbar" aria-label="Secciones">
   {% for key, label, href, icon_name in nav %}
-  <a href="{{ href }}" class="{{ 'on' if active == key else '' }}" {% if active == key %}aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}<span class="lbl">{{ label.split(' ')[0] if key == 'flujos' else label }}</span></a>
+  <a href="{{ href }}" class="{{ 'on' if tab_active == key else '' }}" {% if tab_active == key %}aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}<span class="lbl">{{ label.split(' ')[0] if key == 'flujos' else label }}</span></a>
   {% endfor %}
 </nav>
 {% endblock %}
@@ -75,6 +80,17 @@
 <dialog class="sheet" id="sheet" aria-labelledby="sheet-title">
   <div class="grab" aria-hidden="true"></div>
   <div id="sheet-body"></div>
+</dialog>
+
+{# Confirmation for destructive actions (replaces the browser's confirm()). #}
+<dialog class="confirm" id="confirm" aria-labelledby="confirm-title">
+  <div class="ic">{{ ui.icon("info") }}</div>
+  <h3 id="confirm-title">¿Seguro?</h3>
+  <p data-confirm-text></p>
+  <div class="acts">
+    <button class="btn secondary" type="button" data-confirm-cancel>Cancelar</button>
+    <button class="btn danger solid" type="button" data-confirm-ok>Confirmar</button>
+  </div>
 </dialog>
 </body>
 </html>

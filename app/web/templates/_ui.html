@@ -34,6 +34,7 @@
   <div class="art">{{ icon(icon_name) }}</div>
   <h3>{{ title }}</h3>
   {% if text %}<p>{{ text }}</p>{% endif %}
+  {{ caller() if caller else "" }}
 </div>
 {%- endmacro %}
 
@@ -50,6 +51,23 @@
     <h1>{{ title }}</h1>
     {% if sub %}<div class="sub">{{ sub }}</div>{% endif %}
   </div>
-  {{ caller() if caller else "" }}
+  {% if caller %}<div class="tools">{{ caller() }}</div>{% endif %}
 </div>
+{%- endmacro %}
+
+{# Top bar navigation: «‹ Parent» back link + fading title on phones,
+   breadcrumb trail on tablets. #}
+{% macro topnav(title, parent=None, href=None) -%}
+{% if parent %}<a class="back" href="{{ href }}">{{ icon("left", "sm") }} {{ parent }}</a>{% endif %}
+<span class="title-sm">{{ title }}</span>
+<nav class="crumbs" aria-label="Ruta">
+  <a href="/">Inicio</a>
+  {% if parent %}{{ icon("right", "xs") }}<a href="{{ href }}">{{ parent }}</a>{% endif %}
+  {% if title != "Resumen" %}{{ icon("right", "xs") }}<span>{{ title }}</span>{% endif %}
+</nav>
+{%- endmacro %}
+
+{# Signed percentage with colour. #}
+{% macro pct_signed(value, gain) -%}
+<span class="num {{ 'pos' if gain > 0 else ('neg' if gain < 0 else 'faint') }}">{{ value|pct if value is not none else "—" }}</span>
 {%- endmacro %}

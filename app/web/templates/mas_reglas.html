@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Reglas{% endblock %}
-{% block topbar %}<a class="back" href="/mas">{{ ui.icon("left", "sm") }} Más</a><span class="title-sm">Reglas</span>{% endblock %}
+{% block topbar %}{{ ui.topnav("Reglas", "Ajustes", "/mas") }}{% endblock %}
 {% block content %}
 {% call ui.large_title("Reglas automáticas", "Se aplican en orden de prioridad") %}{% endcall %}
 {% if rules %}

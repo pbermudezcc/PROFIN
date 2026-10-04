@@ -6,7 +6,7 @@
 {% if not snap.rows %}
 <div class="card">{{ ui.empty("Aún no hay inversiones", "Añade tu primera operación con el botón +, o importa el extracto del bróker desde la aplicación del PC.", "trend") }}</div>
 {% else %}
-<section class="hero fade-in hero-inv" aria-label="Valor de la cartera">
+<section class="hero inv fade-in" aria-label="Valor de la cartera">
   <div class="lbl">Valor de la cartera</div>
   <div class="big num">{{ t.market_value_eur|eur }}</div>
   <div class="row3">
@@ -48,26 +48,35 @@
 
 <div class="card flush hide-sm">
   <div class="table-wrap">
-    <table class="data">
+    <table class="data" data-sortable>
       <thead><tr>
-        <th>Valor</th><th class="r">Acciones</th><th class="r">Precio</th><th class="r">Valor €</th>
-        <th class="r">Coste €</th><th class="r">Plusvalía</th><th class="r">%</th><th class="r">Hoy</th><th class="r">Peso</th>
+        <th data-sort>Valor</th><th data-sort class="r">Acciones</th><th class="r">Precio</th><th data-sort class="r">Valor €</th>
+        <th data-sort class="r">Coste €</th><th data-sort class="r">Plusvalía</th><th data-sort class="r">%</th><th data-sort class="r">Hoy</th><th data-sort class="r">Peso</th>
       </tr></thead>
       <tbody>
       {% for r in rows %}
         <tr>
-          <td><a href="/inversiones/operaciones?valor={{ r.security.id }}"><b>{{ r.security.symbol }}</b></a><div class="faint">{{ r.security.name }}</div></td>
-          <td class="r num">{{ r.quantity|qty }}</td>
-          <td class="r num">{{ r.price|num(2) if r.price is not none else "—" }} <span class="faint">{{ r.security.currency }}</span></td>
-          <td class="r num"><b>{{ r.market_value_eur|eur }}</b></td>
-          <td class="r num">{{ r.cost_basis_eur|eur }}</td>
-          <td class="r">{{ ui.signed(r.unrealized_gain_eur) }}</td>
-          <td class="r num {{ 'pos' if r.unrealized_gain_eur > 0 else ('neg' if r.unrealized_gain_eur < 0 else '') }}">{{ r.unrealized_pct|pct if r.unrealized_pct is not none else "—" }}</td>
-          <td class="r">{% if r.day_change_eur is not none %}{{ ui.signed(r.day_change_eur) }}{% else %}—{% endif %}</td>
-          <td class="r num">{{ r.weight|pct(signed=False) }}</td>
+          <td data-value="{{ r.security.symbol }}"><a href="/inversiones/operaciones?valor={{ r.security.id }}"><b>{{ r.security.symbol }}</b></a><div class="sub">{{ r.security.name }}</div></td>
+          <td class="r num" data-value="{{ r.quantity }}">{{ r.quantity|qty }}</td>
+          <td class="r num">{{ r.price|num(2) if r.price is not none else "—" }} <span class="faint">{{ r.security.currency }}</span>{% if r.stale %} <span class="badge warn">antigua</span>{% endif %}</td>
+          <td class="r num" data-value="{{ r.market_value_eur }}"><b>{{ r.market_value_eur|eur }}</b></td>
+          <td class="r num" data-value="{{ r.cost_basis_eur }}">{{ r.cost_basis_eur|eur }}</td>
+          <td class="r" data-value="{{ r.unrealized_gain_eur }}">{{ ui.signed(r.unrealized_gain_eur) }}</td>
+          <td class="r" data-value="{{ r.unrealized_pct if r.unrealized_pct is not none else '' }}">{{ ui.pct_signed(r.unrealized_pct, r.unrealized_gain_eur) }}</td>
+          <td class="r" data-value="{{ r.day_change_eur if r.day_change_eur is not none else '' }}">{% if r.day_change_eur is not none %}{{ ui.signed(r.day_change_eur) }}{% else %}—{% endif %}</td>
+          <td class="r num" data-value="{{ r.weight }}">{{ r.weight|pct(signed=False) }}</td>
         </tr>
       {% endfor %}
       </tbody>
+      <tfoot><tr>
+        <td>Total</td><td></td><td></td>
+        <td class="r num">{{ t.market_value_eur|eur }}</td>
+        <td class="r num">{{ t.cost_basis_eur|eur }}</td>
+        <td class="r">{{ ui.signed(t.unrealized_gain_eur) }}</td>
+        <td class="r">{{ ui.pct_signed(t.unrealized_pct, t.unrealized_gain_eur) }}</td>
+        <td class="r">{{ ui.signed(t.day_change_eur) }}</td>
+        <td class="r num">100 %</td>
+      </tr></tfoot>
     </table>
   </div>
 </div>
