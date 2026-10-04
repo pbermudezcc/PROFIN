@@ -39,7 +39,7 @@ You are the dedicated developer for FAMILYFIN, a Python desktop application a fa
   - stronger separation between UI, settings persistence, and domain logic
   - Windows PyInstaller build with traceable `PROFIN.B.X.X.X` artifacts (build script/artifact naming intentionally kept as-is, see below)
   - user-profile database storage under `%LOCALAPPDATA%\FAMILYFIN\data` for packaged builds
-  - legacy database discovery/migration between VSCode and packaged execution, plus one-time migration from the old `%LOCALAPPDATA%\PROFIN` folder and `QSettings("GEVernova", "PROFIN")` store
+  - legacy database discovery/migration between VSCode and packaged execution, plus one-time migration from the old `%LOCALAPPDATA%\PROFIN` folder and legacy QSettings stores (`LEGACY_QSETTINGS_STORES` in `app/db/database.py`)
   - Settings actions for detecting, selecting, and migrating the active database folder
   - shared `%LOCALAPPDATA%\FAMILYFIN\data` storage for development and packaged execution
   - login database selector with database status, modification timestamp, and existing-user dropdown

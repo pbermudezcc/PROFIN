@@ -150,10 +150,10 @@ background; this file wins on any conflict.
   (same for dev and frozen). DB file is always `profin.db` (internal names
   `profin.*` were intentionally kept after the rebrand). Legacy discovery
   (`get_legacy_data_dir`) + one-time copy only when the target has no users.
-- **QSettings identity:** `QSettings("GEVernova", "FAMILYFIN")` (Windows
+- **QSettings identity:** `QSettings("FAMILYFIN", "FAMILYFIN")` (Windows
   registry). Keys: `settings/*` (AppSettings fields), `ui/theme`,
-  `ui/last_nav`, `auth/last_username`, `backup/last_auto_backup`. Old store
-  `("GEVernova","PROFIN")` is copied once if the new one is empty.
+  `ui/last_nav`, `auth/last_username`, `backup/last_auto_backup`. The
+  first non-empty `LEGACY_QSETTINGS_STORES` entry in `app/db/database.py` is copied once if the new one is empty.
 - **`app.db.database` resolves the data folder at import time** (module-level
   `DB_DIR`, `engine`). `refresh_runtime_paths()` / `_refresh_database_bindings()`
   rebuild the engine and rebind `SessionLocal`. Therefore: never

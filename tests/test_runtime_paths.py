@@ -1,3 +1,4 @@
+import pytest
 from PySide6.QtCore import QSettings
 import sys
 from pathlib import Path
@@ -7,7 +8,7 @@ from app.settings import SettingsManager
 
 
 def test_get_user_data_dir_uses_local_appdata_in_development(monkeypatch, tmp_path):
-    QSettings("GEVernova", "FAMILYFIN").clear()
+    QSettings("FAMILYFIN", "FAMILYFIN").clear()
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv("APPDATA", raising=False)
@@ -15,7 +16,7 @@ def test_get_user_data_dir_uses_local_appdata_in_development(monkeypatch, tmp_pa
     expected = (tmp_path / "FAMILYFIN" / "data").resolve()
     assert get_user_app_dir() == Path(__file__).resolve().parents[1].resolve()
     assert get_user_data_dir() == expected
-    QSettings("GEVernova", "FAMILYFIN").clear()
+    QSettings("FAMILYFIN", "FAMILYFIN").clear()
 
 
 def test_get_legacy_data_dir_finds_repo_data_from_bundle_path(monkeypatch, tmp_path):
@@ -34,18 +35,18 @@ def test_get_legacy_data_dir_finds_repo_data_from_bundle_path(monkeypatch, tmp_p
 
 
 def test_get_user_data_dir_uses_local_appdata_when_frozen(monkeypatch, tmp_path):
-    QSettings("GEVernova", "FAMILYFIN").clear()
+    QSettings("FAMILYFIN", "FAMILYFIN").clear()
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv("APPDATA", raising=False)
 
     assert get_user_app_dir() == (tmp_path / "FAMILYFIN").resolve()
     assert get_user_data_dir() == (tmp_path / "FAMILYFIN" / "data").resolve()
-    QSettings("GEVernova", "FAMILYFIN").clear()
+    QSettings("FAMILYFIN", "FAMILYFIN").clear()
 
 
 def test_development_uses_packaged_data_folder_setting(monkeypatch, tmp_path):
-    settings = QSettings("GEVernova", "FAMILYFIN")
+    settings = QSettings("FAMILYFIN", "FAMILYFIN")
     settings.clear()
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -59,7 +60,7 @@ def test_development_uses_packaged_data_folder_setting(monkeypatch, tmp_path):
 def test_settings_manager_migrates_data_folder(tmp_path):
     import sqlite3
 
-    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings = QSettings("FAMILYFIN", "FAMILYFIN")
     qsettings.clear()
     origin = tmp_path / "origin"
     target = tmp_path / "target"
@@ -85,15 +86,18 @@ def test_settings_manager_migrates_data_folder(tmp_path):
     qsettings.clear()
 
 
-def test_get_user_data_dir_migrates_legacy_qsettings_once(monkeypatch, tmp_path):
+@pytest.mark.parametrize("legacy_index", [0, 1])
+def test_get_user_data_dir_migrates_legacy_qsettings_once(monkeypatch, tmp_path, legacy_index):
     from app import db as db_module
 
-    legacy = QSettings("GEVernova", "PROFIN")
-    legacy.clear()
+    legacy_stores = [QSettings(*store) for store in db_module.database.LEGACY_QSETTINGS_STORES]
+    for store in legacy_stores:
+        store.clear()
+    legacy = legacy_stores[legacy_index]
     legacy.setValue("settings/theme", "dark")
     legacy.sync()
 
-    new_settings = QSettings("GEVernova", "FAMILYFIN")
+    new_settings = QSettings("FAMILYFIN", "FAMILYFIN")
     new_settings.clear()
 
     monkeypatch.setattr(sys, "frozen", False, raising=False)
@@ -102,7 +106,7 @@ def test_get_user_data_dir_migrates_legacy_qsettings_once(monkeypatch, tmp_path)
 
     db_module.database.get_user_data_dir()
 
-    migrated = QSettings("GEVernova", "FAMILYFIN")
+    migrated = QSettings("FAMILYFIN", "FAMILYFIN")
     assert migrated.value("settings/theme", type=str) == "dark"
 
     legacy.clear()
@@ -133,7 +137,7 @@ def test_get_user_data_dir_falls_back_to_legacy_repo_db(monkeypatch, tmp_path):
     import sqlite3
     from app import db as db_module
 
-    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings = QSettings("FAMILYFIN", "FAMILYFIN")
     qsettings.clear()
     legacy_dir = tmp_path / "legacy-data"
     legacy_dir.mkdir()
@@ -168,7 +172,7 @@ def test_get_user_data_dir_overwrites_empty_packaged_db_with_legacy_users(monkey
     import sqlite3
     from app import db as db_module
 
-    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings = QSettings("FAMILYFIN", "FAMILYFIN")
     qsettings.clear()
 
     legacy_dir = tmp_path / "legacy-data"
@@ -209,7 +213,7 @@ def _db_with_users(path, *names):
 
 
 def test_apply_data_folder_never_overwrites_database_with_users(tmp_path):
-    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings = QSettings("FAMILYFIN", "FAMILYFIN")
     qsettings.clear()
     origin, target = tmp_path / "origin", tmp_path / "target"
     origin.mkdir()
@@ -226,7 +230,7 @@ def test_apply_data_folder_never_overwrites_database_with_users(tmp_path):
 
 
 def test_apply_data_folder_keeps_replaced_userless_database_aside(tmp_path):
-    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings = QSettings("FAMILYFIN", "FAMILYFIN")
     qsettings.clear()
     origin, target = tmp_path / "origin", tmp_path / "target"
     origin.mkdir()
@@ -244,7 +248,7 @@ def test_apply_data_folder_keeps_replaced_userless_database_aside(tmp_path):
 
 def test_apply_data_folder_copies_from_explicit_current_dir(tmp_path):
     """save() may already point the setting at the target; the source must still be the old folder."""
-    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings = QSettings("FAMILYFIN", "FAMILYFIN")
     qsettings.clear()
     origin, target = tmp_path / "origin", tmp_path / "target"
     origin.mkdir()

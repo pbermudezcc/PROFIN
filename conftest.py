@@ -1,7 +1,7 @@
 """
 Test-wide isolation from the real machine.
 
-QSettings(org, app) writes to the Windows registry (HKCU\\Software\\GEVernova\\
+QSettings(org, app) writes to the Windows registry (HKCU\\Software\\FAMILYFIN\\
 FAMILYFIN), and several tests call .clear() on it. Without this redirect, running
 pytest wipes the family's real app preferences. Every QSettings(org, app) built
 during tests is sent to INI files under a throwaway temp folder instead.
@@ -57,7 +57,7 @@ os.environ["LOCALAPPDATA"] = str(_TEST_HOME)
 
 
 def point_app_at_test_data_dir() -> None:
-    settings = _IsolatedQSettings("GEVernova", "FAMILYFIN")
+    settings = _IsolatedQSettings("FAMILYFIN", "FAMILYFIN")
     settings.setValue("settings/data_folder", str(TEST_DATA_DIR))
     settings.sync()
 

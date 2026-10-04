@@ -71,7 +71,7 @@ def test_every_model_column_exists_after_migrations(tmp_path):
 def data_folder(tmp_path):
     """Point the app at an empty temp data folder; restore the bindings after."""
     folder = tmp_path / "datos"
-    settings = QSettings("GEVernova", "FAMILYFIN")
+    settings = QSettings("FAMILYFIN", "FAMILYFIN")
     settings.clear()
     settings.setValue("settings/data_folder", str(folder))
     settings.sync()

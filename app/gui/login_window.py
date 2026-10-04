@@ -82,7 +82,7 @@ class LoginWindow(QWidget):
     Emits no signals — on success it instantiates MainWindow and closes self.
     """
 
-    SETTINGS_ORG  = "GEVernova"
+    SETTINGS_ORG  = "FAMILYFIN"
     SETTINGS_APP  = "FAMILYFIN"
     KEY_LAST_USER = "auth/last_username"
     KEY_THEME     = "ui/theme"

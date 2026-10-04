@@ -129,22 +129,29 @@ def _migrate_legacy_database_if_needed(default_data_dir: Path, legacy_data_dir: 
     return True
 
 
+# Older builds stored preferences under a previous organization name; read-only, for migration.
+_LEGACY_SETTINGS_ORG = "GEVernova"
+LEGACY_QSETTINGS_STORES = ((_LEGACY_SETTINGS_ORG, "FAMILYFIN"), (_LEGACY_SETTINGS_ORG, "PROFIN"))
+
+
 def _migrate_legacy_qsettings_if_needed(settings: QSettings) -> None:
-    """Copy saved preferences from the old PROFIN QSettings store, once, on first run under the new name."""
+    """Copy saved preferences from the newest non-empty legacy QSettings store, once, on first run under the new name."""
     if settings.allKeys():
         return
-    legacy_settings = QSettings("GEVernova", "PROFIN")
-    legacy_keys = legacy_settings.allKeys()
-    if not legacy_keys:
+    for org, app in LEGACY_QSETTINGS_STORES:
+        legacy_settings = QSettings(org, app)
+        legacy_keys = legacy_settings.allKeys()
+        if not legacy_keys:
+            continue
+        for key in legacy_keys:
+            settings.setValue(key, legacy_settings.value(key))
+        settings.sync()
         return
-    for key in legacy_keys:
-        settings.setValue(key, legacy_settings.value(key))
-    settings.sync()
 
 
 def get_user_data_dir() -> Path:
     """Return the writable data directory, preferring the user-configured value when set."""
-    settings = QSettings("GEVernova", "FAMILYFIN")
+    settings = QSettings("FAMILYFIN", "FAMILYFIN")
     _migrate_legacy_qsettings_if_needed(settings)
     default_data_dir = get_default_data_dir()
     legacy_data_dir = get_legacy_data_dir()

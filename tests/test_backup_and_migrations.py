@@ -104,7 +104,7 @@ def data_dir(tmp_path):
         conn.execute("INSERT INTO items VALUES ('original')")
         conn.commit()
 
-    qsettings = QSettings("GEVernova", "FAMILYFIN")
+    qsettings = QSettings("FAMILYFIN", "FAMILYFIN")
     qsettings.clear()
     qsettings.setValue("settings/data_folder", str(folder))
     qsettings.sync()
@@ -378,7 +378,7 @@ def test_restore_is_staged_then_applied_on_next_start(data_dir, tmp_path):
     assert _read_items(db) == ["changed later"]
     assert (data_dir / PENDING_RESTORE_NAME).exists()
     # The data folder keeps pointing at this machine's location.
-    assert QSettings("GEVernova", "FAMILYFIN").value("settings/data_folder") == str(data_dir)
+    assert QSettings("FAMILYFIN", "FAMILYFIN").value("settings/data_folder") == str(data_dir)
 
     assert apply_pending_restore(data_dir) is True
     assert _read_items(db) == ["original"]

@@ -142,7 +142,7 @@ class EvolutionPanel(QWidget):
         self._cmb_benchmark.addItem("Sin índice de referencia", None)
         for key, bench in BENCHMARKS.items():
             self._cmb_benchmark.addItem(f"Comparar con {bench.name}", key)
-        saved = QSettings("GEVernova", "FAMILYFIN").value(BENCHMARK_SETTING, DEFAULT_BENCHMARK)
+        saved = QSettings("FAMILYFIN", "FAMILYFIN").value(BENCHMARK_SETTING, DEFAULT_BENCHMARK)
         index = self._cmb_benchmark.findData(saved or None)
         self._cmb_benchmark.setCurrentIndex(max(index, 0))
         self._cmb_benchmark.currentIndexChanged.connect(self._on_benchmark_changed)
@@ -173,7 +173,7 @@ class EvolutionPanel(QWidget):
         self._apply_period()
 
     def _on_benchmark_changed(self, *_args) -> None:
-        QSettings("GEVernova", "FAMILYFIN").setValue(BENCHMARK_SETTING, self.benchmark_key or "")
+        QSettings("FAMILYFIN", "FAMILYFIN").setValue(BENCHMARK_SETTING, self.benchmark_key or "")
         self.benchmark_changed.emit(self.benchmark_key)
 
     def _set_period(self, period: str) -> None:

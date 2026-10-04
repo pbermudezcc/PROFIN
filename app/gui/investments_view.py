@@ -623,14 +623,14 @@ class InvestmentsView(QWidget):
         return f"investments/dismissed_events/{self._user.id}"
 
     def _dismissed(self) -> set:
-        value = QSettings("GEVernova", "FAMILYFIN").value(self._dismissed_key(), [])
+        value = QSettings("FAMILYFIN", "FAMILYFIN").value(self._dismissed_key(), [])
         if isinstance(value, str):
             value = [value]
         return set(value or [])
 
     def _dismiss_event(self, event) -> None:
         dismissed = self._dismissed() | {event.key}
-        QSettings("GEVernova", "FAMILYFIN").setValue(self._dismissed_key(), sorted(dismissed))
+        QSettings("FAMILYFIN", "FAMILYFIN").setValue(self._dismissed_key(), sorted(dismissed))
 
     def check_corporate_actions(self, force: bool = False) -> None:
         """Ask the provider for dividends/splits of held securities (background)."""

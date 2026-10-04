@@ -47,7 +47,7 @@ class AppSettings:
 class SettingsManager:
     """Simple, stable persistence layer for application configuration."""
 
-    ORG = "GEVernova"
+    ORG = "FAMILYFIN"
     APP = "FAMILYFIN"
 
     def __init__(self, settings: QSettings | None = None):
