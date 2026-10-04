@@ -17,9 +17,8 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import defaultdict
 from datetime    import date, datetime
-from typing      import Dict, List, Optional, Tuple
+from typing      import List, Optional, Tuple
 
 from PySide6.QtCore    import Qt, QRectF, QPointF
 from PySide6.QtGui     import (
@@ -34,11 +33,11 @@ from PySide6.QtWidgets import (
 )
 import qtawesome as qta
 
-from sqlalchemy     import func
 from sqlalchemy.orm import Session
 
+from app.analytics.dashboard_summary import dashboard_summary, range_bounds
 from app.config    import THEMES
-from app.db.models import Transaction, TransactionType, Category, User
+from app.db.models import User
 from app.gui._style_utils import apply_card_shadow
 
 logger = logging.getLogger(__name__)
@@ -871,190 +870,33 @@ class DashboardView(QWidget):
         today      = date.today()
         date_from, date_to = self._get_date_range(today)
 
-        try:
-            # Running balance — saldo of the latest transaction that has one
-            # (running_balance is nullable; a row without it must not crash
-            # the whole dashboard).
-            balance = (
-                self._session.query(Transaction.running_balance)
-                .filter(Transaction.user_id == self._user.id,
-                        Transaction.running_balance.isnot(None))
-                .order_by(Transaction.transaction_date.desc(),
-                          Transaction.id.desc())
-                .limit(1)
-                .scalar()
-            ) or 0.0
+        summary = dashboard_summary(self._session, self._user.id, date_from, date_to)
+        balance      = summary.balance
+        income       = summary.income
+        expense      = summary.expense
+        investment   = summary.investment
+        savings_rate = summary.savings_rate
+        uncat        = summary.uncategorized
 
-            # Period aggregates
-            period_q = (
-                self._session.query(
-                    Transaction.type,
-                    func.sum(Transaction.amount).label("total")
-                )
-                .filter(
-                    Transaction.user_id == self._user.id,
-                    Transaction.transaction_date >= date_from,
-                    Transaction.transaction_date <= date_to,
-                )
-                .group_by(Transaction.type)
-                .all()
-            )
+        self._chart_category.set_data(summary.by_category)
 
-            totals = {row.type: (row.total or 0.0) for row in period_q}
+        month_abbr = ["", "Ene", "Feb", "Mar", "Abr", "May",
+                      "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+        self._chart_monthly.set_data([
+            (f"{month_abbr[m.month]}\n{str(m.year)[2:]}", m.income, m.expense)
+            for m in summary.monthly
+        ])
 
-            income     = totals.get(TransactionType.income,     0.0)
-            expense    = abs(totals.get(TransactionType.expense, 0.0))
-            investment = abs(totals.get(
-                TransactionType.investment, 0.0
-            ))
-
-            savings_rate = (
-                ((income - expense) / income * 100) if income > 0 else 0.0
-            )
-
-            # Uncategorized count
-            uncat = (
-                self._session.query(func.count(Transaction.id))
-                .filter(
-                    Transaction.user_id    == self._user.id,
-                    Transaction.category_id == None,  # noqa: E711
-                    Transaction.transaction_date >= date_from,
-                    Transaction.transaction_date <= date_to,
-                )
-                .scalar() or 0
-            )
-
-        except Exception:
-            balance = expense = income = investment = 0.0
-            savings_rate = 0.0
-            uncat = 0
-
-        # ── Chart data — category breakdown ───────────────────────────
-        try:
-            # ── Categorized expenses ──────────────────────────────────
-            cat_q = (
-                self._session.query(
-                    Category.name,
-                    func.sum(Transaction.amount).label("total"),
-                )
-                .join(Transaction, Transaction.category_id == Category.id)
-                .filter(
-                    Transaction.user_id          == self._user.id,
-                    Transaction.type             == TransactionType.expense,
-                    Transaction.transaction_date >= date_from,
-                    Transaction.transaction_date <= date_to,
-                )
-                .group_by(Category.name)
-                .order_by(func.sum(Transaction.amount).asc())
-                .all()
-            )
-            cat_data = [
-                (name, abs(total or 0.0))
-                for name, total in cat_q
-                if total
-            ]
-
-            # ── Uncategorized expenses — always include if > 0 ────────
-            uncat_q = (
-                self._session.query(
-                    func.sum(Transaction.amount).label("total"),
-                    func.count(Transaction.id).label("n"),
-                )
-                .filter(
-                    Transaction.user_id      == self._user.id,
-                    Transaction.type         == TransactionType.expense,
-                    Transaction.category_id  == None,   # noqa: E711
-                    Transaction.transaction_date >= date_from,
-                    Transaction.transaction_date <= date_to,
-                )
-                .one()
-            )
-            uncat_total = abs(uncat_q.total or 0.0)
-            uncat_n     = int(uncat_q.n or 0)
-
-            if uncat_total > 0:
-                cat_data.append((f"Sin categorizar ({uncat_n})", uncat_total))
-
-            cat_data.sort(key=lambda x: x[1], reverse=True)
-            self._chart_category.set_data(cat_data)
-            logger.debug(
-                "Chart categorías: %d categorías + %d sin categorizar (€%.2f)",
-                len(cat_data) - (1 if uncat_total > 0 else 0),
-                uncat_n, uncat_total,
-            )
-        except Exception as exc:
-            logger.exception("Chart categorías — error inesperado: %s", exc)
-            self._chart_category.set_data([])
-
-        # ── Chart data — monthly evolution (last 12 months) ──────────
-        try:
-            from sqlalchemy import extract
-            monthly_q = (
-                self._session.query(
-                    extract("year",  Transaction.transaction_date).label("yr"),
-                    extract("month", Transaction.transaction_date).label("mo"),
-                    Transaction.type,
-                    func.sum(Transaction.amount).label("total"),
-                )
-                .filter(Transaction.user_id == self._user.id)
-                .group_by("yr", "mo", Transaction.type)
-                .order_by("yr", "mo")
-                .all()
-            )
-
-            monthly: Dict[Tuple, Dict] = defaultdict(
-                lambda: {"income": 0.0, "expense": 0.0}
-            )
-            for yr, mo, txn_type, total in monthly_q:
-                key = (int(yr), int(mo))
-                if txn_type == TransactionType.income:
-                    monthly[key]["income"] += abs(total or 0.0)
-                elif txn_type == TransactionType.expense:
-                    monthly[key]["expense"] += abs(total or 0.0)
-
-            month_abbr = ["", "Ene", "Feb", "Mar", "Abr", "May",
-                          "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-            monthly_data = [
-                (f"{month_abbr[mo]}\n{str(yr)[2:]}",
-                 v["income"], v["expense"])
-                for (yr, mo), v in sorted(monthly.items())
-            ]
-            self._chart_monthly.set_data(monthly_data)
-        except Exception as exc:
-            logger.warning("Chart mensual: %s", exc)
-            self._chart_monthly.set_data([])
-
-        # ── Recent transactions (last 5) ──────────────────────────────
-        try:
-            recent_txns = (
-                self._session.query(Transaction)
-                .filter(Transaction.user_id == self._user.id)
-                .order_by(
-                    Transaction.transaction_date.desc(),
-                    Transaction.id.desc(),
-                )
-                .limit(5)
-                .all()
-            )
-            cat_map = {
-                c.id: c.name
-                for c in self._session.query(Category)
-                .filter(Category.user_id == self._user.id).all()
+        self._recent_widget.set_data([
+            {
+                "transaction_date": row.transaction_date,
+                "issuer_name":      row.issuer_name,
+                "concept":          row.concept,
+                "amount":           row.amount,
+                "category_name":    row.category_name,
             }
-            recent_rows = [
-                {
-                    "transaction_date": txn.transaction_date,
-                    "issuer_name":      txn.issuer_name,
-                    "concept":          txn.concept,
-                    "amount":           txn.amount,
-                    "category_name":    cat_map.get(txn.category_id),
-                }
-                for txn in recent_txns
-            ]
-            self._recent_widget.set_data(recent_rows)
-        except Exception as exc:
-            logger.warning("Recent txns: %s", exc)
-            self._recent_widget.set_data([])
+            for row in summary.recent
+        ])
 
         # Update cards
         self._cards["balance"].set_value(
@@ -1097,12 +939,7 @@ class DashboardView(QWidget):
     def _get_date_range(
         self, today: date
     ) -> tuple[date, date]:
-        if self._range == "month":
-            return date(today.year, today.month, 1), today
-        elif self._range == "year":
-            return date(today.year, 1, 1), today
-        else:
-            return date(2000, 1, 1), today
+        return range_bounds(self._range, today)
 
     def _period_label(self, d_from: date, d_to: date) -> str:
         return f"{d_from.strftime('%d %b')} – {d_to.strftime('%d %b %Y')}"

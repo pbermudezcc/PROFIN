@@ -463,3 +463,30 @@ def assign_transaction_category(
         "Transacción id=%d → category_id=%s (asignación manual).",
         transaction_id, category_id
     )
+
+def assign_user_transaction_category(
+    session:        Session,
+    user_id:        int,
+    transaction_id: int,
+    category_id:    Optional[int],
+) -> None:
+    """
+    assign_transaction_category for a caller that only knows the logged-in
+    user (the web front-end): both the transaction and the category must
+    belong to user_id, so an id typed by hand can never touch or point at
+    another family member's data.
+
+    Raises
+    ------
+    LookupError : transaction or category not found for this user.
+    """
+    from app.db.models import Transaction  # local import to avoid circular
+
+    txn = session.get(Transaction, transaction_id)
+    if txn is None or txn.user_id != user_id:
+        raise LookupError("Transacción no encontrada.")
+    if category_id is not None:
+        cat = session.get(Category, category_id)
+        if cat is None or cat.user_id != user_id:
+            raise LookupError("Categoría no encontrada.")
+    assign_transaction_category(session, transaction_id, category_id)

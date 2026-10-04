@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Inversiones{% endblock %}
+{% block content %}
+{% include "_inv_head.html" %}
+
+{% if not snap.rows %}
+<div class="card">{{ ui.empty("Aún no hay inversiones", "Añade tu primera operación con el botón +, o importa el extracto del bróker desde la aplicación del PC.", "trend") }}</div>
+{% else %}
+<section class="hero fade-in hero-inv" aria-label="Valor de la cartera">
+  <div class="lbl">Valor de la cartera</div>
+  <div class="big num">{{ t.market_value_eur|eur }}</div>
+  <div class="row3">
+    <div><div class="k">Plusvalía</div><div class="v num">{{ t.unrealized_gain_eur|eur(signed=True) }}</div></div>
+    <div><div class="k">Rentab.</div><div class="v num">{{ t.unrealized_pct|pct if t.unrealized_pct is not none else "—" }}</div></div>
+    <div><div class="k">Hoy</div><div class="v num">{{ t.day_change_eur|eur(signed=True) }}</div></div>
+  </div>
+</section>
+
+{% if t.missing_prices %}
+<div class="alert warn section">{{ ui.icon("info", "sm") }}<span>Sin cotización para {{ t.missing_prices|join(", ") }}: se valoran a coste. Las cotizaciones se actualizan desde la aplicación del PC.</span></div>
+{% endif %}
+
+<div class="kpis k4 section">
+  {{ ui.kpi("Invertido", t.cost_basis_eur|eur, t.open_positions ~ " posiciones abiertas", "investment") }}
+  {{ ui.kpi("Rentab. anual (TIR)", t.xirr|pct if t.xirr is not none else "—", "desde la primera compra") }}
+  {{ ui.kpi("Realizado " ~ today.year, t.realized_ytd_eur|eur(signed=True), "total: " ~ t.realized_total_eur|eur(signed=True)) }}
+  {{ ui.kpi("Dividendos " ~ today.year, t.dividends_ytd_eur|eur, "total: " ~ t.dividends_total_eur|eur, "income") }}
+</div>
+
+<div class="section-h"><h2>Posiciones</h2><span class="faint">{% if t.last_price_date %}cotización {{ t.last_price_date|sdate }}{% endif %}</span></div>
+
+{# Phones: cards list. Tablets: table. #}
+<div class="list hide-lg">
+  {% for r in rows %}
+  <a class="row" href="/inversiones/operaciones?valor={{ r.security.id }}">
+    <div class="ic investment sym">{{ r.security.symbol.split(".")[0][:4] }}</div>
+    <div class="body">
+      <div class="t">{{ r.security.name }}</div>
+      <div class="d"><span class="num">{{ r.quantity|qty }} × {{ r.price|num(2) if r.price is not none else "—" }} {{ r.security.currency }}</span>{% if r.stale %}<span class="badge warn">antigua</span>{% endif %}{% if not r.has_price %}<span class="badge warn">sin precio</span>{% endif %}</div>
+    </div>
+    <div class="end">
+      <div class="num amt">{{ r.market_value_eur|eur }}</div>
+      <div class="num {{ 'pos' if r.unrealized_gain_eur > 0 else ('neg' if r.unrealized_gain_eur < 0 else 'faint') }}">{{ r.unrealized_pct|pct if r.unrealized_pct is not none else "—" }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card flush hide-sm">
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr>
+        <th>Valor</th><th class="r">Acciones</th><th class="r">Precio</th><th class="r">Valor €</th>
+        <th class="r">Coste €</th><th class="r">Plusvalía</th><th class="r">%</th><th class="r">Hoy</th><th class="r">Peso</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td><a href="/inversiones/operaciones?valor={{ r.security.id }}"><b>{{ r.security.symbol }}</b></a><div class="faint">{{ r.security.name }}</div></td>
+          <td class="r num">{{ r.quantity|qty }}</td>
+          <td class="r num">{{ r.price|num(2) if r.price is not none else "—" }} <span class="faint">{{ r.security.currency }}</span></td>
+          <td class="r num"><b>{{ r.market_value_eur|eur }}</b></td>
+          <td class="r num">{{ r.cost_basis_eur|eur }}</td>
+          <td class="r">{{ ui.signed(r.unrealized_gain_eur) }}</td>
+          <td class="r num {{ 'pos' if r.unrealized_gain_eur > 0 else ('neg' if r.unrealized_gain_eur < 0 else '') }}">{{ r.unrealized_pct|pct if r.unrealized_pct is not none else "—" }}</td>
+          <td class="r">{% if r.day_change_eur is not none %}{{ ui.signed(r.day_change_eur) }}{% else %}—{% endif %}</td>
+          <td class="r num">{{ r.weight|pct(signed=False) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if has_closed %}
+<div class="section">
+  {% if show_closed %}
+  <div class="section-h"><h2>Cerradas</h2><a href="/inversiones">Ocultar</a></div>
+  <div class="list">
+    {% for r in closed %}
+    <a class="row" href="/inversiones/operaciones?valor={{ r.security.id }}">
+      <div class="ic sym">{{ r.security.symbol.split(".")[0][:4] }}</div>
+      <div class="body"><div class="t">{{ r.security.name }}</div><div class="d">realizado + dividendos</div></div>
+      <div class="end">{{ ui.signed(r.total_return_eur) }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <a class="btn ghost block" href="/inversiones?cerradas=1">Ver posiciones cerradas</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

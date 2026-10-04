@@ -124,6 +124,17 @@ def main() -> None:
     # Fusion es fiable; el tema y paleta pueden personalizarse en app/gui/theme.py
     qt_app.setStyle("Fusion")
 
+    # ── Acceso web (LAN, HTTPS) si está activado en Configuración ─────
+    try:
+        from app.gui.web_bridge import install as install_web_bridge
+        from app.web import server as web_server
+
+        install_web_bridge()
+        web_server.start_if_enabled()
+        qt_app.aboutToQuit.connect(web_server.shutdown)
+    except Exception:  # noqa: BLE001 - la app de escritorio debe arrancar igualmente
+        logging.getLogger(__name__).exception("No se pudo iniciar el acceso web.")
+
     window = LoginWindow()
     window.show()
 

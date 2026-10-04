@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Categorías{% endblock %}
+{% block topbar %}<a class="back" href="/mas">{{ ui.icon("left", "sm") }} Más</a><span class="title-sm">Categorías</span>{% endblock %}
+{% block content %}
+{% call ui.large_title("Categorías", "Toca una para ver sus movimientos") %}{% endcall %}
+{% if not types %}
+<div class="card">{{ ui.empty("Sin categorías", "", "tag") }}</div>
+{% endif %}
+{% for t in types %}
+<div class="section-h"><h2>{{ t.name }}</h2></div>
+<div class="list tree">
+  {% for c in children[t.id] %}
+  <a class="row" href="/movimientos?categoria={{ c.id }}">
+    <div class="ic"><i class="sw" data-swatch="{{ c.name }}"></i></div>
+    <div class="body"><div class="t">{{ c.name }}</div>
+      {% if children[c.id] %}<div class="d faint">{{ children[c.id]|map(attribute="name")|join(" · ") }}</div>{% endif %}
+    </div>
+    <span class="badge">{{ usage.get(c.id, 0) }}</span>
+  </a>
+  {% else %}
+  <div class="row faint">Sin categorías</div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

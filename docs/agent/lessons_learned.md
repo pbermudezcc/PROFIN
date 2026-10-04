@@ -79,3 +79,24 @@ Entry format:
 - Root cause: `_paint_donut` drew each slice with a positive span (counter-clockwise in Qt) while moving `start_angle` clockwise, so every slice was painted back over the previous one.
 - Fix: `painter.drawPie(arc_rect, start_angle, -span)` in `app/gui/dashboard.py`.
 - Prevention: render charts to an image (`widget.grab()`, `WA_DontShowOnScreen` on the real Windows platform) and look at them; unit tests only proved the data was right.
+
+## 2026-10-04 — Web login rejected as cross-origin (Origin: null)
+- Area: web / security
+- Symptom: every form POST on the LAN web front-end (login first) answered 403 in a real browser, while TestClient tests passed.
+- Root cause: `Referrer-Policy: no-referrer` makes browsers send `Origin: null` on same-site form posts; the same-origin check treated "null" as foreign. Tests set the Origin header by hand, so they never saw it.
+- Fix: `Referrer-Policy: same-origin` (still nothing sent to other sites) and the check falls back to the Referer when Origin is "null" (app/web/security.py).
+- Prevention: `tests/test_web.py::test_null_origin_falls_back_to_referer`; check security headers in a real browser, not only with TestClient.
+
+## 2026-10-04 — Web page froze the browser tab (Chart.js resize loop)
+- Area: web / charts
+- Symptom: the Resumen page made the Chrome tab unresponsive.
+- Root cause: chart canvases inside CSS grid tracks sized `1fr` (= minmax(auto, 1fr)): the track's minimum follows the canvas width, each Chart.js resize widens the track, which triggers another resize.
+- Fix: `minmax(0, 1fr)` tracks, `min-width: 0` on grid items, `.chart-box` with width 100% / overflow hidden (app/web/static/css/app.css).
+- Prevention: any responsive canvas (Chart.js) must sit in a container whose width cannot depend on its content.
+
+## 2026-10-04 — Web: picking a category on the iPad did not save it
+- Area: web / transactions
+- Symptom: on the iPad, choosing another category for a transaction left it unchanged; the server received no request at all (no audit_log entry, nothing in the log).
+- Root cause: UX, not the write path. The sheet listed ~50 categories and saving needed a "Guardar" button placed at the end of that list (sticky with a negative offset, i.e. off-screen); tapping a category only selected it. Also, requests rejected by the hardening middleware were not logged, which made it look like a silent write failure.
+- Fix: the picker saves on tap (`hx-trigger="change"`), has a search box and shows the transaction's own type group first with the count of categories; middleware 403s are logged with host/origin/referer (app/web/templates/partials/tx_sheet.html, app/web/security.py).
+- Prevention: `tests/test_web.py::test_category_sheet_saves_on_tap_and_lists_every_category`; verify touch flows end to end in a browser (tap → request → DB), not only the endpoint.

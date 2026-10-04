@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Reglas{% endblock %}
+{% block topbar %}<a class="back" href="/mas">{{ ui.icon("left", "sm") }} Más</a><span class="title-sm">Reglas</span>{% endblock %}
+{% block content %}
+{% call ui.large_title("Reglas automáticas", "Se aplican en orden de prioridad") %}{% endcall %}
+{% if rules %}
+<div class="list">
+  {% for r in rules %}
+  <div class="row">
+    <div class="ic accent">{{ r.priority }}</div>
+    <div class="body">
+      <div class="t">«{{ r.match_pattern }}»</div>
+      <div class="d"><span class="faint">{{ match_labels.get(r.match_type.value if r.match_type.value is defined else r.match_type, r.match_type) }} →</span> {{ ui.chip(names.get(r.category_id)) }}{% if r.user_id is none %}<span class="badge">global</span>{% endif %}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ ui.empty("Sin reglas", "", "rules") }}</div>
+{% endif %}
+{% endblock %}

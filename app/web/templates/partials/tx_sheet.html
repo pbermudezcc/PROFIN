@@ -1,0 +1,54 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">Movimiento</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  <div class="stack">
+    <div>
+      <div class="amount-xl num {{ 'pos' if row.amount > 0 else '' }}">{{ row.amount|eur(signed=True) if row.amount > 0 else row.amount|eur }}</div>
+      <div class="title-lg">{{ row.description }}</div>
+    </div>
+    <dl class="kv card">
+      <dt>Fecha</dt><dd>{{ row.transaction_date|ldate }}</dd>
+      {% if row.value_date and row.value_date != row.transaction_date %}<dt>Fecha valor</dt><dd>{{ row.value_date|fdate }}</dd>{% endif %}
+      <dt>Tipo</dt><dd>{{ type_labels[row.txn_type] }}</dd>
+      {% if row.account_name %}<dt>Cuenta</dt><dd>{{ row.account_name }}</dd>{% endif %}
+      {% if row.concept and row.concept != row.description %}<dt>Concepto</dt><dd>{{ row.concept }}</dd>{% endif %}
+      {% if row.running_balance is not none %}<dt>Saldo después</dt><dd class="num">{{ row.running_balance|eur }}</dd>{% endif %}
+      <dt>Categoría</dt><dd>{{ row.category_name or "Sin categoría" }}{% if row.category_source == "manual" %} <span class="badge acc">manual</span>{% elif row.category_source == "rule" %} <span class="badge">regla</span>{% endif %}</dd>
+    </dl>
+
+    <div class="cat-head">
+      <h4>Cambiar categoría <span class="faint">· {{ total_categories }} disponibles</span></h4>
+      <label class="search">
+        {{ ui.icon("search", "sm") }}<span class="sr-only">Buscar categoría</span>
+        <input class="input" type="search" placeholder="Buscar categoría" data-cat-search autocomplete="off" enterkeyhint="search">
+      </label>
+    </div>
+
+    {# Tapping a category saves it at once (no button to find at the end of a long list). #}
+    <form hx-post="/movimientos/{{ row.id }}/categoria" hx-trigger="change" hx-swap="none" data-cat-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <div class="cat-picker" role="radiogroup" aria-label="Categoría">
+        <div class="cat-group">
+          <div class="opts">
+            <label data-cat-name="sin categoría"><input type="radio" name="category_id" value="" {% if row.category_id is none %}checked{% endif %}><span>Sin categoría</span></label>
+          </div>
+        </div>
+        {% for group, cats in groups.items() %}
+        <div class="cat-group">
+          <h4>{{ group }} <span class="faint">· {{ cats|length }}</span></h4>
+          <div class="opts">
+            {% for c in cats %}
+            <label data-cat-name="{{ c.name|lower }}"><input type="radio" name="category_id" value="{{ c.id }}" {% if row.category_id == c.id %}checked{% endif %}><span><i class="sw" data-swatch="{{ c.name }}"></i>{{ c.name }}</span></label>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+        <p class="faint" data-cat-empty hidden>Ninguna categoría coincide.</p>
+      </div>
+    </form>
+    <p class="note">Toca una categoría para guardarla. Una categoría puesta a mano queda protegida: las reglas automáticas no la cambian.</p>
+  </div>
+</div>

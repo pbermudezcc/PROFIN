@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Resumen{% endblock %}
+{% block actions %}
+<a class="avatar hide-lg" href="/mas" aria-label="Mi cuenta">{{ ui.initials(user.username) }}</a>
+{% endblock %}
+{% block content %}
+{% call ui.large_title("Hola, " ~ user.username, today|ldate) %}{% endcall %}
+
+<div class="seg" role="tablist" aria-label="Periodo">
+  {% for key, label in ranges %}
+  <a href="/?rango={{ key }}" class="{{ 'on' if rango == key else '' }}" role="tab" aria-selected="{{ 'true' if rango == key else 'false' }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<section class="hero fade-in" aria-label="Saldo">
+  <div class="lbl">Saldo en cuenta</div>
+  <div class="big num">{{ s.balance|eur }}</div>
+  <div class="row3">
+    <div><div class="k">Ingresos</div><div class="v num">{{ s.income|eur }}</div></div>
+    <div><div class="k">Gastos</div><div class="v num">{{ s.expense|eur }}</div></div>
+    <div><div class="k">Ahorro</div><div class="v num">{{ s.savings_rate|num(1) }} %</div></div>
+  </div>
+</section>
+
+<div class="section-h"><h2>Este periodo</h2><span class="faint">{{ s.date_from|sdate }} – {{ s.date_to|sdate }}</span></div>
+<div class="kpis">
+  {{ ui.kpi("Ingresos", s.income|eur, "", "income") }}
+  {{ ui.kpi("Gastos", s.expense|eur, "", "expense") }}
+  {{ ui.kpi("Inversión", s.investment|eur, "aportado desde la cuenta", "investment") }}
+  {{ ui.kpi("Tasa de ahorro", (s.savings_rate|num(1)) ~ " %", "(ingresos − gastos) / ingresos", "") }}
+  <a class="kpi" href="/movimientos?categoria=sin&desde={{ s.date_from }}&hasta={{ s.date_to }}">
+    <div class="k"><i class="dot warning"></i>Sin categoría</div>
+    <div class="v num">{{ s.uncategorized }}</div>
+    <div class="s">Toca para revisarlos →</div>
+  </a>
+  {% if portfolio %}
+  <a class="kpi" href="/inversiones">
+    <div class="k"><i class="dot investment"></i>Cartera</div>
+    <div class="v num">{{ portfolio.market_value_eur|eur }}</div>
+    <div class="s num {{ 'pos' if portfolio.unrealized_gain_eur >= 0 else 'neg' }}">{{ portfolio.unrealized_gain_eur|eur(signed=True) }}{% if portfolio.unrealized_pct is not none %} · {{ portfolio.unrealized_pct|pct }}{% endif %}</div>
+  </a>
+  {% endif %}
+</div>
+
+<div class="grid-2">
+  <section class="card chart-card section">
+    <div class="head"><h3>Gastos por categoría</h3><a href="/gastos">Ver todo</a></div>
+    {% if charts.categories.values %}
+      {{ ui.chart("ch-cat", charts.categories, "Gastos por categoría", "donut", legend=True) }}
+    {% else %}
+      {{ ui.empty("Sin gastos en este periodo", "", "pie") }}
+    {% endif %}
+  </section>
+  <section class="card chart-card section">
+    <div class="head"><h3>Ingresos y gastos</h3><span class="faint">últimos 12 meses</span></div>
+    {% if charts.monthly.labels %}
+      {{ ui.chart("ch-month", charts.monthly, "Ingresos y gastos por mes", "", legend=True) }}
+    {% else %}
+      {{ ui.empty("Aún no hay movimientos", "", "trend") }}
+    {% endif %}
+  </section>
+</div>
+
+<div class="section-h"><h2>Últimos movimientos</h2><a href="/movimientos">Ver todos</a></div>
+{% if s.recent %}
+<div class="list">
+  {% for r in s.recent %}
+  <button class="row" id="tx-{{ r.id }}" type="button" hx-get="/movimientos/{{ r.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+    <div class="ic {{ 'income' if r.amount > 0 else 'expense' }}">{{ ui.icon("arrow-down" if r.amount > 0 else "arrow-up", "sm") }}</div>
+    <div class="body">
+      <div class="t">{{ r.issuer_name or r.concept or "—" }}</div>
+      <div class="d">{{ r.transaction_date|sdate }} {{ ui.chip(r.category_name) }}</div>
+    </div>
+    <div class="end">{{ ui.amount(r.amount) }}</div>
+  </button>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ ui.empty("Todavía no hay movimientos", "Importa tus extractos desde la aplicación del PC.", "upload") }}</div>
+{% endif %}
+{% endblock %}

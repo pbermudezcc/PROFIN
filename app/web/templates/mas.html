@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Más{% endblock %}
+{% block content %}
+{% call ui.large_title("Más") %}{% endcall %}
+
+<div class="card split">
+  <div class="wrap-gap">
+    <div class="avatar lg">{{ ui.initials(user.username) }}</div>
+    <div><b class="title-md">{{ user.username }}</b><div class="pos small-line">{{ ui.icon("lock", "xs") }} Conexión cifrada (HTTPS)</div></div>
+  </div>
+</div>
+
+<div class="section-h"><h2>Tus datos</h2></div>
+<div class="list">
+  <a class="row" href="/mas/categorias"><div class="ic accent">{{ ui.icon("tag", "sm") }}</div><div class="body"><div class="t">Categorías</div><div class="d">{{ counts.categorias }} categorías</div></div>{{ ui.icon("right", "sm chev") }}</a>
+  <a class="row" href="/mas/reglas"><div class="ic accent">{{ ui.icon("rules", "sm") }}</div><div class="body"><div class="t">Reglas automáticas</div><div class="d">{{ counts.reglas }} reglas</div></div>{{ ui.icon("right", "sm chev") }}</a>
+  <a class="row" href="/mas/cuentas"><div class="ic accent">{{ ui.icon("bank", "sm") }}</div><div class="body"><div class="t">Cuentas</div><div class="d">{{ counts.cuentas }} cuentas</div></div>{{ ui.icon("right", "sm chev") }}</a>
+  <a class="row" href="/mas/importaciones"><div class="ic accent">{{ ui.icon("upload", "sm") }}</div><div class="body"><div class="t">Importaciones</div><div class="d">{{ counts.importaciones }} extractos importados</div></div>{{ ui.icon("right", "sm chev") }}</a>
+  <a class="row" href="/ingresos"><div class="ic income">{{ ui.icon("arrow-down", "sm") }}</div><div class="body"><div class="t">Ingresos</div><div class="d">por categoría y mes</div></div>{{ ui.icon("right", "sm chev") }}</a>
+  <a class="row" href="/inversiones/fiscal"><div class="ic investment">{{ ui.icon("receipt", "sm") }}</div><div class="body"><div class="t">Fiscalidad de inversiones</div><div class="d">ventas y dividendos por año</div></div>{{ ui.icon("right", "sm chev") }}</a>
+</div>
+
+<div class="section-h"><h2>Apariencia</h2></div>
+<div class="card">
+  <div class="seg" role="radiogroup" aria-label="Tema" data-theme-seg>
+    <button type="button" data-theme-set="auto">Automático</button>
+    <button type="button" data-theme-set="light">Claro</button>
+    <button type="button" data-theme-set="dark">Oscuro</button>
+  </div>
+</div>
+
+<div class="section-h"><h2>Sesiones abiertas</h2></div>
+<div class="list">
+  {% for s in sessions %}
+  <div class="row">
+    <div class="ic">{{ ui.icon("device", "sm") }}</div>
+    <div class="body">
+      <div class="t">{{ "Este dispositivo" if s.sid == user.session.sid else (("iPad" if "iPad" in s.user_agent else ("iPhone" if "iPhone" in s.user_agent else "Navegador"))) }}</div>
+      <div class="d faint">{{ s.ip }}</div>
+    </div>
+    {% if s.sid == user.session.sid %}<span class="badge pos">activa</span>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+<form class="section" method="post" action="/logout/todas" hx-boost="false">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <button class="btn ghost block" type="submit">Cerrar sesión en todos los dispositivos</button>
+</form>
+<form class="section" method="post" action="/logout" hx-boost="false">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <button class="btn danger block" type="submit">{{ ui.icon("logout", "sm") }} Cerrar sesión</button>
+</form>
+<p class="note">Las importaciones, reglas y ajustes se gestionan desde la aplicación del PC. La sesión se cierra sola tras 30 minutos sin uso.</p>
+{% endblock %}

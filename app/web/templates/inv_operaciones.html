@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Operaciones · Inversiones{% endblock %}
+{% block content %}
+{% include "_inv_head.html" %}
+
+<form class="stack" action="/inversiones/operaciones" method="get">
+  <label class="search">
+    {{ ui.icon("search", "sm") }}<span class="sr-only">Buscar</span>
+    <input class="input" type="search" name="q" value="{{ q }}" placeholder="Buscar valor o nota" enterkeyhint="search" maxlength="100">
+  </label>
+  <div class="form-grid two">
+    <select class="input" name="tipo" aria-label="Tipo" data-autosubmit>
+      <option value="">Todos los tipos</option>
+      {% for value, label in kinds %}<option value="{{ value }}" {% if tipo == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select class="input" name="broker" aria-label="Bróker" data-autosubmit>
+      <option value="">Todos los brókers</option>
+      {% for b in brokers %}<option value="{{ b }}" {% if broker == b %}selected{% endif %}>{{ b }}</option>{% endfor %}
+    </select>
+  </div>
+  {% if valor %}<input type="hidden" name="valor" value="{{ valor }}">{% endif %}
+</form>
+
+{% if valor and rows %}
+<div class="wrap-gap section">
+  <span class="badge acc">{{ securities[rows[0].security_id].name }}</span>
+  <a class="btn ghost sm" href="/inversiones/operaciones">{{ ui.icon("close", "xs") }} Ver todas</a>
+  <button class="btn sm" type="button" hx-get="/inversiones/operaciones/nueva?valor={{ valor }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>{{ ui.icon("plus", "xs") }} Operación</button>
+</div>
+{% endif %}
+
+<div class="section">
+{% if rows %}
+<div class="list">
+  {% set ns = namespace(year=none) %}
+  {% for r in rows %}
+    {% if r.trade_date.year != ns.year %}{% set ns.year = r.trade_date.year %}<div class="day-h">{{ ns.year }}</div>{% endif %}
+    {% set sec = securities[r.security_id] %}
+    {% set k = r.kind.value if r.kind.value is defined else r.kind %}
+    <button class="row" type="button" hx-get="/inversiones/operaciones/{{ r.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+      <div class="ic {{ 'income' if k in ('sell', 'dividend') else ('accent' if k == 'split' else 'investment') }}">{{ ui.icon({"buy": "plus", "sell": "arrow-down", "dividend": "wallet", "split": "grid", "grant": "receipt"}[k], "sm") }}</div>
+      <div class="body">
+        <div class="t">{{ sec.name }}</div>
+        <div class="d"><span>{{ kind_labels[r.kind] }}</span><span class="faint">{{ r.trade_date|sdate }} · {{ r.broker }}</span>{% if r.quantity %}<span class="faint num">{{ r.quantity|qty }} acc.</span>{% endif %}</div>
+      </div>
+      <div class="end">
+        {% if k == 'split' %}<span class="badge">{{ r.split_ratio|qty }}:1</span>
+        {% elif k in ('sell', 'dividend') %}<span class="num amt pos">{{ r.amount_eur|eur(signed=True) }}</span>
+        {% else %}<span class="num amt">{{ r.amount_eur|eur }}</span>{% endif %}
+      </div>
+    </button>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ ui.empty("Sin operaciones", "Cambia los filtros o añade una con el botón +.", "receipt") }}</div>
+{% endif %}
+</div>
+{% endblock %}

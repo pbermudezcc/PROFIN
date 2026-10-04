@@ -1,0 +1,80 @@
+{% import "_ui.html" as ui %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}FAMILYFIN{% endblock %} · FAMILYFIN</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F3F5FA" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0A1120" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="FAMILYFIN">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="referrer" content="same-origin">
+  <meta name="csrf-token" content="{{ csrf }}">
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true, "historyCacheSize": 0, "refreshOnHistoryMiss": true, "scrollIntoViewOnBoost": false}'>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ asset('icons/icon-192.png') }}">
+  <link rel="apple-touch-icon" href="{{ asset('icons/apple-touch-icon.png') }}">
+  <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+  <script src="{{ asset('js/theme.js') }}"></script>
+  <script src="{{ asset('vendor/htmx.min.js') }}" defer></script>
+  <script src="{{ asset('vendor/chart.umd.min.js') }}" defer></script>
+  <script src="{{ asset('js/charts.js') }}" defer></script>
+  <script src="{{ asset('js/app.js') }}" defer></script>
+</head>
+<body {% block body_attrs %}hx-boost="true"{% endblock %}>
+<div class="progress" aria-hidden="true"><i></i></div>
+<div class="ptr" aria-hidden="true">{{ ui.icon("refresh", "sm") }}</div>
+<div class="toast" role="status" aria-live="polite"></div>
+{% block shell %}
+<div class="shell">
+  <aside class="sidebar" aria-label="Navegación principal">
+    <div class="brand">
+      <img src="{{ asset('icons/icon-192.png') }}" alt="">
+      <div><b>FAMILYFIN</b><small>Finanzas familiares</small></div>
+    </div>
+    <nav>
+      {% for key, label, href, icon_name in nav %}
+      <a href="{{ href }}" class="{{ 'on' if active == key else '' }}" {% if active == key %}aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}<span>{{ label }}</span></a>
+      {% endfor %}
+    </nav>
+    <div class="foot">
+      <button class="btn ghost sm" type="button" data-theme-toggle>{{ ui.icon("moon", "sm") }}<span>Tema</span></button>
+      <div class="who">
+        <div class="avatar">{{ ui.initials(user.username) }}</div>
+        <div class="meta"><b>{{ user.username }}</b><small>{{ ui.icon("lock", "xs") }} Cifrado</small></div>
+        <form method="post" action="/logout" hx-boost="false">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}">
+          <button class="icon-btn" title="Cerrar sesión" aria-label="Cerrar sesión">{{ ui.icon("logout", "sm") }}</button>
+        </form>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <header class="topbar" data-topbar>
+      {% block topbar %}
+      <span class="title-sm">{{ self.title() }}</span>
+      {% endblock %}
+      <div class="actions">{% block actions %}{% endblock %}</div>
+    </header>
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<nav class="tabbar" aria-label="Secciones">
+  {% for key, label, href, icon_name in nav %}
+  <a href="{{ href }}" class="{{ 'on' if active == key else '' }}" {% if active == key %}aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}<span class="lbl">{{ label.split(' ')[0] if key == 'flujos' else label }}</span></a>
+  {% endfor %}
+</nav>
+{% endblock %}
+
+<dialog class="sheet" id="sheet" aria-labelledby="sheet-title">
+  <div class="grab" aria-hidden="true"></div>
+  <div id="sheet-body"></div>
+</dialog>
+</body>
+</html>

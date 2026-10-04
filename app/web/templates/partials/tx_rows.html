@@ -1,0 +1,14 @@
+{% import "_ui.html" as ui %}
+{% set ns = namespace(day=none) %}
+{% for row in rows %}
+  {% if row.transaction_date != ns.day %}
+    {% set ns.day = row.transaction_date %}
+    <div class="day-h">{{ row.transaction_date|ldate }}</div>
+  {% endif %}
+  {% include "partials/tx_row.html" %}
+{% endfor %}
+{% if next_url %}
+<div class="skel-row" hx-get="{{ next_url }}" hx-trigger="revealed" hx-swap="outerHTML" aria-label="Cargando más">
+  <div class="skel a"></div><div class="skel b"></div><div class="skel c"></div>
+</div>
+{% endif %}

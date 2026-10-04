@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Cuentas{% endblock %}
+{% block topbar %}<a class="back" href="/mas">{{ ui.icon("left", "sm") }} Más</a><span class="title-sm">Cuentas</span>{% endblock %}
+{% block content %}
+{% call ui.large_title("Cuentas") %}{% endcall %}
+{% if accounts %}
+<div class="list">
+  {% for a in accounts %}
+  {% set st = stats.get(a.id) %}
+  <a class="row" href="/movimientos?cuenta={{ a.id }}">
+    <div class="ic accent">{{ ui.icon("bank", "sm") }}</div>
+    <div class="body">
+      <div class="t">{{ a.account_name }}{% if a.iban_last4 %} <span class="faint">··{{ a.iban_last4 }}</span>{% endif %}</div>
+      <div class="d faint">{{ a.bank }}{% if st %} · {{ st[0] }} movimientos · {{ st[1]|fdate }} – {{ st[2]|fdate }}{% endif %}</div>
+    </div>
+    <div class="end">{% if balances[a.id] is not none %}<span class="num amt">{{ balances[a.id]|eur }}</span>{% endif %}</div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ ui.empty("Sin cuentas", "Aparecen al importar el primer extracto.", "bank") }}</div>
+{% endif %}
+{% endblock %}

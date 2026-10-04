@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Iniciar sesión{% endblock %}
+{% block body_attrs %}hx-boost="false"{% endblock %}
+{% block shell %}
+<div class="login-wrap">
+  <div class="login fade-in">
+    <img class="logo" src="{{ asset('icons/icon-192.png') }}" alt="">
+    <h1>FAMILYFIN</h1>
+    <p class="sub">Entra con tu usuario de la aplicación</p>
+    <form class="card stack" method="post" action="/login" autocomplete="on">
+      {% if error %}
+      <div class="alert err" role="alert">{{ ui.icon("info", "sm") }}<span>{{ error }}</span></div>
+      {% endif %}
+      <label class="field">
+        <span>Usuario</span>
+        <input class="input" name="username" value="{{ username or '' }}" autocomplete="username"
+               autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="64" required {% if not username %}autofocus{% endif %}>
+      </label>
+      <label class="field">
+        <span>Contraseña</span>
+        <div class="pw">
+          <input class="input" type="password" name="password" autocomplete="current-password" maxlength="256" required {% if username %}autofocus{% endif %}>
+          <button type="button" data-toggle-password aria-label="Mostrar contraseña">{{ ui.icon("eye", "sm") }}</button>
+        </div>
+      </label>
+      <button class="btn block" type="submit">Entrar</button>
+    </form>
+    <p class="secure">{{ ui.icon("lock", "xs") }} Conexión cifrada · solo en tu red de casa</p>
+  </div>
+</div>
+{% endblock %}

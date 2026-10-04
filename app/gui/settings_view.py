@@ -57,6 +57,7 @@ class SettingsView(QWidget):
             ("data", "Datos"),
             ("security", "Seguridad"),
             ("backup", "Copias de seguridad"),
+            ("web", "Acceso web"),
         ]
         self._build_ui()
         self._apply_theme()
@@ -126,6 +127,8 @@ class SettingsView(QWidget):
         self._page_map["data"] = self._build_data_page()
         self._page_map["security"] = self._build_security_page()
         self._page_map["backup"] = self._build_backup_page()
+        from app.gui.web_access_view import WebAccessPage
+        self._page_map["web"] = WebAccessPage()
 
         for key in self._page_names:
             stack.addWidget(self._page_map[key[0]])
@@ -366,7 +369,7 @@ class SettingsView(QWidget):
         self._settings_manager.ensure_dirs(self._settings)
         self._settings_manager.save(self._settings)
 
-        qsettings = QSettings("GEVernova", "FAMILYFIN")
+        qsettings = QSettings("FAMILYFIN", "FAMILYFIN")
         qsettings.setValue("ui/theme", self._settings.theme if self._settings.save_appearance_on_start else "light")
         qsettings.sync()
 
@@ -419,6 +422,9 @@ class SettingsView(QWidget):
             return False
         self._session.commit()
         init_db()
+        # Web sessions belong to users of the previous database.
+        from app.web.server import get_web_server
+        get_web_server().sessions.revoke_all()
         QMessageBox.information(
             self,
             "Ubicación de datos actualizada",
@@ -540,6 +546,15 @@ class SettingsView(QWidget):
             }}
             QLabel {{
                 color: {t["text_primary"]};
+            }}
+            QLabel#webNote {{
+                color: {t["text_secondary"]};
+                font-size: 11px;
+            }}
+            QListWidget {{
+                background-color: {t["bg_secondary"]};
+                border: 1px solid {t["border"]};
+                border-radius: 7px;
             }}
         """)
         apply_card_shadow(self._nav_panel, t)

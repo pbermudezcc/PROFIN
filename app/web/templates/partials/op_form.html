@@ -1,0 +1,67 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">{{ "Editar operación" if txn else "Nueva operación" }}</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  <form class="form-grid" hx-post="/inversiones/operaciones" hx-target="#sheet-body" hx-swap="innerHTML" data-op-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    {% if txn %}<input type="hidden" name="operation_id" value="{{ txn.id }}">{% endif %}
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("info", "sm") }}<span>{{ error }}</span></div>{% endif %}
+
+    <div class="seg" role="radiogroup" aria-label="Tipo de operación">
+      {% for value, label in kinds %}
+      <label class="seg-opt"><input type="radio" name="kind" value="{{ value }}" {% if v.kind == value %}checked{% endif %}><span>{{ label if value != 'grant' else 'Plan empresa' }}</span></label>
+      {% endfor %}
+    </div>
+
+    <label class="field"><span>Valor</span>
+      <select class="input" name="security_id" required>
+        <option value="">Elige un valor…</option>
+        {% if own_securities %}<optgroup label="Mis valores">
+          {% for s in own_securities %}<option value="{{ s.id }}" data-currency="{{ s.currency }}" {% if v.security_id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.symbol }})</option>{% endfor %}
+        </optgroup>{% endif %}
+        {% if other_securities %}<optgroup label="Otros del catálogo">
+          {% for s in other_securities %}<option value="{{ s.id }}" data-currency="{{ s.currency }}" {% if v.security_id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.symbol }})</option>{% endfor %}
+        </optgroup>{% endif %}
+      </select>
+    </label>
+    <p class="note">¿No está el valor? Búscalo y añádelo una vez desde la aplicación del PC.</p>
+
+    <div class="form-grid two">
+      <label class="field"><span>Fecha</span><input class="input" type="date" name="trade_date" value="{{ v.trade_date }}" max="{{ today }}" required></label>
+      <label class="field"><span>Bróker</span>
+        <input class="input" name="broker" list="broker-list" value="{{ v.broker }}" maxlength="64" required autocomplete="off">
+        <datalist id="broker-list">{% for b in brokers %}<option value="{{ b }}">{% endfor %}</datalist>
+      </label>
+    </div>
+
+    <div class="form-grid two" data-show-for="buy sell grant">
+      <label class="field"><span>Acciones / participaciones</span><input class="input" name="quantity" inputmode="decimal" value="{{ v.quantity }}" data-calc></label>
+      <label class="field"><span>Precio (<span data-currency-label>{{ v.currency or "EUR" }}</span>)</span><input class="input" name="price" inputmode="decimal" value="{{ v.price }}" data-calc></label>
+    </div>
+    <input type="hidden" name="currency" value="{{ v.currency }}">
+
+    <div class="form-grid two" data-show-for="buy sell grant dividend">
+      <label class="field"><span data-amount-label>Importe total (EUR)</span><input class="input" name="amount_eur" inputmode="decimal" value="{{ v.amount_eur }}" required></label>
+      <label class="field" data-show-for="buy sell"><span>Comisiones (EUR)</span><input class="input" name="fees_eur" inputmode="decimal" value="{{ v.fees_eur }}" data-calc></label>
+      <label class="field" data-show-for="dividend"><span>Retención (EUR)</span><input class="input" name="tax_withheld_eur" inputmode="decimal" value="{{ v.tax_withheld_eur }}"></label>
+      <label class="field" data-show-for="grant"><span>Pagado por ti (EUR)</span><input class="input" name="cash_paid_eur" inputmode="decimal" value="{{ v.cash_paid_eur }}"></label>
+    </div>
+    <p class="note" data-calc-hint hidden></p>
+
+    <label class="field" data-show-for="split"><span>Proporción (acciones nuevas por cada antigua)</span><input class="input" name="split_ratio" inputmode="decimal" value="{{ v.split_ratio }}" placeholder="p. ej. 4 ó 0,1"></label>
+
+    <label class="field"><span>Notas</span><textarea class="input" name="notes" rows="2" maxlength="1000">{{ v.notes }}</textarea></label>
+
+    <div class="sticky-actions">
+      {% if txn %}
+      <button class="btn danger" type="button" hx-post="/inversiones/operaciones/{{ txn.id }}/borrar" hx-target="#sheet-body"
+              hx-confirm="¿Borrar esta operación?" aria-label="Borrar">{{ ui.icon("trash", "sm") }}</button>
+      {% else %}
+      <button class="btn ghost" type="button" data-close-sheet>Cancelar</button>
+      {% endif %}
+      <button class="btn block" type="submit">{{ ui.icon("check", "sm") }} Guardar</button>
+    </div>
+  </form>
+</div>

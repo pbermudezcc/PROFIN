@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{% call ui.large_title(title) %}{% endcall %}
+
+<div class="seg" aria-label="Tipo">
+  <a href="/gastos?periodo={{ period.key }}" class="{{ 'on' if kind == 'gastos' else '' }}">Gastos</a>
+  <a href="/ingresos?periodo={{ period.key }}" class="{{ 'on' if kind == 'ingresos' else '' }}">Ingresos</a>
+</div>
+
+<div class="pills" aria-label="Periodo">
+  {% for key, label in periods %}
+  <a href="/{{ kind }}?periodo={{ key }}" class="{{ 'on' if period.key == key else '' }}">{{ label }}</a>
+  {% endfor %}
+  <a href="#" class="{{ 'on' if period.key == 'custom' else '' }}" data-toggle="#custom-range">Personalizado</a>
+</div>
+
+<form id="custom-range" class="card form-grid two" action="/{{ kind }}" method="get" {% if period.key != 'custom' %}hidden{% endif %}>
+  <input type="hidden" name="periodo" value="custom">
+  <label class="field"><span>Desde</span><input class="input" type="date" name="desde" value="{{ period.date_from }}" required></label>
+  <label class="field"><span>Hasta</span><input class="input" type="date" name="hasta" value="{{ period.date_to }}" required></label>
+  <button class="btn block" type="submit">Aplicar</button>
+</form>
+
+<div class="period">
+  <a class="nav {{ '' if period.prev_ref else 'off' }}" href="/{{ kind }}?periodo={{ period.key }}&ref={{ period.prev_ref or '' }}" aria-label="Periodo anterior">{{ ui.icon("left", "sm") }}</a>
+  <div class="lbl">{{ period.label }}</div>
+  <a class="nav {{ '' if period.next_ref else 'off' }}" href="/{{ kind }}?periodo={{ period.key }}&ref={{ period.next_ref or '' }}" aria-label="Periodo siguiente">{{ ui.icon("right", "sm") }}</a>
+</div>
+
+<div class="kpis k4">
+  {{ ui.kpi("Total", s.total|eur, s.count ~ " movimientos", color) }}
+  {{ ui.kpi("Media", s.average|eur, "por movimiento") }}
+  {{ ui.kpi("Mayor", s.max_amount|eur, "un solo movimiento") }}
+  {{ ui.kpi("Categorizado", (s.categorized_pct|num(0)) ~ " %", s.categorized ~ " de " ~ s.count) }}
+</div>
+
+{% if s.count %}
+<div class="grid-2">
+  <section class="card chart-card section">
+    <div class="head"><h3>Por categoría</h3></div>
+    {{ ui.chart("ch-cat", charts.categories, title ~ " por categoría", "donut") }}
+  </section>
+  <section class="card chart-card section">
+    <div class="head"><h3>Evolución diaria</h3></div>
+    {{ ui.chart("ch-day", charts.daily, title ~ " por día") }}
+  </section>
+</div>
+
+{% if charts.monthly.labels|length > 1 %}
+<section class="card chart-card section">
+  <div class="head"><h3>Mes a mes</h3><span class="faint">principales categorías</span></div>
+  {{ ui.chart("ch-month", charts.monthly, title ~ " por mes y categoría", "tall", legend=True) }}
+</section>
+{% endif %}
+
+<div class="section-h"><h2>Categorías</h2><span class="faint">toca para ver los movimientos</span></div>
+<div class="list">
+  {% for label, value, share in shares %}
+  <a class="share row" href="/movimientos?tipo={{ txn_type }}&cat_nombre={{ label|urlencode }}&desde={{ period.date_from }}&hasta={{ period.date_to }}">
+    <div class="body">
+      <div class="top">
+        <div class="l"><i class="chip-sw sw" data-swatch="{{ label }}"></i><span>{{ label }}</span></div>
+        <span class="num">{{ value|eur }}</span>
+      </div>
+      <div class="bar"><i data-pct="{{ (share * 100)|round(1) }}" data-swatch-bg="{{ label }}"></i></div>
+      <div class="meta">{{ (share * 100)|num(1) }} % del total</div>
+    </div>
+    {{ ui.icon("right", "sm chev") }}
+  </a>
+  {% endfor %}
+</div>
+
+<div class="section-h"><h2>Últimos</h2><a href="/movimientos?tipo={{ txn_type }}&desde={{ period.date_from }}&hasta={{ period.date_to }}">Ver todos</a></div>
+<div class="list">
+  {% for r in s.latest %}
+  <div class="row">
+    <div class="ic {{ color }}">{{ ui.initials(r.description) }}</div>
+    <div class="body">
+      <div class="t">{{ r.description }}</div>
+      <div class="d">{{ r.transaction_date|sdate }} {{ ui.chip(r.category) }}</div>
+    </div>
+    <div class="end num amt">{{ r.amount|eur }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card section">{{ ui.empty("Nada en este periodo", "Prueba con otro periodo o con «Todo».", "calendar") }}</div>
+{% endif %}
+{% endblock %}

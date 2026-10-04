@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Evolución · Inversiones{% endblock %}
+{% block content %}
+{% include "_inv_head.html" %}
+
+<div class="seg" aria-label="Periodo">
+  {% for key, label in periods %}
+  <a href="/inversiones/evolucion?periodo={{ key }}&benchmark={{ benchmark }}" class="{{ 'on' if periodo == key else '' }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+{% if not chart.labels %}
+<div class="card">{{ ui.empty("Sin datos todavía", "La evolución aparece cuando hay operaciones y cotizaciones descargadas.", "trend") }}</div>
+{% else %}
+<div class="kpis">
+  {{ ui.kpi("Valor", last.value_eur|eur, "a " ~ last.day|sdate, "investment") }}
+  {{ ui.kpi("Invertido", last.invested_eur|eur, "capital aportado") }}
+  {{ ui.kpi("Ganancia", gain|eur(signed=True), "valor − invertido", "income" if gain >= 0 else "expense") }}
+</div>
+
+<section class="card chart-card section">
+  <div class="head">
+    <h3>Valor frente a capital invertido</h3>
+  </div>
+  {{ ui.chart("ch-hist", chart, "Evolución del valor de la cartera", "tall", legend=True) }}
+  <form class="section" action="/inversiones/evolucion" method="get">
+    <input type="hidden" name="periodo" value="{{ periodo }}">
+    <label class="field"><span>Comparar con</span>
+      <select class="input" name="benchmark" data-autosubmit>
+        {% for key, label in benchmarks %}<option value="{{ key }}" {% if key == benchmark %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+  </form>
+  {% if benchmark and not benchmark_name %}
+  <p class="note">Las cotizaciones de este índice aún no se han descargado. Selecciónalo una vez en la aplicación del PC.</p>
+  {% else %}
+  <p class="note">El índice recibe las mismas aportaciones y retiradas que tu cartera, en las mismas fechas.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

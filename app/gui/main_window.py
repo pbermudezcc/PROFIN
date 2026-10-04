@@ -90,7 +90,7 @@ class MainWindow(QWidget):
     Main application window — fullscreen shell with sidebar navigation.
     """
 
-    SETTINGS_ORG = "GEVernova"
+    SETTINGS_ORG = "FAMILYFIN"
     SETTINGS_APP = "FAMILYFIN"
     KEY_THEME    = "ui/theme"
     KEY_NAV      = "ui/last_nav"
@@ -109,6 +109,7 @@ class MainWindow(QWidget):
         self._settings = QSettings(self.SETTINGS_ORG, self.SETTINGS_APP)
         self._nav_btns: dict[str, _NavButton] = {}
         self._current_view = ""
+        self._stale_views: set[str] = set()
 
         self.setWindowTitle(f"{APP_NAME}  v{APP_VERSION}")
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
@@ -127,6 +128,10 @@ class MainWindow(QWidget):
         self._auto_backup_timer.timeout.connect(self._run_auto_backup)
         self._auto_backup_timer.start()
         QTimer.singleShot(0, self._run_auto_backup)
+
+        # Changes made from the LAN web front-end (queued from its thread).
+        from app.gui.web_bridge import web_bridge
+        web_bridge().data_changed.connect(self._on_web_data_changed)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -498,7 +503,41 @@ class MainWindow(QWidget):
 
         self._stack.setCurrentWidget(self._ensure_view(view_key))
         self._current_view = view_key
+        if view_key in self._stale_views:
+            self._reload_view(view_key)
         self._settings.setValue(self.KEY_NAV, view_key)
+
+    # ------------------------------------------------------------------
+    # Web front-end changes
+    # ------------------------------------------------------------------
+
+    _RELOAD_METHODS = ("refresh_data", "refresh", "reload", "_load_data")
+
+    def _on_web_data_changed(self, user_id: int, _area: str) -> None:
+        """Someone changed this user's data from a phone: drop the cached ORM
+        state and reload the visible view; the others reload on next visit."""
+        if user_id != self._user.id:
+            return
+        try:
+            self._session.expire_all()
+        except Exception:
+            logging.getLogger(__name__).exception("Web: no se pudo refrescar la sesión")
+            return
+        self._stale_views = set(self._views)
+        if self._current_view in self._views:
+            self._reload_view(self._current_view)
+
+    def _reload_view(self, view_key: str) -> None:
+        self._stale_views.discard(view_key)
+        view = self._views.get(view_key)
+        for name in self._RELOAD_METHODS:
+            method = getattr(view, name, None)
+            if callable(method):
+                try:
+                    method()
+                except Exception:
+                    logging.getLogger(__name__).exception("Web: recarga de la vista %s", view_key)
+                return
 
     def closeEvent(self, event) -> None:
         # Views with background threads (Inversiones price refresh, Yahoo
@@ -994,7 +1033,7 @@ class MainWindow(QWidget):
 
             # Clear last user from settings and return to login
             from PySide6.QtCore import QSettings
-            settings = QSettings("GEVernova", "FAMILYFIN")
+            settings = QSettings("FAMILYFIN", "FAMILYFIN")
             settings.remove("auth/last_username")
 
             self._session.close()

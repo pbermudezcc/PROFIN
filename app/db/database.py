@@ -199,10 +199,16 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 
 def _set_sqlite_pragma(dbapi_conn, _connection_record) -> None:
-    """Enable foreign keys and WAL mode for every new connection."""
+    """Enable foreign keys and WAL mode for every new connection.
+
+    busy_timeout: the desktop app and the LAN web server write to the same
+    file; a writer waits up to 5 s for the other instead of failing with
+    "database is locked".
+    """
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON")
     cursor.execute("PRAGMA journal_mode = WAL")
+    cursor.execute("PRAGMA busy_timeout = 5000")
     cursor.close()
 
 

@@ -1,0 +1,55 @@
+{# Reusable UI pieces. Import with: {% import "_ui.html" as ui %} #}
+
+{% macro icon(name, cls="") -%}
+<svg class="i {{ cls }}" aria-hidden="true"><use href="{{ asset('icons/sprite.svg') }}#{{ name }}"></use></svg>
+{%- endmacro %}
+
+{% macro signed(value) -%}
+<span class="num {{ 'pos' if value > 0 else ('neg' if value < 0 else '') }}">{{ value|eur(signed=True) }}</span>
+{%- endmacro %}
+
+{% macro amount(value) -%}
+<span class="num amt {{ 'pos' if value > 0 else '' }}">{{ value|eur(signed=True) if value > 0 else value|eur }}</span>
+{%- endmacro %}
+
+{% macro kpi(label, value, sub="", dot="", cls="") -%}
+<div class="kpi {{ cls }}">
+  <div class="k">{% if dot %}<i class="dot {{ dot }}"></i>{% endif %}{{ label }}</div>
+  <div class="v num">{{ value }}</div>
+  {% if sub %}<div class="s">{{ sub }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Chart canvas: data is a dict consumed by static/js/charts.js. A <details>
+   table gives VoiceOver users (and anyone) the exact numbers. #}
+{% macro chart(id, data, label, cls="", legend=False, money=True) -%}
+<div class="chart-box {{ cls }}">
+  <canvas id="{{ id }}" role="img" aria-label="{{ label }}" data-chart="{{ data|tojson_attr }}" data-money="{{ 1 if money else 0 }}"></canvas>
+</div>
+{% if legend %}<div class="legend" data-legend-for="{{ id }}"></div>{% endif %}
+{%- endmacro %}
+
+{% macro empty(title, text="", icon_name="info") -%}
+<div class="empty">
+  <div class="art">{{ icon(icon_name) }}</div>
+  <h3>{{ title }}</h3>
+  {% if text %}<p>{{ text }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro initials(name) -%}{{ (name or "?")[:1]|upper }}{%- endmacro %}
+
+{% macro chip(name, color_index=None) -%}
+{% if name %}<span class="chip"><i class="sw" data-swatch="{{ name }}"></i><span>{{ name }}</span></span>
+{% else %}<span class="chip none"><span>Sin categoría</span></span>{% endif %}
+{%- endmacro %}
+
+{% macro large_title(title, sub="") -%}
+<div class="large-title">
+  <div>
+    <h1>{{ title }}</h1>
+    {% if sub %}<div class="sub">{{ sub }}</div>{% endif %}
+  </div>
+  {{ caller() if caller else "" }}
+</div>
+{%- endmacro %}

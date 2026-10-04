@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Importaciones{% endblock %}
+{% block topbar %}<a class="back" href="/mas">{{ ui.icon("left", "sm") }} Más</a><span class="title-sm">Importaciones</span>{% endblock %}
+{% block content %}
+{% call ui.large_title("Importaciones") %}{% endcall %}
+{% if batches %}
+<div class="list">
+  {% for b in batches %}
+  {% set st = b.status.value if b.status.value is defined else b.status %}
+  <div class="row">
+    <div class="ic {{ 'income' if st == 'completed' else ('expense' if st == 'failed' else 'accent') }}">{{ ui.icon("upload", "sm") }}</div>
+    <div class="body">
+      <div class="t">{{ b.filename }}</div>
+      <div class="d faint">{{ b.import_timestamp.strftime("%d/%m/%Y %H:%M") }} · {{ b.rows_imported }} importados · {{ b.rows_skipped }} omitidos</div>
+    </div>
+    <span class="badge {{ 'pos' if st == 'completed' else ('neg' if st == 'failed' else 'warn') }}">{{ {"completed": "completa", "failed": "fallida", "partial": "parcial", "pending": "pendiente"}.get(st, st) }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ ui.empty("Sin importaciones", "", "upload") }}</div>
+{% endif %}
+{% endblock %}

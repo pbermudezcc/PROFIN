@@ -1,0 +1,8 @@
+{% call ui.large_title("Inversiones") %}
+  <button class="icon-btn acc" type="button" hx-get="/inversiones/operaciones/nueva" hx-target="#sheet-body" hx-push-url="false" data-open-sheet aria-label="Nueva operación">{{ ui.icon("plus", "sm") }}</button>
+{% endcall %}
+<nav class="pills" aria-label="Secciones de inversiones">
+  {% for key, label, href in tabs %}
+  <a href="{{ href }}" class="{{ 'on' if tab == key else '' }}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>

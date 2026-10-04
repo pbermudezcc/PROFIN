@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Fiscalidad · Inversiones{% endblock %}
+{% block content %}
+{% include "_inv_head.html" %}
+
+<div class="split">
+  <div class="seg" aria-label="Año fiscal">
+    {% for y in years %}<a href="/inversiones/fiscal?anio={{ y }}" class="{{ 'on' if y == year else '' }}">{{ y }}</a>{% endfor %}
+  </div>
+</div>
+<a class="btn ghost block" href="/inversiones/fiscal/{{ year }}.xlsx" hx-boost="false" download>{{ ui.icon("download", "sm") }} Descargar Excel {{ year }}</a>
+
+<div class="section-h"><h2>Ganancias y pérdidas</h2></div>
+<div class="kpis k4">
+  {{ ui.kpi("Resultado neto", r.net_eur|eur(signed=True), "ganancias + pérdidas", "income" if r.net_eur >= 0 else "expense") }}
+  {{ ui.kpi("Ganancias", r.gains_eur|eur, "", "income") }}
+  {{ ui.kpi("Pérdidas", r.losses_eur|eur, "", "expense") }}
+  {{ ui.kpi("Computable", r.computable_net_eur|eur(signed=True), "sin pérdidas bloqueadas", "warning" if r.blocked_losses_eur else "") }}
+</div>
+{% if r.blocked_losses_eur %}
+<div class="alert warn section">{{ ui.icon("info", "sm") }}<span>{{ (-r.blocked_losses_eur)|eur }} de pérdidas no computan este año por la regla de recompra (2 meses en cotizados, 1 año en fondos).</span></div>
+{% endif %}
+
+{% if r.sales %}
+<div class="list section">
+  {% for s in r.sales %}
+  <div class="row">
+    <div class="ic sym {{ 'income' if s.gain_eur >= 0 else 'expense' }}">{{ s.security.symbol.split(".")[0][:4] }}</div>
+    <div class="body">
+      <div class="t">{{ s.security.name }}</div>
+      <div class="d"><span class="faint">{{ s.sell_date|sdate }} · {{ s.quantity|qty }} acc. · compradas {{ s.acquired|fdate }}</span>{% if s.blocked_eur %}<span class="badge warn">bloqueada</span>{% endif %}</div>
+    </div>
+    <div class="end">{{ ui.signed(s.gain_eur) }}<div class="faint num">{{ s.proceeds_eur|eur }}</div></div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card section">{{ ui.empty("Sin ventas en " ~ year, "", "receipt") }}</div>
+{% endif %}
+
+<div class="section-h"><h2>Dividendos</h2></div>
+<div class="kpis">
+  {{ ui.kpi("Bruto", r.dividends_gross_eur|eur, "", "income") }}
+  {{ ui.kpi("Retenido", r.dividends_withheld_eur|eur) }}
+  {{ ui.kpi("Neto", r.dividends_net_eur|eur) }}
+</div>
+{% if r.dividends %}
+<div class="list section">
+  {% for d in r.dividends %}
+  <div class="row">
+    <div class="ic income">{{ ui.icon("wallet", "sm") }}</div>
+    <div class="body"><div class="t">{{ d.security.name }}</div><div class="d faint">{{ d.pay_date|sdate }} · {{ d.broker }}</div></div>
+    <div class="end"><span class="num amt">{{ d.gross_eur|eur }}</span><div class="faint num">ret. {{ d.withheld_eur|eur }}</div></div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+<p class="note">Orientativo: revisa los datos fiscales que te envía cada bróker antes de presentar la declaración.</p>
+{% endblock %}

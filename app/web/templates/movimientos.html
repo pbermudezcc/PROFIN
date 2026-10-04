@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Movimientos{% endblock %}
+{% block content %}
+{% call ui.large_title("Movimientos") %}
+  <button class="icon-btn" type="button" data-toggle="#filters" aria-label="Filtros" aria-controls="filters">{{ ui.icon("filter", "sm") }}</button>
+{% endcall %}
+
+<form id="tx-filters" action="/movimientos" method="get"
+      hx-get="/movimientos" hx-target="#tx-results" hx-select="#tx-results" hx-swap="outerHTML" hx-push-url="true"
+      hx-trigger="input changed delay:350ms from:input[name=q], change">
+  <label class="search">
+    {{ ui.icon("search", "sm") }}
+    <span class="sr-only">Buscar</span>
+    <input class="input" type="search" name="q" value="{{ params.get('q', '') }}" placeholder="Buscar por concepto o comercio" enterkeyhint="search" maxlength="100">
+  </label>
+  <div id="filters" class="filters" {% if not show_filters %}hidden{% endif %}>
+    <label class="field"><span>Tipo</span>
+      <select class="input" name="tipo">
+        <option value="">Todos</option>
+        {% for value, label in types %}<option value="{{ value }}" {% if params.get('tipo') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Categoría</span>
+      <select class="input" name="categoria">
+        <option value="">Todas</option>
+        <option value="sin" {% if params.get('categoria') == 'sin' %}selected{% endif %}>Sin categoría</option>
+        {% for group, cats in groups.items() %}
+        <optgroup label="{{ group }}">
+          {% for c in cats %}<option value="{{ c.id }}" {% if params.get('categoria') == c.id|string %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    {% if accounts|length > 1 %}
+    <label class="field"><span>Cuenta</span>
+      <select class="input" name="cuenta">
+        <option value="">Todas</option>
+        {% for a in accounts %}<option value="{{ a.id }}" {% if params.get('cuenta') == a.id|string %}selected{% endif %}>{{ a.account_name }}{% if a.iban_last4 %} ··{{ a.iban_last4 }}{% endif %}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="field"><span>Desde</span><input class="input" type="date" name="desde" value="{{ params.get('desde', '') }}"></label>
+    <label class="field"><span>Hasta</span><input class="input" type="date" name="hasta" value="{{ params.get('hasta', '') }}"></label>
+    <div class="form-grid two">
+      <label class="field"><span>Importe mín.</span><input class="input" name="min" inputmode="decimal" value="{{ params.get('min', '') }}" placeholder="0"></label>
+      <label class="field"><span>Importe máx.</span><input class="input" name="max" inputmode="decimal" value="{{ params.get('max', '') }}" placeholder="∞"></label>
+    </div>
+    {% if params.get('cat_nombre') %}<input type="hidden" name="cat_nombre" value="{{ params.get('cat_nombre') }}">{% endif %}
+  </div>
+</form>
+
+<div id="tx-results">
+<p class="faint section">{{ total }} {{ "resultado" if total == 1 else "resultados" }}</p>
+{% if has_filters %}
+<div class="wrap-gap section">
+  {% if params.get('cat_nombre') %}<span class="badge acc">{{ ui.icon("tag", "xs") }} {{ params.get('cat_nombre') }}</span>{% endif %}
+  {% if params.get('desde') or params.get('hasta') %}<span class="badge">{{ ui.icon("calendar", "xs") }} {{ params.get('desde', '…') }} → {{ params.get('hasta', '…') }}</span>{% endif %}
+  <a class="btn ghost sm" href="/movimientos">{{ ui.icon("close", "xs") }} Quitar filtros</a>
+</div>
+{% endif %}
+
+<div class="section">
+{% if rows %}
+  <div class="list" id="tx-list">
+    {% include "partials/tx_rows.html" %}
+  </div>
+{% else %}
+  <div class="card">{{ ui.empty("Sin resultados", "Cambia la búsqueda o los filtros.", "search") }}</div>
+{% endif %}
+</div>
+</div>
+{% endblock %}
