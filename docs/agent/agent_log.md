@@ -176,3 +176,12 @@ Entry format:
 - Validation: `python -m pytest -q` → 427 passed (316 before). Real HTTPS server tested (CA chain, SAN, TLS 1.1 refused, onboarding serves only the CA). Screenshots on a synthetic demo DB at iPhone (390×844, light/dark) and iPad sizes via headless Chrome; desktop page rendered. PyInstaller build checked: all web modules and templates/static bundled.
 - Lessons: see lessons_learned.md (Origin: null under no-referrer; Chart.js resize loop in `1fr` grids).
 - Follow-up: user enables it on the PC, allows the firewall prompt on private networks only, and runs "Configurar dispositivo" once per iPhone/iPad. Future parity phases: imports by upload, rules/categories editing.
+
+## 2026-10-04 — Release v0.5.0
+- Type: release
+- Version / channel / tag: 0.5.0 / R (stable, main) / `v0.5.0` (annotated, notes as message)
+- Commit: `0f411fd` chore(release): v0.5.0 — on top of `36f2d08` (settings rename), `82e73b2` (MyInvestor F7b), `0f9f5c0` (LAN web access) and Inversiones F0–F7.
+- Asset: `PROFIN.R.0.5.0-windows.zip` attached to https://github.com/pbermudezcc/PROFIN/releases/tag/v0.5.0
+- Snapshot: `versions/FAMILYFIN.R.0.5.0.md/.prj` (ExportVersionHandler); CHANGELOG entry with the full notes.
+- Validation: preflight → 430 passed; verify-notes OK; postflight OK (local) and OK `--published`.
+- Note: schema v3 → v5 on first start for 0.4.0 installs (automatic copy `profin.pre-migration-v5.*.db`).
