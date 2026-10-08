@@ -233,3 +233,14 @@ Entry format:
 - Validation: preflight → 458 passed; verify-notes OK; postflight OK (local) and OK `--published`.
 - Note: no schema migration.
 - Environment: released from the laptop on a public Wi-Fi. Windows Smart App Control (enforce mode) blocked native DLLs of pandas 3.0.5 (`_libs/parsers`) and 3.0.6 (`_libs/pandas_parser`), so the test gate could not run. pandas 3.0.3 (also 2.3.3 / 2.2.3) loads: the full suite was first run against an isolated 3.0.3 (458 passed), then the global install was moved to 3.0.3; the build bundles that same 3.0.3 binary. If imports fail again with "An Application Control policy has blocked this file", check Microsoft-Windows-CodeIntegrity/Operational and try another pandas build in an isolated `pip --target` folder before touching the global install.
+
+## 2026-10-09 — Session close: v0.7.0 (categorize similar movements + rule from picker), pandas/Smart App Control
+- Type: session summary
+- Done this session (laptop, public Wi-Fi, on holidays):
+  1. Diagnosed the web server not starting: Smart App Control blocks pandas 3.0.5 DLLs. Web server made resilient (`7e32a36`); see lessons_learned 2026-10-08.
+  2. Feature requested by the family: in the category picker (desktop dialog and web sheet), two unticked checkboxes — "Aplicar también a N movimientos iguales" (same merchant key + same type, only uncategorized, set as manual) and "Crear una regla para los próximos" (exact-match rule on the merchant, offered only when no rule matches; applied at once to uncategorized). No extra windows (`07e0bf3`).
+  3. pandas 3.0.3 found to load; full suite 458 passed; release v0.7.0 published (see the release entry above). pandas pinned to 3.0.3 in requirements.txt (`bfaf7a0`).
+  4. New versioning scheme from the user, written into the release skill (`b2be0fe`): X = release version (user decides), Y = main development milestone, Z = each feature/fix. Next small change → 0.7.1.
+- Not verified yet: the new checkboxes in the real running app (only tests + build); the user had to restart FAMILYFIN to load v0.7.0 code.
+- Still open from before: a real CaixaBank statement uploaded from the iPad.
+- Next session: W9 — investments admin from the web (`docs/web_parity_plan.md` → "W9"); first agree W9a–W9e order and scope with the user.

@@ -128,3 +128,10 @@ Entry format:
 - Root cause: a preview that was never confirmed nor cancelled is only cleaned on expiry or WebServer.stop(); tests (and a crash) never call stop(). FastAPI here has no `add_event_handler`, so a shutdown hook was not an option.
 - Fix: `sweep_orphans()` removes folders older than the preview TTL when the app is created; the test fixture clears the store on teardown (app/web/uploads.py, app/web/app.py, tests/test_web.py).
 - Prevention: `tests/test_web.py::test_orphaned_upload_folders_are_swept`; check %TEMP% after test runs that touch uploads.
+
+## 2026-10-08 — Windows Smart App Control blocks pandas DLLs (web server "Detenido - Error")
+- Area: environment / web / imports
+- Symptom: on the laptop (public Wi-Fi, holidays) the web server stayed in "Detenido - Error"; log: `ImportError: DLL load failed while importing parsers: An Application Control policy has blocked this file.`
+- Root cause: Smart App Control (enforce mode) refused `pandas/_libs/parsers.cp311-win_amd64.pyd` of pandas 3.0.5 (pandas 3.0.6 was worse: `pandas_parser` blocked). The web imports router imported the ingestion pipeline (and pandas) at startup, so one blocked DLL took the whole web server down.
+- Fix: lazy import of the ingestion pipeline in `app/web/routers/imports.py` (Importar shows "no disponible" instead) — `7e32a36`; global pandas moved to 3.0.3, which loads, and pinned in requirements.txt — `bfaf7a0`.
+- Prevention: when a native import fails, read `Microsoft-Windows-CodeIntegrity/Operational` first (events 3033/3077/3118). Test candidate versions in an isolated `pip install --target <scratch>` + PYTHONPATH and run the full suite there before changing the global install. Never "fix" it by upgrading blindly — new builds have no reputation yet.
