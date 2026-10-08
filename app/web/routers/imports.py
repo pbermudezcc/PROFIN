@@ -21,9 +21,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import Account, AuditAction, ImportBatch, Transaction
-from app.ingestion.import_service import ensure_default_account, run_import, user_accounts
-from app.ingestion.importer import prepare_import
-from app.ingestion.validator import ValidationError
 from app.web.deps import DB, USER, WebUser, notify_change
 from app.web.render import audit, parse_int, render
 from app.web.uploads import remove_directory
@@ -33,6 +30,12 @@ router = APIRouter()
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
 EXTENSIONS = {".xls": b"\xd0\xcf\x11\xe0", ".xlsx": b"PK\x03\x04"}   # OLE2 / ZIP signatures
+UNAVAILABLE = ("La importación no está disponible en este equipo: Windows ha bloqueado una librería "
+               "necesaria (pandas). Puedes importar el extracto desde la aplicación de escritorio más tarde.")
+
+# The ingestion pipeline (and pandas, whose native DLLs Windows Smart App
+# Control can block) is imported inside the handlers, so a blocked pandas
+# only disables importing instead of keeping the whole web server down.
 
 
 class UploadRejected(ValueError):
@@ -72,7 +75,8 @@ def _page(request: Request, db: Session, user: WebUser, error: Optional[str] = N
         .order_by(ImportBatch.import_timestamp.desc()).limit(5).all()
     )
     return render(request, "importar.html", {
-        "accounts": user_accounts(db, user.id), "account_id": account_id, "error": error,
+        "accounts": db.query(Account).filter(Account.user_id == user.id).order_by(Account.id).all(),
+        "account_id": account_id, "error": error,
         "batches": batches, "max_mb": MAX_FILE_BYTES // (1024 * 1024),
     }, user=user, active="importar")
 
@@ -95,6 +99,13 @@ def import_upload(
         name, data = _read_upload(fichero)
     except UploadRejected as exc:
         return _page(request, db, user, error=str(exc), account_id=account_id)
+    try:
+        from app.ingestion.import_service import ensure_default_account
+        from app.ingestion.importer import prepare_import
+        from app.ingestion.validator import ValidationError
+    except ImportError:
+        logger.exception("Web: no se pudo cargar el módulo de importación")
+        return _page(request, db, user, error=UNAVAILABLE, account_id=account_id)
 
     if account_id is None:
         account = ensure_default_account(db, user.id)
@@ -181,6 +192,8 @@ def import_preview(request: Request, token: str, user: WebUser = USER, db: Sessi
 @router.post("/importar/{token}/confirmar")
 def import_confirm(request: Request, token: str, importar: List[str] = Form([]),
                    user: WebUser = USER, db: Session = DB) -> Response:
+    from app.ingestion.import_service import run_import   # loaded already: a preview exists
+
     item = _pending(request, user, token)
     review = set(item.preview.duplicate_result.needs_review)
     chosen = {parse_int(v) for v in importar}
