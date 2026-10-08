@@ -223,3 +223,13 @@ Entry format:
   4. New dev tool `tools/web_preview.py`: web preview on a demo DB (localhost only, demo/demo-pass) with live CSS/JS reload, device-width frame and a demo statement for /importar.
 - Not verified yet: a real CaixaBank statement uploaded from the iPad (the user will try it on v0.6.0).
 - Next session: W9 — investments admin from the web. Brief with the existing Qt-free functions, what must be extracted and the risks (shared price-refresh lock with the desktop, dismissed events moving from QSettings to the DB = schema migration): `docs/web_parity_plan.md` → "W9".
+
+## 2026-10-09 — Release v0.7.0
+- Type: release
+- Version / channel / tag: 0.7.0 / R (stable, main) / `v0.7.0` (annotated, notes as message)
+- Commit: `d7e99bb` chore(release): v0.7.0 — on top of `07e0bf3` (feat: apply category to similar movements + create rule from the picker, desktop and web) and `7e32a36` (fix: web server survives a blocked pandas; imports router loads the ingestion pipeline lazily).
+- Asset: `PROFIN.R.0.7.0-windows.zip` attached to https://github.com/pbermudezcc/PROFIN/releases/tag/v0.7.0 (local copy kept in dist/)
+- Snapshot: `versions/FAMILYFIN.R.0.7.0.md/.prj`; CHANGELOG entry with the full notes.
+- Validation: preflight → 458 passed; verify-notes OK; postflight OK (local) and OK `--published`.
+- Note: no schema migration.
+- Environment: released from the laptop on a public Wi-Fi. Windows Smart App Control (enforce mode) blocked native DLLs of pandas 3.0.5 (`_libs/parsers`) and 3.0.6 (`_libs/pandas_parser`), so the test gate could not run. pandas 3.0.3 (also 2.3.3 / 2.2.3) loads: the full suite was first run against an isolated 3.0.3 (458 passed), then the global install was moved to 3.0.3; the build bundles that same 3.0.3 binary. If imports fail again with "An Application Control policy has blocked this file", check Microsoft-Windows-CodeIntegrity/Operational and try another pandas build in an isolated `pip --target` folder before touching the global install.
