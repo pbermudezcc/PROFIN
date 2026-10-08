@@ -5,6 +5,42 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.7.0.md`  |  **Files:** 117  |  **Handler:** v1.0.0
+**Date:** 2026-10-09 00:26  |  **Type:** Release
+**Description:** Al poner la categoría de un movimiento ahora puedes aplicarla de una vez a todos los movimientos iguales que estén sin categoría, y crear una regla para que los próximos de ese comercio se categoricen solos. Son dos casillas opcionales en la misma ventana de siempre, desmarcadas por defecto, así que nada cambia si no las usas. Además, el acceso web ya no deja de funcionar si Windows bloquea una librería de importación.
+
+### Novedades
+
+- Al elegir la categoría de un movimiento (en la aplicación y en la web) aparece la casilla «Aplicar también a N movimientos iguales»: pone la misma categoría a los movimientos sin categoría del mismo comercio y del mismo tipo (un gasto nunca se mezcla con una devolución). Solo aparece cuando hay movimientos iguales y nunca cambia categorías puestas a mano. Junto a ella, la casilla «Crear una regla para los próximos» crea una regla de coincidencia exacta con ese comercio, la aplica ya a los movimientos sin categoría y la usa en las próximas importaciones; solo se ofrece si todavía no hay ninguna regla que cubra ese movimiento (`07e0bf3`)
+
+### Correcciones
+
+- El acceso web ya no se queda en «Detenido - Error» cuando Windows (Smart App Control) bloquea la librería pandas: el resto de la web funciona con normalidad y solo la página Importar avisa de que no está disponible en ese equipo (`7e32a36`)
+
+### Interno
+
+- Documentación de la sesión anterior, plan de la siguiente fase de la web (W9, inversiones) y una herramienta para previsualizar la web durante el desarrollo (`9583651`)
+- Registro de la publicación de la versión 0.6.0 (`5998714`)
+
+### Áreas afectadas
+
+- **Categorías y reglas**: `app/categorization/admin_service.py`, `app/categorization/category_manager.py`
+- **Interfaz**: `app/gui/transactions_view.py`
+- **Tests**: `tests/test_category_manager.py`, `tests/test_web.py`
+- **Herramientas de desarrollo y agentes**: `tools/web_preview.py`
+- **Documentación**: `docs/agent/agent_log.md`, `docs/web_parity_plan.md`
+
+<details><summary>Commits incluidos (4 desde v0.6.0)</summary>
+
+- `07e0bf3` feat(categorization): apply a category to similar movements and create a rule from the picker
+- `7e32a36` fix(web): keep the web server up when pandas is blocked by Windows
+- `9583651` docs: close W6-W8 session, W9 brief and web preview dev tool
+- `5998714` docs(agent_log): record v0.6.0 release
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.6.0.md`  |  **Files:** 116  |  **Handler:** v1.0.0
 **Date:** 2026-10-04 21:46  |  **Type:** Release
 **Description:** La web de FAMILYFIN para el iPad y el iPhone estrena un diseño más profesional y pasa a permitir la gestión completa de categorías y reglas automáticas. Además, ya se pueden importar los extractos de CaixaBank directamente desde el iPad, con vista previa y detección de duplicados antes de guardar nada. No hay cambios en la base de datos: basta con instalar la nueva versión.
