@@ -68,12 +68,17 @@ skip it. Do not pass `--skip-tests` for a real release.
 python tools/release_tools.py draft --version <provisional> --out dist/release-notes-v<provisional>.md
 ```
 Read the draft's facts (commits since the last tag, changed areas, schema
-`vA → vB`, agent-log titles) and propose per SemVer:
-- **MAJOR** — removes a feature, requires manual action, or data could not
-  migrate automatically.
-- **MINOR** — new features, **or any schema migration** (the family's DB is
-  upgraded on first start; they must know).
-- **PATCH** — fixes/polish only, no migration.
+`vA → vB`, agent-log titles) and propose per the user's scheme (from
+2026-10-09) — `X.Y.Z`:
+- **X — release version**: a new generation of the app the user decides to
+  call a release (e.g. 1.0.0). Only when the user asks for it.
+- **Y — main development version**: a main development milestone — a big new
+  area or programme phase (e.g. web parity W6–W8, a new module/view).
+- **Z — feature version**: each feature or fix added on top (e.g. v0.7.0's
+  "apply to similar / create rule" would now be 0.6.1).
+
+A schema migration does not force a bump of X or Y, but the notes must
+keep the `### Antes de actualizar` warning (verify-notes enforces it).
 
 State the version and a one-line reason; the user confirms or overrides.
 If it changed, regenerate the draft with the final version.
