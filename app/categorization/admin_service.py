@@ -220,6 +220,43 @@ def add_rule(session: Session, user_id: int, category_id: Optional[int], pattern
     return create_rule(session, cat_id, pattern, kind, priority, user_id=user_id)
 
 
+def transaction_has_rule(session: Session, user_id: int, transaction_id: int) -> bool:
+    """True when an existing rule (personal or global) already matches this
+    transaction's text — then the category picker offers no new rule."""
+    result = apply_rules(session, [transaction_id], user_id)
+    return transaction_id in result.assigned or transaction_id in result.conflicts
+
+
+@dataclass
+class RuleFromTransaction:
+    rule: AutoCategorizationRule
+    categorized_ids: List[int]      # uncategorized transactions the new rule filled at once
+
+
+def add_rule_from_transaction(session: Session, user_id: int, transaction_id: int,
+                              category_id: int) -> Optional[RuleFromTransaction]:
+    """
+    "Crear regla" from the category picker: an exact rule on the merchant
+    (or, without one, the full concept) pointing at category_id, applied
+    right away to the user's uncategorized transactions — what the next
+    Movimientos refresh would do anyway.
+
+    Returns None (and creates nothing) when a rule already matches the
+    transaction. Raises NotFound for another user's transaction or category.
+    """
+    txn = session.get(Transaction, transaction_id)
+    if txn is None or txn.user_id != user_id:
+        raise NotFound("Movimiento no encontrado.")
+    pattern = (txn.issuer_name or txn.concept or "").strip()
+    if not pattern or len(pattern) > MAX_PATTERN or transaction_has_rule(session, user_id, transaction_id):
+        return None
+    rule = add_rule(session, user_id, category_id, pattern, MatchType.exact.value)
+    ids = [row.id for row in session.query(Transaction.id).filter(
+        Transaction.user_id == user_id, Transaction.category_id.is_(None))]
+    result = apply_rules_and_commit(session, ids, user_id) if ids else RulesEngineResult()
+    return RuleFromTransaction(rule, list(result.assigned))
+
+
 def edit_rule(session: Session, user_id: int, rule_id: int, category_id: Optional[int],
               pattern: Optional[str], match_type: Optional[str],
               priority: Optional[int]) -> AutoCategorizationRule:

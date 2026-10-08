@@ -16,7 +16,8 @@ from app.analytics.transaction_search import (
     search_transactions,
     user_accounts,
 )
-from app.categorization.category_manager import assign_user_transaction_category
+from app.categorization.admin_service import add_rule_from_transaction, transaction_has_rule
+from app.categorization.category_manager import assign_user_transaction_category, similar_uncategorized_ids
 from app.db.models import AuditAction, Category, CategoryLevel, TransactionType
 from app.web.deps import DB, USER, WebUser, notify_change
 from app.web.render import audit, hx_trigger, is_htmx, parse_date, parse_float, parse_int, render
@@ -126,6 +127,8 @@ def transaction_detail(
         "row": row,
         "groups": ordered,
         "total_categories": sum(len(c) for c in groups.values()),
+        "similar": len(similar_uncategorized_ids(db, transaction_id)),
+        "can_rule": not transaction_has_rule(db, user.id, transaction_id),
         "type_labels": TYPE_LABELS,
     }, user=user)
 
@@ -135,6 +138,8 @@ def set_category(
     request: Request,
     transaction_id: int,
     category_id: str = Form(""),
+    similares: str = Form(""),
+    regla: str = Form(""),
     user: WebUser = USER,
     db: Session = DB,
 ) -> Response:
@@ -142,21 +147,39 @@ def set_category(
     before = get_transaction_row(db, user.id, transaction_id)
     if before is None:
         raise HTTPException(status_code=404)
+    similar = similar_uncategorized_ids(db, transaction_id) if similares and new_id is not None else []
     try:
-        assign_user_transaction_category(db, user.id, transaction_id, new_id)
+        changed = assign_user_transaction_category(db, user.id, transaction_id, new_id,
+                                                   apply_to_similar=bool(similar))
     except LookupError:
         raise HTTPException(status_code=404)
     audit(db, request, user, "transactions", transaction_id, AuditAction.update,
-          old=f"category_id={before.category_id}", new=f"category_id={new_id} (manual)")
+          old=f"category_id={before.category_id}",
+          new=f"category_id={new_id} (manual)"
+              + (f", también en {changed - 1} movimientos iguales" if changed > 1 else ""))
+    created = None
+    if regla and new_id is not None:
+        created = add_rule_from_transaction(db, user.id, transaction_id, new_id)
+        if created is not None:
+            rule = created.rule
+            audit(db, request, user, "auto_categorization_rules", rule.id, AuditAction.insert,
+                  new=f"«{rule.match_pattern}» {rule.match_type.value} → cat {rule.category_id} p{rule.priority}"
+                      f" (desde un movimiento; {len(created.categorized_ids)} categorizados)")
     notify_change(request, user, "transactions")
     row = get_transaction_row(db, user.id, transaction_id)
     if not is_htmx(request):
         return JSONResponse({"id": row.id, "category_id": row.category_id, "category": row.category_name})
     # Out-of-band swap: updates the row wherever the list is on screen and
     # is simply ignored on pages without it (Resumen).
-    response = render(request, "partials/tx_row.html",
-                      {"row": row, "type_labels": TYPE_LABELS, "oob": True}, user=user)
-    hx_trigger(response, toast="Categoría guardada", closeSheet=True)
+    others = similar + (created.categorized_ids if created else [])
+    rows = [row] + [r for r in (get_transaction_row(db, user.id, i) for i in others) if r is not None]
+    response = render(request, "partials/tx_rows_oob.html",
+                      {"rows": rows, "type_labels": TYPE_LABELS}, user=user)
+    total = changed + (len(created.categorized_ids) if created else 0)
+    toast = f"Categoría guardada en {total} movimientos" if total > 1 else "Categoría guardada"
+    if created:
+        toast += " · regla creada"
+    hx_trigger(response, toast=toast, closeSheet=True)
     return response
 
 

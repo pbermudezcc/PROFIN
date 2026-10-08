@@ -33,7 +33,10 @@ from app.db.models   import (
     Transaction, TransactionType, Category, CategoryLevel, User
 )
 from app.categorization.category_manager import (
-    assign_transaction_category, get_all_categories
+    assign_transaction_category, get_all_categories, similar_uncategorized_ids
+)
+from app.categorization.admin_service import (
+    add_rule_from_transaction, transaction_has_rule
 )
 from app.gui._style_utils import apply_card_shadow
 
@@ -437,7 +440,7 @@ class TransactionsView(QWidget):
         self._open_category_dialog(txn_id, row)
 
     def _open_category_dialog(self, txn_id: int, row: int) -> None:
-        from PySide6.QtWidgets import QDialog, QDialogButtonBox
+        from PySide6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox
 
         t   = self._t
         txn = self._session.get(Transaction, txn_id)
@@ -498,6 +501,38 @@ class TransactionsView(QWidget):
         """)
         layout.addWidget(cmb)
 
+        # Offered only when there is something to apply it to; unticked by
+        # default so a single change never spreads unless asked for.
+        similar = similar_uncategorized_ids(self._session, txn_id)
+        chk_similar = None
+        if similar:
+            n = len(similar)
+            chk_similar = QCheckBox(
+                f"Aplicar también a {n} movimiento{'s' if n != 1 else ''} "
+                f"igual{'es' if n != 1 else ''} sin categoría"
+            )
+            chk_similar.setToolTip(
+                f"Movimientos sin categoría de «{txn.issuer_name or txn.concept}» "
+                "del mismo tipo (gasto o ingreso)."
+            )
+            chk_similar.setStyleSheet(
+                f"color: {t['text_primary']}; font-size: 12px;"
+            )
+            layout.addWidget(chk_similar)
+
+        # Only when no rule covers this movement yet (unticked as well).
+        chk_rule = None
+        if not transaction_has_rule(self._session, self._user.id, txn_id):
+            chk_rule = QCheckBox("Crear una regla para los próximos movimientos iguales")
+            chk_rule.setToolTip(
+                f"Regla «coincidencia exacta» con «{txn.issuer_name or txn.concept}»: "
+                "se aplica ya a los movimientos sin categoría y a las próximas importaciones."
+            )
+            chk_rule.setStyleSheet(
+                f"color: {t['text_primary']}; font-size: 12px;"
+            )
+            layout.addWidget(chk_rule)
+
         btn_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel
@@ -524,9 +559,20 @@ class TransactionsView(QWidget):
 
         if dlg.exec() == QDialog.DialogCode.Accepted:
             new_cat_id = cmb.currentData()
-            assign_transaction_category(
-                self._session, txn_id, new_cat_id
+            changed = assign_transaction_category(
+                self._session, txn_id, new_cat_id,
+                apply_to_similar=chk_similar is not None and chk_similar.isChecked(),
             )
+            if chk_rule is not None and chk_rule.isChecked() and new_cat_id is not None:
+                created = add_rule_from_transaction(
+                    self._session, self._user.id, txn_id, new_cat_id
+                )
+                if created is not None and created.categorized_ids:
+                    changed += len(created.categorized_ids)
+            if changed > 1:
+                # Other rows on this page may have changed too.
+                self._load_data()
+                return
             # Update model cell directly (no full reload)
             cat_name = next(
                 (c.name for c in self._categories

@@ -431,18 +431,60 @@ def delete_category(
     logger.info("Categoría '%s' (id=%d) eliminada.", name, category_id)
 
 
+def _similarity_key(issuer_name: Optional[str], concept: Optional[str]) -> str:
+    """The text two movements must share to count as "the same": the merchant
+    (issuer_name) or, when the bank gives none, the full concept — compared
+    ignoring case and repeated spaces. Empty means "matches nothing"."""
+    return " ".join((issuer_name or concept or "").split()).casefold()
+
+
+def similar_uncategorized_ids(session: Session, transaction_id: int) -> List[int]:
+    """
+    IDs of the owner's other uncategorized transactions that look the same
+    as this one: same similarity key and same type (an expense never matches
+    a refund from the same shop). No fuzzy matching, so the count shown to
+    the user is exactly what "apply to similar" will change.
+    """
+    from app.db.models import Transaction  # local import to avoid circular
+
+    txn = session.get(Transaction, transaction_id)
+    if txn is None:
+        return []
+    key = _similarity_key(txn.issuer_name, txn.concept)
+    if not key:
+        return []
+    candidates = (
+        session.query(Transaction.id, Transaction.issuer_name, Transaction.concept)
+        .filter(
+            Transaction.user_id == txn.user_id,
+            Transaction.type == txn.type,
+            Transaction.category_id.is_(None),
+            Transaction.id != txn.id,
+        )
+        .all()
+    )
+    return [row.id for row in candidates if _similarity_key(row.issuer_name, row.concept) == key]
+
+
 def assign_transaction_category(
-    session:        Session,
-    transaction_id: int,
-    category_id:    Optional[int],
-) -> None:
+    session:          Session,
+    transaction_id:   int,
+    category_id:      Optional[int],
+    apply_to_similar: bool = False,
+) -> int:
     """
     Manually assign (or clear) the category of a transaction.
 
     Parameters
     ----------
-    transaction_id : Target transaction.
-    category_id    : New category ID, or None to clear.
+    transaction_id   : Target transaction.
+    category_id      : New category ID, or None to clear.
+    apply_to_similar : Also give the category to the transactions returned
+                       by similar_uncategorized_ids (ignored when clearing).
+
+    Returns
+    -------
+    Number of transactions changed, including this one.
 
     Raises
     ------
@@ -454,22 +496,31 @@ def assign_transaction_category(
     if txn is None:
         raise ValueError(f"Transacción con id={transaction_id} no encontrada.")
 
-    txn.category_id = category_id
-    # A manual choice is protected from rule re-runs; clearing the category
-    # hands the transaction back to the rules engine.
-    txn.category_source = CATEGORY_SOURCE_MANUAL if category_id is not None else None
+    targets = [txn]
+    if apply_to_similar and category_id is not None:
+        similar = similar_uncategorized_ids(session, transaction_id)
+        if similar:
+            targets += session.query(Transaction).filter(Transaction.id.in_(similar)).all()
+
+    for target in targets:
+        target.category_id = category_id
+        # A manual choice is protected from rule re-runs; clearing the
+        # category hands the transaction back to the rules engine.
+        target.category_source = CATEGORY_SOURCE_MANUAL if category_id is not None else None
     session.commit()
     logger.info(
-        "Transacción id=%d → category_id=%s (asignación manual).",
-        transaction_id, category_id
+        "Transacción id=%d → category_id=%s (asignación manual, %d movimientos).",
+        transaction_id, category_id, len(targets)
     )
+    return len(targets)
 
 def assign_user_transaction_category(
-    session:        Session,
-    user_id:        int,
-    transaction_id: int,
-    category_id:    Optional[int],
-) -> None:
+    session:          Session,
+    user_id:          int,
+    transaction_id:   int,
+    category_id:      Optional[int],
+    apply_to_similar: bool = False,
+) -> int:
     """
     assign_transaction_category for a caller that only knows the logged-in
     user (the web front-end): both the transaction and the category must
@@ -489,4 +540,4 @@ def assign_user_transaction_category(
         cat = session.get(Category, category_id)
         if cat is None or cat.user_id != user_id:
             raise LookupError("Categoría no encontrada.")
-    assign_transaction_category(session, transaction_id, category_id)
+    return assign_transaction_category(session, transaction_id, category_id, apply_to_similar)

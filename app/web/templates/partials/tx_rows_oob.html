@@ -1,0 +1,4 @@
+{# Rows changed by one category save (the movement and, with "apply to similar",
+   its matches), each swapped out-of-band wherever it is on screen. #}
+{% for row in rows %}{% with oob = True %}{% include "partials/tx_row.html" %}{% endwith %}
+{% endfor %}

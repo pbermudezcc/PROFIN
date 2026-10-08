@@ -28,8 +28,32 @@
     </div>
 
     {# Tapping a category saves it at once (no button to find at the end of a long list). #}
-    <form hx-post="/movimientos/{{ row.id }}/categoria" hx-trigger="change" hx-swap="none" data-cat-form>
+    {# Only a category tap saves: ticking "similares" just rides along with it. #}
+    <form hx-post="/movimientos/{{ row.id }}/categoria" hx-trigger="change[target.name=='category_id']" hx-swap="none" data-cat-form>
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      {% if similar or can_rule %}
+      <div class="list">
+        {% if similar %}
+        <label class="row">
+          <input class="check-lg" type="checkbox" name="similares" value="1">
+          <div class="body">
+            <div class="t">Aplicar también a {{ similar }} movimiento{{ "s" if similar != 1 }} igual{{ "es" if similar != 1 }}</div>
+            <div class="d faint">Sin categoría, de «{{ row.description }}» y del mismo tipo.</div>
+          </div>
+        </label>
+        {% endif %}
+        {% if can_rule %}
+        <label class="row">
+          <input class="check-lg" type="checkbox" name="regla" value="1">
+          <div class="body">
+            <div class="t">Crear una regla para los próximos</div>
+            <div class="d faint">Coincidencia exacta con «{{ row.description }}»: se aplica ya a los movimientos sin categoría y a las próximas importaciones.</div>
+          </div>
+        </label>
+        {% endif %}
+      </div>
+      <p class="faint t-sm">Marca las opciones antes de tocar la categoría.</p>
+      {% endif %}
       <div class="cat-picker" role="radiogroup" aria-label="Categoría">
         <div class="cat-group">
           <div class="opts">

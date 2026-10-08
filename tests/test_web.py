@@ -387,7 +387,7 @@ def test_category_sheet_saves_on_tap_and_lists_every_category(app, family, facto
     client = logged_in(app)
     html = client.get(f"/movimientos/{family['ana_txn']}").text
     form = re.search(r"<form[^>]*data-cat-form[^>]*>", html).group(0)
-    assert 'hx-trigger="change"' in form                       # saves on tap
+    assert "hx-trigger=\"change[target.name=='category_id']\"" in form   # saves on tap
     assert 'type="submit"' not in html                         # no button lost below the list
     assert html.count('name="category_id"') == expected + 1    # every category + "Sin categoría"
     assert "Nómina" in html and "Supermercados" in html
@@ -811,3 +811,71 @@ def test_orphaned_upload_folders_are_swept(tmp_path, monkeypatch):
     os.utime(old, (past, past))
     assert uploads.sweep_orphans() == 1
     assert not old.exists() and fresh.exists()
+
+
+def test_apply_category_to_similar_movements(app, family, factory):
+    db = factory()
+    try:
+        account_id = db.get(Transaction, family["ana_txn"]).account_id
+        twins = [Transaction(user_id=family["ana"], account_id=account_id, transaction_date=date.today(),
+                             amount=-3.0, type=TransactionType.expense, issuer_name="MERCADO ANA")
+                 for _ in range(2)]
+        db.add_all(twins)
+        db.commit()
+        twin_ids = [t.id for t in twins]
+    finally:
+        db.close()
+
+    client = logged_in(app)
+    sheet = client.get(f"/movimientos/{family['ana_txn']}").text
+    assert 'name="similares"' in sheet and "Aplicar también a 2 movimientos iguales" in sheet
+    assert "change[target.name=='category_id']" in sheet     # ticking the box alone does not save
+
+    response = client.post(f"/movimientos/{family['ana_txn']}/categoria",
+                           data={"category_id": family["ana_cat"], "similares": "1"},
+                           headers={**ORIGIN, "X-CSRF-Token": csrf_of(client), "HX-Request": "true"})
+    assert response.status_code == 200
+    assert response.text.count('hx-swap-oob="outerHTML"') == 3
+    assert "3 movimientos" in response.headers["hx-trigger"]
+    db = factory()
+    try:
+        for txn_id in twin_ids:
+            txn = db.get(Transaction, txn_id)
+            assert (txn.category_id, txn.category_source) == (family["ana_cat"], CATEGORY_SOURCE_MANUAL)
+        # beto's "MERCADO BETO" is a different merchant and another user: untouched.
+        assert db.get(Transaction, family["beto_txn"]).category_id is None
+    finally:
+        db.close()
+    # Nothing left to apply to: the box is no longer offered.
+    assert 'name="similares"' not in client.get(f"/movimientos/{family['ana_txn']}").text
+
+
+def test_category_sheet_can_create_a_rule(app, family, factory):
+    db = factory()
+    try:
+        account_id = db.get(Transaction, family["ana_txn"]).account_id
+        twin = Transaction(user_id=family["ana"], account_id=account_id, transaction_date=date.today(),
+                           amount=-3.0, type=TransactionType.expense, issuer_name="MERCADO ANA")
+        db.add(twin)
+        db.commit()
+        twin_id = twin.id
+    finally:
+        db.close()
+
+    client = logged_in(app)
+    assert 'name="regla"' in client.get(f"/movimientos/{family['ana_txn']}").text
+    response = client.post(f"/movimientos/{family['ana_txn']}/categoria",
+                           data={"category_id": family["ana_cat"], "regla": "1"},
+                           headers={**ORIGIN, "X-CSRF-Token": csrf_of(client), "HX-Request": "true"})
+    assert response.status_code == 200
+    assert "regla creada" in response.headers["hx-trigger"]
+    db = factory()
+    try:
+        rule = db.query(AutoCategorizationRule).one()
+        assert (rule.user_id, rule.match_pattern, rule.category_id) == (family["ana"], "MERCADO ANA", family["ana_cat"])
+        assert db.get(Transaction, twin_id).category_id == family["ana_cat"]
+        assert db.query(AuditLog).filter(AuditLog.table_affected == "auto_categorization_rules").count() == 1
+    finally:
+        db.close()
+    # Covered by a rule now: the option is gone.
+    assert 'name="regla"' not in client.get(f"/movimientos/{twin_id}").text
