@@ -244,3 +244,13 @@ Entry format:
 - Not verified yet: the new checkboxes in the real running app (only tests + build); the user had to restart FAMILYFIN to load v0.7.0 code.
 - Still open from before: a real CaixaBank statement uploaded from the iPad.
 - Next session: W9 — investments admin from the web (`docs/web_parity_plan.md` → "W9"); first agree W9a–W9e order and scope with the user.
+
+## 2026-10-11 — Release v0.7.1
+- Type: release
+- Version / channel / tag: 0.7.1 / R (stable, main) / `v0.7.1` (annotated, notes as message)
+- Commit: `042e53e` chore(release): v0.7.1 — on top of `8d99b1c` (docs: project README for GitHub, written for a friend the repo was shared with) and the v0.7.0 session commits (pandas pinned to 3.0.3, versioning scheme).
+- Asset: `PROFIN.R.0.7.1-windows.zip` attached to https://github.com/pbermudezcc/PROFIN/releases/tag/v0.7.1 (local copy kept in dist/)
+- Snapshot: `versions/FAMILYFIN.R.0.7.1.md/.prj`; CHANGELOG entry with the full notes.
+- Validation: preflight → 458 passed; verify-notes OK; postflight OK (local) and OK `--published`.
+- Before releasing: family DB backup `%LOCALAPPDATA%\FAMILYFIN\backups\profin_backup_pre-v0.7.1_20261011-001734.zip`; the uncommitted categorization-library work was frozen out of the release (zip `wip_categorization-library-io_*.zip` in the same backups folder + git stash) and restored on `feature/categorization-library-io` afterwards.
+- Note: no schema migration.
