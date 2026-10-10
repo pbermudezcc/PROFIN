@@ -5,6 +5,38 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.7.1.md`  |  **Files:** 117  |  **Handler:** v1.0.0
+**Date:** 2026-10-11 00:21  |  **Type:** Release
+**Description:** El proyecto estrena una página de presentación (README) en GitHub que explica qué es FAMILYFIN, cómo instalarlo en otro PC y cómo funciona cada sección. La aplicación no cambia para quien ya la usa, salvo que el ejecutable se genera ahora con una versión de pandas que Windows no bloquea. No hay cambios en la base de datos: basta con instalar la nueva versión.
+
+### Mejoras
+
+- La aplicación se construye con pandas 3.0.3, la versión que Windows (Smart App Control) deja cargar en el PC de casa; las versiones más nuevas se bloqueaban al importar extractos (`bfaf7a0`)
+
+### Interno
+
+- Nueva página README en GitHub: descripción del proyecto, instalación (ejecutable, código fuente y compilación propia), primeros pasos, especificación de cada sección, arquitectura, datos y copias de seguridad, desarrollo, solución de problemas y hoja de ruta (`8d99b1c`)
+- Nueva forma de numerar las versiones (X.Y.Z = versión mayor . fase principal de desarrollo . funcionalidad o corrección) (`b2be0fe`)
+- Registro de la versión 0.7.0 y cierre de la sesión, con la lección aprendida sobre Smart App Control y pandas (`2740c99`, `790de1c`)
+
+### Áreas afectadas
+
+- **Instalación y compilación Windows**: `requirements.txt`
+- **Herramientas de desarrollo y agentes**: `.claude/skills/release/SKILL.md`
+- **Documentación**: `README.md`, `docs/agent/agent_log.md`, `docs/agent/lessons_learned.md`
+
+<details><summary>Commits incluidos (5 desde v0.7.0)</summary>
+
+- `8d99b1c` docs(readme): add project README for GitHub
+- `790de1c` docs: close v0.7.0 session and record the Smart App Control / pandas lesson
+- `bfaf7a0` chore(deps): pin pandas to 3.0.3
+- `b2be0fe` docs(release): adopt X.Y.Z = release . main development . feature versioning
+- `2740c99` docs(agent_log): record v0.7.0 release
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.7.0.md`  |  **Files:** 117  |  **Handler:** v1.0.0
 **Date:** 2026-10-09 00:26  |  **Type:** Release
 **Description:** Al poner la categoría de un movimiento ahora puedes aplicarla de una vez a todos los movimientos iguales que estén sin categoría, y crear una regla para que los próximos de ese comercio se categoricen solos. Son dos casillas opcionales en la misma ventana de siempre, desmarcadas por defecto, así que nada cambia si no las usas. Además, el acceso web ya no deja de funcionar si Windows bloquea una librería de importación.
