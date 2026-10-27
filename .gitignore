@@ -24,3 +24,6 @@ profin_autobackup_*.zip
 *.db
 *.db-wal
 *.db-shm
+
+# Printed user manual (generated from docs/manual/index.html)
+docs/manual/*.pdf

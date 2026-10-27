@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Manual de FAMILYFIN</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a product manual. Navy rail of chapters (like the app's own sidebar), a reading column
+   of ~68ch, and screenshots allowed to run wider than the text. App palette reused on purpose. */
+:root {
+  --navy: #132C50;
+  --navy-ink: #DCEBFF;
+  --accent: #2563EB;
+  --accent-soft: #DBEAFE;
+  --violet: #7C3AED;
+  --orange: #E8590C;
+  --bg: #F6F8FC;
+  --surface: #FFFFFF;
+  --ink: #0F172A;
+  --ink-2: #4B5872;
+  --ink-3: #74819A;
+  --line: #E1E7F0;
+  --code-bg: #EEF2F9;
+  --shadow: 0 1px 2px rgba(15,23,42,.06), 0 8px 28px rgba(15,23,42,.08);
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --navy: #0B1830; --navy-ink: #C9DAF5; --accent: #60A5FA; --accent-soft: #1C3357;
+    --violet: #A78BFA; --orange: #FB923C;
+    --bg: #0E1626; --surface: #16213A; --ink: #EEF2F8; --ink-2: #A8B5CC; --ink-3: #7F8DA6;
+    --line: #26344F; --code-bg: #1D2A45; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --navy: #0B1830; --navy-ink: #C9DAF5; --accent: #60A5FA; --accent-soft: #1C3357;
+  --violet: #A78BFA; --orange: #FB923C;
+  --bg: #0E1626; --surface: #16213A; --ink: #EEF2F8; --ink-2: #A8B5CC; --ink-3: #7F8DA6;
+  --line: #26344F; --code-bg: #1D2A45; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(64px + env(safe-area-inset-top, 0px)); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--f-body); font-size: 16.5px; line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--navy); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; line-height: 1.12; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.7rem, 3.2vw, 2.3rem); }
+h3 { font-size: 1.22rem; margin-top: 8px; }
+p { margin: 0; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--f-mono); font-size: .86em; }
+code { background: var(--code-bg); padding: .1em .38em; border-radius: 5px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* Top bar */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--navy); color: var(--navy-ink);
+}
+.top-in {
+  max-width: 1240px; margin: 0 auto; display: flex; align-items: center; gap: 20px;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--f-display); font-weight: 700; color: #fff; letter-spacing: .02em; white-space: nowrap; }
+.brand svg { flex: none; }
+.toc { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.toc::-webkit-scrollbar { display: none; }
+.toc a { color: var(--navy-ink); text-decoration: none; font-size: 14px; font-weight: 500; padding: 6px 10px; border-radius: 8px; white-space: nowrap; }
+.toc a:hover { background: rgba(255,255,255,.1); color: #fff; }
+
+/* Page */
+.wrap {
+  max-width: 1240px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.read { max-width: 70ch; }
+section { padding-block: 56px; border-top: 1px solid var(--line); display: grid; gap: 22px; }
+.eyebrow { font-size: 12.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.lede { color: var(--ink-2); font-size: 1.08rem; }
+.stack { display: grid; gap: 14px; }
+
+/* Hero */
+.hero { padding-block: 48px 40px; display: grid; gap: 28px; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: center; }
+.hero h1 { font-size: clamp(2.4rem, 5.4vw, 4rem); }
+.hero h1 span { color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); }
+.chip.demo { background: transparent; border: 1px dashed var(--ink-3); color: var(--ink-2); }
+@media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
+
+/* Window frame for desktop shots */
+.win { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; margin: 0; }
+.win > .bar { display: flex; gap: 6px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.win > .bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.win img { display: block; width: 100%; height: auto; }
+figure { margin: 0; }
+figcaption { font-size: 14px; color: var(--ink-3); padding-top: 10px; }
+
+/* Annotated screenshot */
+.anno { position: relative; }
+.pin {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--orange); color: #fff; font: 700 14px/1 var(--f-body);
+  box-shadow: 0 0 0 3px var(--surface), 0 2px 8px rgba(0,0,0,.25);
+}
+@media (max-width: 600px) { .pin { width: 20px; height: 20px; font-size: 11px; box-shadow: 0 0 0 2px var(--surface); } }
+.legend-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 24px; padding: 0; margin: 0; list-style: none; }
+.legend-list li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+.legend-list b.n { width: 24px; height: 24px; border-radius: 50%; background: var(--orange); color: #fff; display: grid; place-items: center; font-size: 13px; margin-top: 2px; }
+.legend-list span { color: var(--ink-2); font-size: 15px; }
+.legend-list strong { color: var(--ink); display: block; }
+
+/* Two-column text + figure */
+.split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 32px; align-items: start; }
+.split.rev { grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); }
+@media (max-width: 900px) { .split, .split.rev { grid-template-columns: 1fr; } }
+
+ul.ticks { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+ul.ticks li { padding-left: 22px; position: relative; color: var(--ink-2); }
+ul.ticks li::before { content: ""; position: absolute; left: 4px; top: .62em; width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
+ul.ticks li strong { color: var(--ink); }
+
+/* Steps (a real sequence: the importer's wizard) */
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; counter-reset: s; }
+ol.steps li { counter-increment: s; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 6px; }
+ol.steps li::before { content: "Paso " counter(s); font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+ol.steps li p { color: var(--ink-2); font-size: 15px; }
+
+/* Tabs (investments) */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tabs button {
+  font: 600 14px var(--f-body); color: var(--ink-2); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; cursor: pointer;
+}
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.tabnote { color: var(--ink-2); min-height: 3.2em; }
+
+/* Theme compare */
+.compare { position: relative; overflow: hidden; border-radius: 12px; border: 1px solid var(--line); box-shadow: var(--shadow); }
+.compare img { display: block; width: 100%; height: auto; }
+.compare .dark { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--cut, 50%)); }
+.compare .handle { position: absolute; top: 0; bottom: 0; left: var(--cut, 50%); width: 3px; background: var(--orange); transform: translateX(-1.5px); pointer-events: none; }
+.compare input { width: 100%; accent-color: var(--orange); margin-top: 12px; }
+.compare-labels { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-3); }
+
+/* Phones */
+.phones { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 240px); gap: 18px; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x mandatory; }
+.phone { scroll-snap-align: start; display: grid; gap: 8px; }
+.phone .scr { border: 8px solid #0B1220; border-radius: 30px; overflow: hidden; background: #0B1220; aspect-ratio: 390 / 760; }
+.phone img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.phone p { font-size: 14px; color: var(--ink-2); }
+.phone strong { color: var(--ink); display: block; }
+
+/* Numbers + charts */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.stat b { display: block; font: 700 1.7rem/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
+.stat span { font-size: 13.5px; color: var(--ink-3); }
+.chart-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 10px; min-width: 0; }
+.chart-card h3 { margin: 0; font-size: 1.05rem; }
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.key { display: flex; gap: 14px; font-size: 13.5px; color: var(--ink-2); }
+.key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.chart { position: relative; overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 520px; height: auto; }
+.chart svg text { fill: var(--ink-3); font: 11px var(--f-body); font-variant-numeric: tabular-nums; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--ink); color: var(--bg);
+  font-size: 13px; padding: 6px 9px; border-radius: 8px; white-space: nowrap; transform: translate(-50%, -110%);
+  font-variant-numeric: tabular-nums;
+}
+.charts2 { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 16px; }
+@media (max-width: 900px) { .charts2 { grid-template-columns: 1fr; } }
+.hbar { display: grid; gap: 9px; }
+.hbar .row { display: grid; grid-template-columns: minmax(0, 9.5em) 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
+.hbar .row span:first-child { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar .track { height: 12px; }
+.hbar .fill { height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+.hbar .row b { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+details { font-size: 14px; color: var(--ink-2); }
+details summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+.tbl { overflow-x: auto; }
+
+/* Callout */
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px; color: var(--ink-2); }
+.note strong { color: var(--ink); }
+.cred { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cred code { font-size: .95em; }
+
+/* Flow diagram */
+.flow { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.flow svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.flow .box { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+.flow .box.key-a { fill: var(--accent-soft); stroke: var(--accent); }
+.flow .box.key-v { stroke: var(--violet); }
+.flow text { fill: var(--ink); font: 600 14px var(--f-body); }
+.flow text.sub { fill: var(--ink-3); font: 400 12px var(--f-body); }
+.flow .arrow { stroke: var(--ink-3); stroke-width: 1.6; fill: none; }
+.flow .arrowhead { fill: var(--ink-3); }
+
+.faq { display: grid; gap: 10px; }
+.faq details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.faq summary { color: var(--ink); font-size: 16px; }
+.faq details p { margin-top: 8px; font-size: 15px; }
+footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 14px; }
+.print-only { display: none; }
+
+/* Print / PDF: one chapter per page, every interactive view laid out flat */
+@media print {
+  @page { size: A4; margin: 12mm 11mm; }
+  body { font-size: 10.5pt; line-height: 1.5; }
+  body::before { display: none; }
+  .top { position: static; }
+  .toc { display: none; }
+  .hero { padding-block: 24px 8px; }
+  section { break-before: page; padding-block: 0 8px; gap: 14px; border-top: 0; }
+  h2 { font-size: 20pt; }
+  .win, .compare { box-shadow: none; }
+  figure, .win, .phone, .chart-card, .stat, ol.steps li, .note, .legend-list li, .faq details, .anno { break-inside: avoid; }
+  .tabs, .tabnote, #inv-panel, #cmp-range, .compare-labels, .compare .handle, .phones-hint { display: none; }
+  .compare { border: 0; border-radius: 0; overflow: visible; display: grid; gap: 10px; }
+  .compare img { border: 1px solid var(--line); border-radius: 10px; }
+  .compare .dark { position: static; clip-path: none; }
+  .phones { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: visible; }
+  .print-only { display: grid; gap: 14px; }
+  .print-only figcaption { color: var(--ink-2); }
+  .chart svg, .flow svg { min-width: 0; }
+  .hero h1 { font-size: 26pt; }
+  .hero .lede { font-size: 10.5pt; }
+  .split { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr) !important; gap: 18px; }
+  .split.rev { grid-template-columns: minmax(0, 8fr) minmax(0, 4fr) !important; }
+  .pair { grid-template-columns: minmax(0, 8fr) minmax(0, 3fr) !important; }
+  .pair .phone { max-width: none !important; }
+  .phones { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 10px; }
+  .phone p { font-size: 9pt; }
+  .charts2 { grid-template-columns: 1fr; }
+}
+
+/* Browser chrome for the web screenshots: the address shows the HTTPS LAN address */
+.win > .bar { align-items: center; }
+.win > .bar .url {
+  margin-left: 10px; flex: 1; min-width: 0; max-width: 360px; display: flex; align-items: center; gap: 6px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px;
+  font: 500 12px var(--f-mono); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.win > .bar .url svg { flex: none; }
+.pair { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 3fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } .pair .phone { max-width: 260px; } }
+.duo { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 18px; justify-content: start; }
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="#60A5FA" d="M3 3h2v16h16v2H3zm4 12 4-6 4 3 5-7 1.6 1.2-6.2 8.6-4-3-3 4.5z"/></svg>
+      FAMILYFIN
+    </div>
+    <nav class="toc" aria-label="Capítulos">
+      <a href="#que-es">Qué es</a>
+      <a href="#empezar">Empezar</a>
+      <a href="#interfaz">La interfaz</a>
+      <a href="#panel">Resumen</a>
+      <a href="#movimientos">Movimientos</a>
+      <a href="#gastos">Gastos</a>
+      <a href="#importar">Importar</a>
+      <a href="#categorias">Categorías y reglas</a>
+      <a href="#inversiones">Inversiones</a>
+      <a href="#movil">iPhone</a>
+      <a href="#ajustes">Ajustes</a>
+      <a href="#demo">La demo</a>
+      <a href="#faq">Dudas</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <div class="stack">
+      <span class="eyebrow">Manual de usuario · v0.7.1</span>
+      <h1>Tus cuentas de <span>CaixaBank</span>, ordenadas solas.</h1>
+      <p class="lede">FAMILYFIN lee los extractos que descargas de CaixaBank, clasifica cada movimiento con tus reglas y te enseña en qué se va el dinero. También sigue tu cartera de inversión con cotizaciones reales y prepara los datos de la renta. Lo consultas desde el navegador del portátil, el iPad o el iPhone.</p>
+      <div class="chips">
+        <span class="chip">Web segura (HTTPS) en tu red</span>
+        <span class="chip">iPhone · iPad · portátil</span>
+        <span class="chip">Datos solo en tu PC</span>
+        <span class="chip demo">Capturas con el usuario de demostración DEMO</span>
+      </div>
+    </div>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765</span></div>
+      <img src="img/w_resumen.png" alt="Resumen de FAMILYFIN en el navegador: saldo, indicadores del año y gráficas" width="2049" height="1770">
+    </figure>
+  </div>
+
+  <!-- ─────────────────────────────── QUÉ ES ─────────────────────────────── -->
+  <section id="que-es">
+    <span class="eyebrow">Qué es</span>
+    <h2>Del extracto del banco a tus gráficas</h2>
+    <p class="read lede">FAMILYFIN se instala en un PC con Windows, que guarda los datos y sirve una web privada y cifrada a los dispositivos de casa. Descargas el Excel de movimientos desde CaixaBank Now, lo subes y la aplicación hace el resto: comprueba el fichero, descarta lo que ya tenías, pone categoría a cada movimiento y actualiza los paneles. Nada sale de tu red; solo se consultan cotizaciones bursátiles públicas.</p>
+    <div class="flow" role="img" aria-label="Esquema: el extracto de CaixaBank pasa por la importación y las reglas hasta la base de datos del PC, que alimenta la aplicación de escritorio y la web HTTPS del portátil, iPad e iPhone. Las operaciones del bróker y las cotizaciones de Yahoo Finance alimentan Inversiones.">
+      <svg viewBox="0 0 980 300">
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0 10 5 0 10z"/></marker></defs>
+        <rect class="box" x="10" y="40" width="170" height="70" rx="10"/>
+        <text x="95" y="70" text-anchor="middle">Extracto CaixaBank</text>
+        <text class="sub" x="95" y="90" text-anchor="middle">.xls / .xlsx de CaixaBank Now</text>
+
+        <rect class="box" x="225" y="40" width="170" height="70" rx="10"/>
+        <text x="310" y="70" text-anchor="middle">Importar</text>
+        <text class="sub" x="310" y="90" text-anchor="middle">valida y detecta duplicados</text>
+
+        <rect class="box" x="440" y="40" width="170" height="70" rx="10"/>
+        <text x="525" y="70" text-anchor="middle">Reglas</text>
+        <text class="sub" x="525" y="90" text-anchor="middle">asignan la categoría</text>
+
+        <rect class="box key-a" x="655" y="100" width="150" height="80" rx="10"/>
+        <text x="730" y="134" text-anchor="middle">Base de datos</text>
+        <text class="sub" x="730" y="154" text-anchor="middle">en tu PC</text>
+
+        <rect class="box" x="830" y="186" width="146" height="64" rx="10"/>
+        <text x="903" y="214" text-anchor="middle">Escritorio</text>
+        <text class="sub" x="903" y="233" text-anchor="middle">Windows</text>
+
+        <rect class="box key-a" x="830" y="30" width="146" height="64" rx="10"/>
+        <text x="903" y="58" text-anchor="middle">Web HTTPS</text>
+        <text class="sub" x="903" y="77" text-anchor="middle">iPhone · iPad · portátil</text>
+
+        <rect class="box key-v" x="225" y="190" width="170" height="70" rx="10"/>
+        <text x="310" y="220" text-anchor="middle">Bróker</text>
+        <text class="sub" x="310" y="240" text-anchor="middle">DEGIRO · MyInvestor · manual</text>
+
+        <rect class="box key-v" x="440" y="190" width="170" height="70" rx="10"/>
+        <text x="525" y="220" text-anchor="middle">Cotizaciones</text>
+        <text class="sub" x="525" y="240" text-anchor="middle">Yahoo Finance, diarias</text>
+
+        <path class="arrow" d="M180 75H221" marker-end="url(#ah)"/>
+        <path class="arrow" d="M395 75H436" marker-end="url(#ah)"/>
+        <path class="arrow" d="M610 75H690V96" marker-end="url(#ah)"/>
+        <path class="arrow" d="M395 225H436" marker-end="url(#ah)"/>
+        <path class="arrow" d="M610 225H690V184" marker-end="url(#ah)"/>
+        <path class="arrow" d="M805 125H815V62H826" marker-end="url(#ah)"/>
+        <path class="arrow" d="M805 155H815V218H826" marker-end="url(#ah)"/>
+      </svg>
+    </div>
+    <div class="split">
+      <ul class="ticks">
+        <li><strong>Pensado para el formato de CaixaBank.</strong> Entiende sus 24 columnas, el preámbulo, los saldos positivos y negativos y el texto «Fecha de operación» que añade a las compras con tarjeta.</li>
+        <li><strong>Sin duplicados.</strong> Puedes importar extractos que se solapan: lo repetido se descarta y lo dudoso te lo pregunta.</li>
+      </ul>
+      <ul class="ticks">
+        <li><strong>Reglas a tu medida.</strong> «Si el comercio contiene MERCADONA → Supermercados». Lo que corriges a mano nunca lo pisa una regla.</li>
+        <li><strong>Inversión con datos reales.</strong> Posiciones, plusvalías, rentabilidad anualizada, dividendos y el resumen fiscal FIFO para la declaración.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── EMPEZAR ─────────────────────────────── -->
+  <section id="empezar">
+    <span class="eyebrow">Primeros pasos</span>
+    <h2>Instalar, crear tu usuario y entrar</h2>
+    <div class="pair">
+      <figure class="win">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765/login</span></div>
+        <img src="img/w_login.png" alt="Pantalla de acceso de la web" width="2049" height="1230">
+      </figure>
+      <div class="phone"><div class="scr"><img src="img/m_login.png" alt="Acceso desde el iPhone"></div><p><strong>En el iPhone</strong>El mismo acceso, a tamaño de móvil.</p></div>
+    </div>
+    <ol class="steps">
+      <li><h3>Instala en el PC</h3><p>FAMILYFIN se entrega como una carpeta para Windows: se descomprime y se abre <code>PROFIN.exe</code>. No necesita instalador.</p></li>
+      <li><h3>Crea tu usuario</h3><p>En la pantalla de acceso del PC pulsa «¿Primera vez? Crear cuenta». Cada miembro de la familia tiene el suyo y nadie ve los movimientos de los demás.</p></li>
+      <li><h3>Activa el acceso web</h3><p>En el PC, <em>Configuración → Acceso web</em>. Cada iPhone o iPad instala una vez el certificado de FAMILYFIN y queda el candado de conexión segura.</p></li>
+      <li><h3>Entra desde cualquier dispositivo</h3><p>Abre la dirección <code>https://…:8765</code> en Safari o Chrome con tu usuario y contraseña. Desde Safari, «Añadir a pantalla de inicio» la deja como una app.</p></li>
+    </ol>
+  </section>
+
+  <!-- ─────────────────────────────── INTERFAZ ─────────────────────────────── -->
+  <section id="interfaz">
+    <span class="eyebrow">La interfaz</span>
+    <h2>Anatomía de la pantalla</h2>
+    <p class="read lede">En el portátil y en el iPad en horizontal, la web muestra un menú lateral fijo; en el iPhone, ese menú pasa a una barra de pestañas abajo. El contenido es el mismo.</p>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765</span></div>
+      <div class="anno">
+        <img src="img/w_resumen.png" alt="Pantalla de Resumen con marcas numeradas sobre sus zonas" width="2049" height="1770">
+        <span class="pin" style="left:15%;top:3.5%">1</span>
+        <span class="pin" style="left:15%;top:14.9%">2</span>
+        <span class="pin" style="left:15%;top:34.5%">3</span>
+        <span class="pin" style="left:15%;top:48.3%">4</span>
+        <span class="pin" style="left:17.5%;top:91.6%">5</span>
+        <span class="pin" style="left:17.5%;top:96.3%">6</span>
+        <span class="pin" style="left:42.5%;top:14.5%">7</span>
+        <span class="pin" style="left:95%;top:18.5%">8</span>
+        <span class="pin" style="left:21%;top:41.2%">9</span>
+        <span class="pin" style="left:59.2%;top:66%">10</span>
+      </div>
+    </figure>
+    <ol class="legend-list">
+      <li><b class="n">1</b><span><strong>Marca</strong>Vuelve al resumen desde cualquier pantalla.</span></li>
+      <li><b class="n">2</b><span><strong>Consulta</strong>Resumen, Movimientos, Gastos e ingresos e Inversiones.</span></li>
+      <li><b class="n">3</b><span><strong>Administración</strong>Importar extracto, Categorías, Reglas y Cuentas.</span></li>
+      <li><b class="n">4</b><span><strong>Ajustes</strong>Tu cuenta, informes, apariencia y sesiones abiertas.</span></li>
+      <li><b class="n">5</b><span><strong>Tema</strong>Cambia entre claro y oscuro en este dispositivo.</span></li>
+      <li><b class="n">6</b><span><strong>Usuario y salir</strong>El candado verde confirma la conexión cifrada.</span></li>
+      <li><b class="n">7</b><span><strong>Periodo</strong>Mes, año o todo; las cifras se recalculan al momento.</span></li>
+      <li><b class="n">8</b><span><strong>Saldo en cuenta</strong>Último saldo del extracto con ingresos, gastos y ahorro.</span></li>
+      <li><b class="n">9</b><span><strong>Indicadores</strong>Ingresos, gastos, tasa de ahorro, pendientes de categorizar y valor de la cartera.</span></li>
+      <li><b class="n">10</b><span><strong>Gráficas</strong>Gastos por categoría e ingresos frente a gastos de los últimos 12 meses.</span></li>
+    </ol>
+
+    <h3>Tema claro y oscuro</h3>
+    <p class="read">Arrastra el control para comparar los dos temas sobre la misma pantalla. Por defecto la web sigue el modo del dispositivo; en <em>Ajustes → Apariencia</em> puedes fijarlo.</p>
+    <div>
+      <div class="compare" id="cmp">
+        <img src="img/w_resumen.png" alt="Resumen en tema claro" width="2049" height="1770">
+        <img class="dark" src="img/w_resumen_dark.png" alt="Resumen en tema oscuro" width="2049" height="1770">
+        <span class="handle" aria-hidden="true"></span>
+      </div>
+      <label for="cmp-range" style="position:absolute;left:-9999px">Proporción de tema claro y oscuro</label>
+      <input id="cmp-range" type="range" min="0" max="100" value="50">
+      <div class="compare-labels"><span>Claro</span><span>Oscuro</span></div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── RESUMEN ─────────────────────────────── -->
+  <section id="panel">
+    <span class="eyebrow">Resumen</span>
+    <h2>Todo tu mes en una pantalla</h2>
+    <div class="split">
+      <div class="stack read">
+        <p>Es la pantalla de inicio. El periodo (mes, año o todo) cambia todas las cifras a la vez.</p>
+        <ul class="ticks">
+          <li><strong>Saldo en cuenta</strong>: el último saldo que figura en el extracto.</li>
+          <li><strong>Ingresos y gastos</strong> del periodo.</li>
+          <li><strong>Tasa de ahorro</strong>: (ingresos − gastos) ÷ ingresos.</li>
+          <li><strong>Sin categoría</strong>: los movimientos pendientes de clasificar. Al tocarlo te lleva a ellos.</li>
+          <li><strong>Cartera</strong>: valor actual de tus inversiones y su plusvalía.</li>
+        </ul>
+        <p>Debajo, el donut de gastos por categoría («Ver todo» abre el detalle) y las barras de ingresos frente a gastos de los últimos 12 meses.</p>
+      </div>
+      <div class="duo">
+        <div class="phone"><div class="scr"><img src="img/m_resumen.png" alt="Resumen en el iPhone, tema claro"></div><p><strong>Tema claro</strong></p></div>
+        <div class="phone"><div class="scr"><img src="img/m_resumen_dark.png" alt="Resumen en el iPhone, tema oscuro"></div><p><strong>Tema oscuro</strong></p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── MOVIMIENTOS ─────────────────────────────── -->
+  <section id="movimientos">
+    <span class="eyebrow">Movimientos</span>
+    <h2>Cada movimiento, con su categoría</h2>
+    <p class="read">La lista completa agrupada por días, con un buscador que mira <strong>todos los campos</strong> (conceptos de CaixaBank, comercio, fecha, importe —<code>12,50</code>, <code>12.50</code> o <code>-45</code>—, categoría, cuenta…) y filtros. Escribe varias palabras y verás los movimientos que las tienen todas; da igual mayúsculas o acentos. Cada fila muestra la categoría como etiqueta de color; los que aún no tienen aparecen como <strong>Sin categoría</strong>. «Aplicar reglas» vuelve a pasar tus reglas por los pendientes.</p>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765/movimientos</span></div>
+      <img src="img/w_movimientos.png" alt="Lista de movimientos agrupados por día" width="2049" height="1350">
+    </figure>
+    <div class="pair">
+      <figure class="win">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <img src="img/w_movimiento_ficha.png" alt="Ficha de un movimiento sin categoría con el buscador de categorías" width="2049" height="1350">
+        <figcaption>Al tocar un movimiento se abre su ficha: fecha, cuenta, concepto completo de CaixaBank y saldo después.</figcaption>
+      </figure>
+      <div class="phone"><div class="scr"><img src="img/m_movimiento_ficha.png" alt="Ficha de movimiento en el iPhone"></div><p><strong>En el iPhone</strong>La ficha sube desde abajo.</p></div>
+    </div>
+    <ul class="ticks read">
+      <li><strong>Cambiar categoría</strong>: busca entre tus categorías y toca la que corresponda.</li>
+      <li><strong>Aplicar también a los parecidos</strong>: la misma categoría para los movimientos sin categoría del mismo comercio.</li>
+      <li><strong>Crear una regla</strong>: para que los próximos de ese comercio se clasifiquen solos.</li>
+    </ul>
+  </section>
+
+  <!-- ─────────────────────────────── GASTOS ─────────────────────────────── -->
+  <section id="gastos">
+    <span class="eyebrow">Gastos e ingresos</span>
+    <h2>En qué se va el dinero y de dónde viene</h2>
+    <div class="split rev">
+      <figure class="win">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765/gastos</span></div>
+        <img src="img/w_gastos.png" alt="Gastos del año: indicadores, donut por categoría, evolución diaria, barras mes a mes y lista de categorías" width="2049" height="2250">
+      </figure>
+      <div class="stack read">
+        <p>Una pestaña para <strong>Gastos</strong> y otra para <strong>Ingresos</strong>, con el mismo diseño. Eliges el periodo (mes, trimestre, año, 12 meses, todo o fechas a medida) y te mueves con las flechas al anterior o siguiente.</p>
+        <ul class="ticks">
+          <li>Total, media por movimiento, mayor movimiento y porcentaje categorizado.</li>
+          <li>Donut por categoría y evolución diaria.</li>
+          <li>Mes a mes con las principales categorías apiladas.</li>
+          <li>Lista de categorías con su peso; al tocar una ves sus movimientos.</li>
+        </ul>
+      </div>
+    </div>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+      <img src="img/w_ingresos.png" alt="Pestaña de Ingresos del año" width="2049" height="1650">
+      <figcaption>Ingresos del año: nómina, pagas extra de junio y diciembre, devolución de Hacienda y bizums.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ─────────────────────────────── IMPORTAR ─────────────────────────────── -->
+  <section id="importar">
+    <span class="eyebrow">Importar extractos</span>
+    <h2>De CaixaBank Now a FAMILYFIN, también desde el iPhone</h2>
+    <div class="note read"><strong>Desde el banco:</strong> en CaixaBank Now entra en la cuenta → <em>Movimientos</em> → elige fechas → <em>Exportar a Excel</em>. En el iPhone el fichero queda en Archivos → Descargas, y desde ahí se sube directamente.</div>
+    <ol class="steps">
+      <li><h3>Elegir el fichero</h3><p>En <em>Importar extracto</em>, «Elegir archivo» y «Subir y revisar». Hasta 5 MB, <code>.xls</code> o <code>.xlsx</code>, tal como lo da el banco.</p></li>
+      <li><h3>Revisar</h3><p>Ves la cuenta, el IBAN, las fechas y cuántos movimientos son <strong>nuevos</strong>, <strong>posibles duplicados</strong> (decides tú) o <strong>ya importados</strong> (se omiten solos).</p></li>
+      <li><h3>Importar</h3><p>«Importar N movimientos» los guarda y las reglas los categorizan en el acto. Nada se guarda hasta que confirmas.</p></li>
+    </ol>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765/importar</span></div>
+      <img src="img/w_importar.png" alt="Pantalla Importar extracto con instrucciones y últimas importaciones" width="2049" height="1230">
+    </figure>
+    <div class="pair">
+      <figure class="win">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <img src="img/w_importar_preview.png" alt="Revisar antes de importar: 9 nuevos, 0 posibles duplicados, 5 ya importados" width="2049" height="1725">
+        <figcaption>El extracto de octubre de la demo solapa con el anterior: 9 movimientos nuevos y 5 que ya estaban, que se omiten solos.</figcaption>
+      </figure>
+      <div class="phone"><div class="scr"><img src="img/m_importar_preview.png" alt="Revisión de importación en el iPhone"></div><p><strong>En el iPhone</strong>La misma revisión, con el botón de importar siempre a mano.</p></div>
+    </div>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+      <img src="img/w_importaciones.png" alt="Historial de importaciones con fecha, fichero, importados, omitidos y estado" width="2049" height="1350">
+      <figcaption>El historial guarda cada importación con su fichero, fecha y recuento.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ─────────────────────────────── CATEGORÍAS ─────────────────────────────── -->
+  <section id="categorias">
+    <span class="eyebrow">Categorías y reglas</span>
+    <h2>Tu propio plan de cuentas, aplicado solo</h2>
+    <div class="split">
+      <div class="stack read">
+        <h3>Categorías</h3>
+        <p>Agrupadas por tipo: GASTO, INGRESO, SERV. BANCARIO e INVERSION. Cada categoría muestra cuántos movimientos tiene. Toca una para renombrarla o borrarla; con <strong>+</strong> creas otra.</p>
+        <p><strong>Exportar / importar</strong> guarda y recupera la biblioteca completa de categorías y reglas, útil para pasarla a otro usuario o PC.</p>
+      </div>
+      <figure class="win">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <img src="img/w_categorias.png" alt="Categorías agrupadas por tipo con su número de movimientos" width="2049" height="1500">
+      </figure>
+    </div>
+    <div class="split rev">
+      <figure class="win">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <img src="img/w_reglas.png" alt="Reglas automáticas con prioridad, texto, coincidencia, categoría y movimientos" width="2049" height="1500">
+      </figure>
+      <div class="stack read">
+        <h3>Reglas</h3>
+        <p>Cada regla dice: si el concepto o el comercio <strong>contiene</strong> un texto (o es <strong>exactamente</strong> ese texto, o cumple una <strong>expresión regular</strong>), asigna esta categoría.</p>
+        <ul class="ticks">
+          <li><strong>Prioridad</strong>: número más bajo, se comprueba antes. Así <code>RENFE VIAJEROS</code> (Viajes, 10) gana a <code>RENFE</code> (Transporte, 100). Las flechas la suben o bajan.</li>
+          <li>Cada regla muestra cuántos movimientos ha clasificado.</li>
+          <li><strong>Buscar reglas</strong>: el buscador mira el texto, la coincidencia, la categoría, el tipo, el ámbito y la prioridad; los filtros acotan por categoría, tipo, coincidencia, ámbito (global o personal) y uso (con o sin movimientos). Arriba ves «Mostrando 37 de 412 reglas» y «Quitar filtros» lo deja todo como estaba.</li>
+          <li><strong>Aplicar a sin categoría</strong> o <strong>Recalcular todos</strong>. Lo que categorizaste a mano nunca cambia.</li>
+        </ul>
+      </div>
+    </div>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+      <img src="img/w_regla_nueva.png" alt="Formulario Nueva regla: tipo de coincidencia, texto, categoría y prioridad" width="2049" height="1350">
+      <figcaption>Nueva regla: tipo de coincidencia, texto a buscar, categoría y prioridad.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ─────────────────────────────── INVERSIONES ─────────────────────────────── -->
+  <section id="inversiones">
+    <span class="eyebrow">Inversiones</span>
+    <h2>Tu cartera con cotizaciones reales</h2>
+    <p class="read lede">Registra compras, ventas, dividendos, splits y acciones recibidas de tu empresa, a mano con el botón <strong>+</strong> o importando el extracto de DEGIRO o MyInvestor. Las cotizaciones y los tipos de cambio se descargan cada día de Yahoo Finance.</p>
+    <div class="tabs" role="tablist" aria-label="Pestañas de Inversiones">
+      <button role="tab" id="t-pos" aria-selected="true" aria-controls="inv-panel" data-img="img/w_inv_posiciones.png" data-note="Posiciones: valor de la cartera con su plusvalía, rentabilidad y variación de hoy; capital invertido, rentabilidad anual (TIR), realizado y dividendos del año. Debajo, una fila por valor con acciones, precio, coste, plusvalía y peso.">Posiciones</button>
+      <button role="tab" id="t-evo" aria-selected="false" aria-controls="inv-panel" data-img="img/w_inv_evolucion.png" data-note="Evolución: el valor de la cartera frente al capital aportado, de 1 mes a todo el histórico. «Comparar con» muestra qué valdría el mismo dinero invertido en el MSCI World, el S&amp;P 500 o el IBEX 35 en las mismas fechas.">Evolución</button>
+      <button role="tab" id="t-dis" aria-selected="false" aria-controls="inv-panel" data-img="img/w_inv_distribucion.png" data-note="Distribución: cómo se reparte la cartera por valor, bróker, divisa o tipo de activo.">Distribución</button>
+      <button role="tab" id="t-ops" aria-selected="false" aria-controls="inv-panel" data-img="img/w_inv_operaciones.png" data-note="Operaciones: el histórico de compras, ventas y dividendos, con buscador y filtros por tipo y bróker. Toca una para editarla o eliminarla.">Operaciones</button>
+      <button role="tab" id="t-fis" aria-selected="false" aria-controls="inv-panel" data-img="img/w_inv_fiscal.png" data-note="Fiscalidad: por ejercicio, ganancias y pérdidas patrimoniales (FIFO por lote, aplicando la regla antiaplicación de los dos meses), dividendos brutos, retenciones y netos. «Descargar Excel» para cotejar con el borrador de la renta. En la imagen, 2025 con la venta de Santander.">Fiscalidad</button>
+    </div>
+    <p class="tabnote read" id="inv-note">Posiciones: valor de la cartera con su plusvalía, rentabilidad y variación de hoy; capital invertido, rentabilidad anual (TIR), realizado y dividendos del año. Debajo, una fila por valor con acciones, precio, coste, plusvalía y peso.</p>
+    <figure class="win" id="inv-panel" role="tabpanel" aria-labelledby="t-pos">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765/inversiones</span></div>
+      <img id="inv-img" src="img/w_inv_posiciones.png" alt="Inversiones, pestaña Posiciones" width="2049" height="1500">
+    </figure>
+    <div class="print-only">
+      <figure class="win"><img src="img/w_inv_posiciones.png" alt="Inversiones, pestaña Posiciones" width="2049" height="1500"><figcaption><strong>Posiciones</strong>: valor de la cartera con su plusvalía, rentabilidad y variación de hoy; capital invertido, rentabilidad anual (TIR), realizado y dividendos del año, y una fila por valor.</figcaption></figure>
+      <figure class="win"><img src="img/w_inv_evolucion.png" alt="Inversiones, pestaña Evolución" width="2049" height="1500"><figcaption><strong>Evolución</strong>: valor de la cartera frente al capital aportado y frente al mismo dinero invertido en un índice (MSCI World, S&amp;P 500 o IBEX 35).</figcaption></figure>
+      <figure class="win"><img src="img/w_inv_distribucion.png" alt="Inversiones, pestaña Distribución" width="2049" height="1500"><figcaption><strong>Distribución</strong>: reparto de la cartera por valor, bróker, divisa o tipo de activo.</figcaption></figure>
+      <figure class="win"><img src="img/w_inv_operaciones.png" alt="Inversiones, pestaña Operaciones" width="2049" height="1500"><figcaption><strong>Operaciones</strong>: histórico de compras, ventas y dividendos, con buscador y filtros por tipo y bróker.</figcaption></figure>
+      <figure class="win"><img src="img/w_inv_fiscal.png" alt="Inversiones, pestaña Fiscalidad" width="2049" height="1500"><figcaption><strong>Fiscalidad</strong>: ganancias y pérdidas FIFO por ejercicio (con la regla de los dos meses), dividendos, retenciones y descarga en Excel. En la imagen, 2025 con la venta de Santander.</figcaption></figure>
+    </div>
+    <div class="pair">
+      <figure class="win">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <img src="img/w_inv_evolucion_dark.png" alt="Evolución de la cartera frente al MSCI World en tema oscuro" width="2049" height="1500">
+        <figcaption>Evolución frente al MSCI World, en tema oscuro.</figcaption>
+      </figure>
+      <div class="phone"><div class="scr"><img src="img/m_inversiones.png" alt="Inversiones en el iPhone"></div><p><strong>En el iPhone</strong>Cartera y posiciones de un vistazo.</p></div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── MÓVIL ─────────────────────────────── -->
+  <section id="movil">
+    <span class="eyebrow">iPhone</span>
+    <h2>Pensada primero para el móvil</h2>
+    <div class="split">
+      <div class="stack read">
+        <ul class="ticks">
+          <li><strong>Solo en casa y cifrada.</strong> La web responde únicamente dentro de tu red y siempre por HTTPS (puerto <code>8765</code> por defecto). Cada dispositivo instala una vez el certificado propio de FAMILYFIN y Safari muestra el candado normal.</li>
+          <li><strong>Sesiones cortas.</strong> La sesión caduca a los 30 minutos sin uso y como máximo a las 12 horas. En <em>Ajustes</em> ves las sesiones abiertas.</li>
+          <li><strong>Como una app.</strong> En Safari, «Compartir → Añadir a pantalla de inicio».</li>
+          <li><strong>Sincronizada.</strong> Lo que cambias en el móvil aparece al momento en el PC.</li>
+        </ul>
+      </div>
+      <p class="read phones-hint" style="color:var(--ink-3)">Desliza la galería para ver las pantallas a tamaño iPhone.</p>
+    </div>
+    <div class="phones" aria-label="Pantallas de la web en iPhone">
+      <div class="phone"><div class="scr"><img src="img/m_resumen.png" alt="Resumen" loading="lazy"></div><p><strong>Resumen</strong>Saldo, periodo y gráficas.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_movimientos.png" alt="Movimientos" loading="lazy"></div><p><strong>Movimientos</strong>Agrupados por día.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_movimiento_ficha.png" alt="Ficha de movimiento" loading="lazy"></div><p><strong>Ficha</strong>Cambiar categoría o crear regla.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_gastos.png" alt="Gastos" loading="lazy"></div><p><strong>Gastos e ingresos</strong>Por mes, trimestre, año o 12 meses.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_importar_preview.png" alt="Revisar importación" loading="lazy"></div><p><strong>Importar</strong>Desde Archivos del iPhone.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_inversiones.png" alt="Inversiones" loading="lazy"></div><p><strong>Inversiones</strong>Cartera y posiciones.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_inv_evolucion.png" alt="Evolución, tema oscuro" loading="lazy"></div><p><strong>Evolución</strong>Frente a un índice.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_reglas.png" alt="Reglas" loading="lazy"></div><p><strong>Reglas</strong>Crear, ordenar y aplicar.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_mas.png" alt="Ajustes" loading="lazy"></div><p><strong>Ajustes</strong>Administración e informes.</p></div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── AJUSTES ─────────────────────────────── -->
+  <section id="ajustes">
+    <span class="eyebrow">Ajustes</span>
+    <h2>Tu cuenta, administración y dispositivos</h2>
+    <div class="split rev">
+      <figure class="win">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765/mas</span></div>
+        <img src="img/w_mas.png" alt="Ajustes: cuenta, administración, informes, apariencia y sesiones abiertas" width="2049" height="1350">
+      </figure>
+      <div class="stack read">
+        <p>En la web, <strong>Ajustes</strong> reúne la administración (categorías, reglas, cuentas e importaciones), los informes (ingresos y fiscalidad de inversiones en Excel), la apariencia y las sesiones abiertas.</p>
+        <p>En la aplicación del PC, <strong>Configuración</strong> añade lo que afecta a la instalación:</p>
+        <ul class="ticks">
+          <li><strong>Datos</strong>: la carpeta de la base de datos, que puede estar en una carpeta sincronizada (OneDrive, iCloud).</li>
+          <li><strong>Copias de seguridad</strong>: automáticas cada 24 horas por defecto, en <code>.zip</code>; se conservan las más recientes y se pueden restaurar.</li>
+          <li><strong>Seguridad</strong>: pedir contraseña al iniciar y ocultar importes.</li>
+          <li><strong>Acceso web</strong>: activarlo y elegir el puerto.</li>
+        </ul>
+      </div>
+    </div>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+      <img src="img/w_cuentas.png" alt="Cuentas bancarias con su saldo y periodo" width="2049" height="1230">
+      <figcaption>Cuentas: cada cuenta con su saldo y el periodo que cubren sus extractos.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ─────────────────────────────── DEMO ─────────────────────────────── -->
+  <section id="demo">
+    <span class="eyebrow">La demostración</span>
+    <h2>Conoce a DEMO, el usuario de prueba</h2>
+    <p class="read lede">Todas las capturas de este manual usan un usuario inventado: un ingeniero que vive en Bilbao, cobra la nómina y paga la hipoteca en CaixaBank, y cada mes aparta 400 € para un ETF en DEGIRO. Ninguna cifra es real. Los extractos se generaron con el formato exacto de CaixaBank y entraron por el importador normal; las cotizaciones de las acciones sí son reales.</p>
+    <div class="stats">
+      <div class="stat"><b>973</b><span>movimientos, ene 2025 → oct 2026</span></div>
+      <div class="stat"><b>22</b><span>extractos importados</span></div>
+      <div class="stat"><b>99 %</b><span>categorizados por reglas</span></div>
+      <div class="stat"><b>35 · 60</b><span>categorías · reglas</span></div>
+      <div class="stat"><b>44</b><span>operaciones de inversión</span></div>
+      <div class="stat"><b>15.477 €</b><span>cartera a 16 oct 2026</span></div>
+    </div>
+    <div class="charts2">
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Ingresos y gastos por mes (oct 2025 – sep 2026)</h3>
+          <div class="key"><span><i style="background:var(--accent)"></i>Ingresos</span><span><i style="background:var(--orange)"></i>Gastos</span></div>
+        </div>
+        <div class="chart" id="monthly"></div>
+        <details><summary>Ver como tabla</summary><div class="tbl" id="monthly-table"></div></details>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><h3>Mayores partidas de salida en 12 meses</h3></div>
+        <div class="hbar" id="cats"></div>
+        <p style="font-size:13.5px;color:var(--ink-3)">Incluye el ahorro que sale de la cuenta (aportaciones al bróker y al plan de pensiones).</p>
+      </div>
+    </div>
+    <div class="note read">
+      <strong>Cómo probar la demo:</strong> en la pantalla de acceso, del PC o de la web, entra con el usuario
+      <span class="cred"><code>DEMO</code> y la contraseña <code>123456</code></span>.
+      Es un usuario más de la aplicación, pero vive aparte: no ve los datos de la familia ni sus reglas globales, así que puedes enseñárselo a cualquiera. Para probar la importación en directo, sube el extracto de octubre que queda sin importar en <code>dist\demo\extractos_demo_real</code>: solapa con la última importación, así que verás cómo se omiten los movimientos ya importados.
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── FAQ ─────────────────────────────── -->
+  <section id="faq">
+    <span class="eyebrow">Dudas frecuentes</span>
+    <h2>Antes de empezar</h2>
+    <div class="faq read">
+      <details open><summary>¿Mis datos salen de mi casa?</summary><p>No. La base de datos es un fichero en tu PC y la web solo responde dentro de tu red, cifrada. La aplicación solo se conecta a internet para descargar cotizaciones y tipos de cambio públicos de Yahoo Finance; no envía tus movimientos a ningún sitio.</p></details>
+      <details><summary>¿Necesito dar mis claves de CaixaBank?</summary><p>No. FAMILYFIN nunca se conecta al banco. Tú descargas el Excel desde CaixaBank Now y lo importas.</p></details>
+      <details><summary>¿Puedo usarlo fuera de casa?</summary><p>No directamente: la web está limitada a tu red local a propósito. Fuera de casa no hay acceso a tus datos.</p></details>
+      <details><summary>¿Qué pasa si importo dos veces el mismo extracto?</summary><p>Nada: los movimientos idénticos se omiten. Si hay alguno dudoso, la revisión te pregunta antes de guardarlo.</p></details>
+      <details><summary>¿Puedo usarlo con otros bancos?</summary><p>El importador de movimientos está hecho para el formato de CaixaBank. Para inversiones acepta extractos de DEGIRO y MyInvestor, y cualquier otro bróker introduciendo las operaciones a mano.</p></details>
+      <details><summary>¿Y si cambio de ordenador?</summary><p>Copia la carpeta de datos (o restaura una copia de seguridad) y, en el nuevo PC, apunta FAMILYFIN a ella desde Configuración → Datos o con «Buscar BD» en la pantalla de acceso.</p></details>
+    </div>
+  </section>
+
+  <footer>
+    FAMILYFIN v0.7.1 · Manual de usuario, octubre de 2026. Capturas tomadas automáticamente del cliente web por HTTPS con el usuario de demostración DEMO; los nombres de comercios son ilustrativos, los importes inventados y la dirección <code>192.168.1.20</code> es de ejemplo.
+  </footer>
+</main>
+
+<script>
+(function () {
+  // Theme compare slider
+  var cmp = document.getElementById("cmp"), range = document.getElementById("cmp-range");
+  range.addEventListener("input", function () { cmp.style.setProperty("--cut", range.value + "%"); });
+
+  // Printing (or the PDF build, which opens the page with #print): show every answer.
+  function openAll() { document.querySelectorAll("details").forEach(function (d) { d.open = true; }); }
+  window.addEventListener("beforeprint", openAll);
+  if (location.hash === "#print") openAll();
+
+  // Investments tabs
+  var tabs = document.querySelectorAll('.tabs [role="tab"]');
+  var img = document.getElementById("inv-img"), note = document.getElementById("inv-note"), panel = document.getElementById("inv-panel");
+  tabs.forEach(function (t, i) {
+    t.addEventListener("click", function () { select(i); });
+    t.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        var n = (i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length;
+        select(n); tabs[n].focus();
+      }
+    });
+  });
+  function select(i) {
+    tabs.forEach(function (t, k) { t.setAttribute("aria-selected", k === i ? "true" : "false"); t.tabIndex = k === i ? 0 : -1; });
+    img.src = tabs[i].dataset.img; img.alt = "Inversiones, pestaña " + tabs[i].textContent;
+    note.innerHTML = tabs[i].dataset.note; panel.setAttribute("aria-labelledby", tabs[i].id);
+  }
+
+  // Demo data (from the demo database, Oct 2025 – Sep 2026)
+  var months = ["oct", "nov", "dic", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep"];
+  var years  = [2025, 2025, 2025, 2026, 2026, 2026, 2026, 2026, 2026, 2026, 2026, 2026];
+  var inc = [2654, 2674, 5072, 2749, 2757, 2764, 2721, 2788, 5260, 3040, 2756, 2717];
+  var exp = [2368, 2856, 4106, 2573, 2653, 2481, 2854, 2716, 2827, 3780, 2679, 2705];
+  var eur = function (v) { return v.toLocaleString("es-ES") + " €"; };
+
+  var W = 640, H = 260, L = 46, R = 8, T = 12, B = 30, max = 6000;
+  var y = function (v) { return T + (H - T - B) * (1 - v / max); };
+  var step = (W - L - R) / months.length, bw = Math.min(16, step * 0.32);
+  var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Barras de ingresos y gastos por mes">';
+  [0, 2000, 4000, 6000].forEach(function (v) {
+    s += '<line class="grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '"/>';
+    s += '<text x="' + (L - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + (v / 1000) + ' mil €</text>';
+  });
+  function bar(x, v, color, i, kind) {
+    var top = y(v), h = y(0) - top, r = 4;
+    return '<path data-i="' + i + '" data-k="' + kind + '" fill="' + color + '" d="M' + x + ' ' + y(0) + 'V' + (top + r) +
+      'Q' + x + ' ' + top + ' ' + (x + r) + ' ' + top + 'H' + (x + bw - r) + 'Q' + (x + bw) + ' ' + top + ' ' + (x + bw) + ' ' + (top + r) +
+      'V' + y(0) + 'Z"/>';
+  }
+  months.forEach(function (m, i) {
+    var cx = L + step * i + step / 2;
+    s += bar(cx - bw - 1, inc[i], "var(--accent)", i, "inc");
+    s += bar(cx + 1, exp[i], "var(--orange)", i, "exp");
+    s += '<rect data-i="' + i + '" x="' + (L + step * i) + '" y="' + T + '" width="' + step + '" height="' + (H - T - B) + '" fill="transparent"/>';
+    s += '<text x="' + cx + '" y="' + (H - 10) + '" text-anchor="middle">' + m + (i === 0 || m === "ene" ? " " + String(years[i]).slice(2) : "") + '</text>';
+  });
+  // Direct labels only on the two extra-pay months
+  [2, 8].forEach(function (i) {
+    var cx = L + step * i + step / 2 - bw / 2 - 1;
+    s += '<text x="' + cx + '" y="' + (y(inc[i]) - 6) + '" text-anchor="middle" style="fill:var(--ink-2)">paga extra</text>';
+  });
+  s += '</svg><div class="tip" hidden></div>';
+  var box = document.getElementById("monthly");
+  box.innerHTML = s;
+  var tip = box.querySelector(".tip"), svg = box.querySelector("svg");
+  svg.addEventListener("mousemove", function (e) {
+    var i = e.target.getAttribute && e.target.getAttribute("data-i");
+    if (i === null || i === undefined) { tip.hidden = true; return; }
+    i = +i;
+    var rb = box.getBoundingClientRect();
+    tip.hidden = false;
+    tip.innerHTML = "<b>" + months[i] + " " + years[i] + "</b> · ingresos " + eur(inc[i]) + " · gastos " + eur(exp[i]);
+    tip.style.left = (e.clientX - rb.left + box.scrollLeft) + "px";
+    tip.style.top = (e.clientY - rb.top) + "px";
+  });
+  svg.addEventListener("mouseleave", function () { tip.hidden = true; });
+
+  var t = "<table><thead><tr><th>Mes</th><th>Ingresos</th><th>Gastos</th><th>Diferencia</th></tr></thead><tbody>";
+  months.forEach(function (m, i) { t += "<tr><td>" + m + " " + years[i] + "</td><td>" + eur(inc[i]) + "</td><td>" + eur(exp[i]) + "</td><td>" + eur(inc[i] - exp[i]) + "</td></tr>"; });
+  document.getElementById("monthly-table").innerHTML = t + "</tbody></table>";
+
+  var cats = [["Hipoteca", 8906], ["Aporte Broker", 4800], ["Supermercados", 4791], ["Restaurantes & Bares", 2605],
+              ["Gasolina", 1767], ["Plan de Pensiones", 1500], ["Amazon", 1288], ["Viajes", 930], ["Efectivo (cajero)", 830]];
+  var cmax = cats[0][1], h = "";
+  cats.forEach(function (c) {
+    h += '<div class="row"><span title="' + c[0] + '">' + c[0] + '</span><div class="track"><div class="fill" style="width:' +
+         (c[1] / cmax * 100).toFixed(1) + '%"></div></div><b>' + eur(c[1]) + '</b></div>';
+  });
+  document.getElementById("cats").innerHTML = h;
+})();
+</script>

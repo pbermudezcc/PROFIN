@@ -19,8 +19,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from PySide6.QtCore    import Qt, QSettings, QSize, QTimer
-from PySide6.QtGui     import QFont, QIcon
+from PySide6.QtCore    import Qt, QSettings, QSize, QTimer, QUrl
+from PySide6.QtGui     import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QFrame, QStackedWidget, QSizePolicy,
@@ -30,6 +30,7 @@ import qtawesome as qta
 
 from app.config      import APP_NAME, APP_VERSION, THEMES, NAV_ITEMS, NAV_ITEMS_TOP, NAV_ITEMS_BOTTOM
 from app.db.models   import User
+from app.manual      import MANUAL_INDEX
 from app.settings    import SettingsManager
 from sqlalchemy.orm  import Session
 
@@ -230,6 +231,17 @@ class MainWindow(QWidget):
         layout.addWidget(self._lbl_user)
 
         layout.addSpacing(12)
+
+        # ── User manual (docs/manual, opened in the browser) ──────────
+        self._btn_help = QPushButton()
+        self._btn_help.setFixedSize(32, 32)
+        self._btn_help.setFlat(True)
+        self._btn_help.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_help.setToolTip("Manual de usuario")
+        self._btn_help.clicked.connect(self._open_manual)
+        layout.addWidget(self._btn_help)
+
+        layout.addSpacing(2)
 
         # ── Theme toggle ──────────────────────────────────────────────
         self._btn_theme = QPushButton()
@@ -571,6 +583,12 @@ class MainWindow(QWidget):
     # Theme
     # ------------------------------------------------------------------
 
+    def _open_manual(self) -> None:
+        if not MANUAL_INDEX.is_file():
+            logging.getLogger(__name__).warning("Manual no encontrado: %s", MANUAL_INDEX)
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(MANUAL_INDEX)))
+
     def _toggle_theme(self) -> None:
         self._theme = "dark" if self._theme == "light" else "light"
         self._t     = THEMES[self._theme]
@@ -601,6 +619,9 @@ class MainWindow(QWidget):
                       if self._theme == "light" else "mdi.weather-sunny")
         self._btn_theme.setIcon(qta.icon(theme_icon, color=icon_color))
         self._btn_theme.setIconSize(QSize(20, 20))
+
+        self._btn_help.setIcon(qta.icon("mdi.help-circle-outline", color=icon_color))
+        self._btn_help.setIconSize(QSize(20, 20))
 
         self._btn_logout.setIcon(
             qta.icon("mdi.logout", color=icon_color)

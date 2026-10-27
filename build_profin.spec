@@ -28,6 +28,7 @@ analysis = Analysis(
     binaries=[],
     datas=[
         (str(ROOT / "app"), "app"),
+        (str(ROOT / "docs" / "manual"), "docs/manual"),   # app/manual.py: in-app user manual
     ],
     hiddenimports=[
         "PySide6",

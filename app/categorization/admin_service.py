@@ -35,6 +35,7 @@ from app.categorization.rules_engine import (
     apply_rules_and_commit,
     create_rule,
     delete_rule,
+    rule_scope,
     update_rule,
 )
 from app.db.models import (
@@ -169,7 +170,7 @@ def visible_rules(session: Session, user_id: int) -> List[AutoCategorizationRule
     """The user's own rules plus the family's global ones, by priority."""
     return (
         session.query(AutoCategorizationRule)
-        .filter((AutoCategorizationRule.user_id == user_id) | AutoCategorizationRule.user_id.is_(None))
+        .filter(rule_scope(session, user_id))
         .order_by(AutoCategorizationRule.priority, AutoCategorizationRule.id)
         .all()
     )

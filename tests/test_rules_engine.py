@@ -419,9 +419,9 @@ class TestRulesEngine:
         assert txn.category_source is None
 
 
-def _second_user(db_session, with_super: bool):
+def _second_user(db_session, with_super: bool, username: str = "maria_test"):
     """Another family member with an optional own 'GASTO > Supermercados'."""
-    user = create_user(db_session, "maria_test", "password123")
+    user = create_user(db_session, username, "password123")
     account = Account(user_id=user.id, account_name="Cuenta María")
     db_session.add(account)
     db_session.flush()
@@ -472,4 +472,20 @@ def test_r18_other_users_personal_rule_never_applies(db_session, base_data):
     user_id, account_id, _ = _second_user(db_session, with_super=True)
     txn = _make_txn(db_session, user_id, account_id, issuer="LIDL")
 
+    assert apply_rules(db_session, [txn.id], user_id).assigned == {}
+
+
+def test_r19_demo_account_never_sees_or_gets_global_rules(db_session, base_data):
+    """R-19: the DEMO account (shown to visitors) is kept apart from the
+    family's global rules: not listed, not applied."""
+    from app.categorization.rules_engine import get_all_rules, shares_global_rules
+
+    create_rule(db_session, category_id=base_data["cat_super"].id,
+                match_pattern="LIDL", user_id=None)
+    user_id, account_id, _ = _second_user(db_session, with_super=True, username="demo")
+    txn = _make_txn(db_session, user_id, account_id, issuer="LIDL")
+
+    assert not shares_global_rules(db_session, user_id)
+    assert shares_global_rules(db_session, base_data["user_id"])
+    assert get_all_rules(db_session, user_id=user_id) == []
     assert apply_rules(db_session, [txn.id], user_id).assigned == {}

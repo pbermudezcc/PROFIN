@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.categorization.rules_engine import rule_scope
 from app.db.models import (
     Account,
     AutoCategorizationRule,
@@ -26,8 +27,7 @@ def more(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
         "categorias": db.query(func.count(Category.id)).filter(
             Category.user_id == user.id, Category.level != CategoryLevel.type).scalar() or 0,
         "reglas": db.query(func.count(AutoCategorizationRule.id)).filter(
-            or_(AutoCategorizationRule.user_id == user.id, AutoCategorizationRule.user_id.is_(None))
-        ).scalar() or 0,
+            rule_scope(db, user.id)).scalar() or 0,
         "cuentas": db.query(func.count(Account.id)).filter(Account.user_id == user.id).scalar() or 0,
         "importaciones": db.query(func.count(ImportBatch.id)).filter(ImportBatch.user_id == user.id).scalar() or 0,
     }

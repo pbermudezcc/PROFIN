@@ -8,6 +8,11 @@ APP_NAME    = "FAMILYFIN"
 APP_VERSION = "0.7.1"
 APP_RELEASE_DATE = "2026-10-11"
 
+# Account for showing the app to visitors (tools/demo/install_demo_user.py).
+# It is kept apart from the family: it never sees, applies or creates the
+# global rules, whose patterns name the family's shops, people and employers.
+DEMO_USERNAME = "DEMO"
+
 # ---------------------------------------------------------------------------
 # Theme tokens — Light & Dark
 # ---------------------------------------------------------------------------

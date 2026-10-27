@@ -32,6 +32,8 @@ Global vs. per-user rules:
     into its creator's tree. For any other user the rule is applied to the
     equivalent category in that user's own tree (same name and same parent
     type name); if there is none, the global rule is skipped for that user.
+  - The demo account (config.DEMO_USERNAME) never sees or applies global
+    rules: see rule_scope().
 
 Output:
   RulesEngineResult.assigned   : {transaction_id: category_id}
@@ -45,8 +47,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.config import DEMO_USERNAME
 from app.db.models import (
     CATEGORY_SOURCE_MANUAL,
     CATEGORY_SOURCE_RULE,
@@ -54,6 +58,7 @@ from app.db.models import (
     Category,
     MatchType,
     Transaction,
+    User,
 )
 
 logger = logging.getLogger(__name__)
@@ -352,21 +357,34 @@ def update_rule(
     return rule
 
 
+def shares_global_rules(session: Session, user_id: int) -> bool:
+    """False for the demo account, which is shown to visitors."""
+    return session.query(User.id).filter(
+        User.id == user_id, func.upper(User.username) == DEMO_USERNAME.upper()
+    ).first() is None
+
+
+def rule_scope(session: Session, user_id: int):
+    """Filter for the rules a user sees and gets applied: their own plus the
+    family's global ones (only their own for the demo account)."""
+    own = AutoCategorizationRule.user_id == user_id
+    if not shares_global_rules(session, user_id):
+        return own
+    return own | AutoCategorizationRule.user_id.is_(None)
+
+
 def get_all_rules(
     session: Session,
     user_id: Optional[int] = None,
 ) -> List[AutoCategorizationRule]:
     """
     Return rules ordered by priority ASC.
-    If user_id is provided, returns global rules + rules for that user.
+    If user_id is provided, returns the rules in rule_scope() for that user.
     If user_id is None, returns only global rules.
     """
     query = session.query(AutoCategorizationRule)
     if user_id is not None:
-        query = query.filter(
-            (AutoCategorizationRule.user_id == None) |  # noqa: E711
-            (AutoCategorizationRule.user_id == user_id)
-        )
+        query = query.filter(rule_scope(session, user_id))
     else:
         query = query.filter(AutoCategorizationRule.user_id == None)  # noqa: E711
     return query.order_by(
