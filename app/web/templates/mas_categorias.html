@@ -5,6 +5,7 @@
 {% call ui.large_title("Categorías", "Toca una categoría para renombrarla o borrarla") %}
   <button class="btn secondary sm hide-sm" type="button" hx-post="/mas/categorias/predeterminadas" hx-swap="none"
           hx-confirm="¿Cargar las categorías por defecto?" data-confirm-detail="Solo se añaden las categorías y reglas estándar que falten; no se borra ni cambia nada." data-confirm-label="Cargar">{{ ui.icon("wand", "sm") }} Por defecto</button>
+  <a class="btn secondary sm" href="/mas/categorias/biblioteca">{{ ui.icon("folder", "sm") }} Exportar / importar</a>
   <button class="btn sm" type="button" hx-get="/mas/categorias/nueva" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>{{ ui.icon("plus", "sm") }} Nueva</button>
 {% endcall %}
 
@@ -12,6 +13,7 @@
 <div class="card">
   {% call ui.empty("Sin categorías", "Carga el árbol de categorías y reglas por defecto de FAMILYFIN para empezar.", "tag") %}
   <button class="btn" type="button" hx-post="/mas/categorias/predeterminadas" hx-swap="none">{{ ui.icon("wand", "sm") }} Cargar categorías por defecto</button>
+  <a class="btn secondary" href="/mas/categorias/biblioteca">{{ ui.icon("upload", "sm") }} Importar desde un archivo</a>
   {% endcall %}
 </div>
 {% else %}

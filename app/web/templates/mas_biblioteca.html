@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Exportar e importar categorías{% endblock %}
+{% block topbar %}{{ ui.topnav("Exportar / importar", "Categorías", "/mas/categorias") }}{% endblock %}
+{% block content %}
+{% call ui.large_title("Exportar e importar", "Guarda tus categorías y reglas en un archivo, o cárgalas desde uno") %}{% endcall %}
+
+<div class="grid g2">
+  <section class="card">
+    <h3 class="t-md strong">Exportar</h3>
+    <p class="muted t-sm">Descarga tus categorías y tus reglas personales en un archivo <b>{{ suffix }}</b>. Sirve como copia de archivo y para cargarlas en otro usuario o en otro PC.</p>
+    <a class="btn block section" href="/mas/categorias/exportar" hx-boost="false" download>{{ ui.icon("download", "sm") }} Descargar archivo</a>
+    <p class="faint t-sm section">Las reglas globales de la familia se exportan desde la aplicación del PC.</p>
+  </section>
+
+  <section class="card">
+    <h3 class="t-md strong">Importar</h3>
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+    <form class="form-grid section" method="post" action="/importar/categorias" enctype="multipart/form-data" hx-boost="false" data-upload-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <label class="field"><span>Archivo de categorías</span>
+        <input class="input" type="file" name="fichero" required accept=".json,.gz,application/json,application/gzip">
+        <small class="help">Máximo {{ max_kb }} KB. Verás una vista previa antes de guardar nada.</small>
+      </label>
+      <button class="btn block" type="submit" data-busy-label="Leyendo el archivo…">{{ ui.icon("upload", "sm") }} Subir y revisar</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

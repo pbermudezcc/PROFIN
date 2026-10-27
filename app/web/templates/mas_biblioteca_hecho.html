@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Categorías importadas{% endblock %}
+{% block topbar %}{{ ui.topnav("Completada", "Categorías", "/mas/categorias") }}{% endblock %}
+{% block content %}
+<div class="card done section">
+  <div class="art">{{ ui.icon("check") }}</div>
+  <h1 class="display">Categorías y reglas importadas</h1>
+  <p class="muted">{{ item.filename }} · {{ "Reemplazar" if mode == "replace" else "Fusionar" }}</p>
+</div>
+
+<div class="kpis section">
+  {{ ui.kpi("Categorías creadas", result.types_created + result.categories_created, "", "income") }}
+  {{ ui.kpi("Reglas creadas", result.rules_created, "", "income") }}
+  {% if mode == "replace" %}
+  {{ ui.kpi("Prioridades", result.rules_updated, "actualizadas", "") }}
+  {{ ui.kpi("Reglas eliminadas", result.rules_deleted, "", "expense") }}
+  {% endif %}
+</div>
+
+<div class="alert info section">{{ ui.icon("info", "sm") }}<span>Los movimientos no se han tocado. Aplica las reglas para categorizar los que estén pendientes.</span></div>
+
+<div class="wrap-gap section">
+  <a class="btn" href="/mas/reglas">{{ ui.icon("rules", "sm") }} Ir a reglas y aplicarlas</a>
+  <a class="btn secondary" href="/mas/categorias">{{ ui.icon("tag", "sm") }} Ver categorías</a>
+</div>
+{% endblock %}

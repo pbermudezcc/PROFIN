@@ -7,9 +7,13 @@ Features:
   - Tree view: Type → Category hierarchy
   - Add / Rename / Delete categories
   - Seed default categories button (first-time setup)
+  - Export / import the categorization library (.profin-cats.json)
 """
 from __future__ import annotations
 
+import logging
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore    import Qt
@@ -17,19 +21,24 @@ from PySide6.QtGui     import QFont, QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTreeView, QHeaderView,
-    QInputDialog, QMessageBox, QSizePolicy,
+    QInputDialog, QMessageBox, QSizePolicy, QFileDialog,
 )
 import qtawesome as qta
 
 from sqlalchemy.orm import Session
 
 from app.config      import THEMES
-from app.db.models   import Category, CategoryLevel, User
+from app.db.models   import AutoCategorizationRule, Category, CategoryLevel, User
 from app.gui._style_utils import apply_card_shadow
 from app.categorization.category_manager import get_all_categories
+from app.categorization.rules_engine import shares_global_rules
+from app.categorization import library_io
 from app.categorization.admin_service import (
-    add_category, load_defaults, remove_category, rename_category,
+    add_category, apply_all_rules, load_defaults, remove_category, rename_category,
 )
+from app.gui.library_dialog import LibraryImportDialog
+
+logger = logging.getLogger(__name__)
 
 
 class CategoriesView(QWidget):
@@ -109,6 +118,20 @@ class CategoriesView(QWidget):
         btn_seed.setObjectName("btnPrimary")
         btn_seed.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_seed.clicked.connect(self._on_seed)
+
+        for text, icon, slot in (
+            ("  Exportar…", "mdi.export", self._on_export),
+            ("  Importar…", "mdi.import", self._on_import),
+        ):
+            btn = QPushButton(text)
+            btn.setIcon(qta.icon(icon, color=self._t["text_secondary"]))
+            btn.setFixedHeight(34)
+            btn.setObjectName("btnSecondary")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip("Guarda o carga tus categorías y reglas en un archivo "
+                           f"{library_io.FILE_SUFFIX}")
+            btn.clicked.connect(slot)
+            layout.addWidget(btn)
         layout.addWidget(btn_seed)
 
         return bar
@@ -345,6 +368,118 @@ class CategoriesView(QWidget):
                 self, "Sin cambios",
                 "Las categorías y reglas por defecto ya estaban creadas."
             )
+
+    # ------------------------------------------------------------------
+    # Export / import of the categorization library
+    # ------------------------------------------------------------------
+
+    def _on_export(self) -> None:
+        include_global = False
+        if shares_global_rules(self._session, self._user.id) and self._session.query(
+                AutoCategorizationRule.id).filter(AutoCategorizationRule.user_id.is_(None)).first() is not None:
+            reply = QMessageBox.question(
+                self, "Exportar categorías y reglas",
+                "¿Incluir también las reglas globales (compartidas por toda la familia)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            include_global = reply == QMessageBox.StandardButton.Yes
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar categorías y reglas",
+            library_io.suggested_filename(self._user.username),
+            f"Biblioteca de categorías (*{library_io.FILE_SUFFIX})",
+        )
+        if not path:
+            return
+        payload = library_io.export_library(self._session, self._user.id, include_global,
+                                            source_user=self._user.username)
+        try:
+            Path(path).write_bytes(library_io.dumps(payload))
+        except OSError as exc:
+            QMessageBox.warning(self, "Error", f"No se pudo guardar el archivo:\n{exc}")
+            return
+        categories = sum(len(t["categories"]) for t in payload["types"])
+        QMessageBox.information(
+            self, "Exportación completada",
+            f"Se exportaron {categories} categorías y {len(payload['rules'])} reglas a:\n{path}",
+        )
+
+    def _on_import(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importar categorías y reglas", "",
+            f"Biblioteca de categorías (*{library_io.FILE_SUFFIX} *.json *.json.gz);;Todos (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "rb") as handle:
+                raw = handle.read(library_io.MAX_FILE_BYTES + 1)
+            lib = library_io.parse_library(raw)
+        except (OSError, library_io.LibraryError) as exc:
+            QMessageBox.warning(self, "No se puede importar", str(exc))
+            return
+
+        dialog = LibraryImportDialog(self._session, self._user.id, lib, Path(path).name, self)
+        if dialog.exec() != LibraryImportDialog.DialogCode.Accepted:
+            return
+        mode, allow_global = dialog.mode, dialog.allow_global
+        if mode == library_io.MODE_REPLACE and dialog.plan and dialog.plan.deleted_rules:
+            reply = QMessageBox.warning(
+                self, "Confirmar reemplazo",
+                f"Se eliminarán {len(dialog.plan.deleted_rules)} reglas tuyas que no están "
+                "en el archivo. ¿Continuar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        safety = self._save_pre_import_copy()
+        try:
+            result = library_io.apply_import(self._session, self._user.id, lib, mode, allow_global)
+        except Exception as exc:  # apply_import already rolled back
+            logger.exception("Importación de categorías fallida")
+            QMessageBox.warning(self, "Error", f"No se importó nada: {exc}")
+            return
+        self.refresh()
+
+        lines = [
+            f"Categorías creadas: {result.types_created + result.categories_created}",
+            f"Reglas creadas: {result.rules_created}",
+        ]
+        if mode == library_io.MODE_REPLACE:
+            lines += [f"Prioridades actualizadas: {result.rules_updated}",
+                      f"Reglas eliminadas: {result.rules_deleted}"]
+        if safety:
+            lines.append(f"\nCopia previa guardada en:\n{safety}")
+        lines.append("\n¿Aplicar ahora las reglas a los movimientos sin categoría?")
+        reply = QMessageBox.question(
+            self, "Importación completada", "\n".join(lines),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            summary = apply_all_rules(self._session, self._user.id, overwrite=False)
+            QMessageBox.information(
+                self, "Reglas aplicadas",
+                f"Movimientos categorizados: {summary.assigned}\n"
+                f"Con conflicto: {summary.conflicts}\nSin regla: {summary.unmatched}",
+            )
+
+    def _save_pre_import_copy(self) -> Optional[Path]:
+        """Export the current library next to the backups before changing it."""
+        try:
+            from app.settings.settings_manager import SettingsManager
+            manager = SettingsManager()
+            folder = manager.auto_backup_dir(manager.load())
+            folder.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            name = library_io.suggested_filename(self._user.username).replace(
+                library_io.FILE_SUFFIX, f"-antes-de-importar-{stamp}{library_io.FILE_SUFFIX}")
+            payload = library_io.export_library(self._session, self._user.id, include_global=True,
+                                                source_user=self._user.username)
+            (folder / name).write_bytes(library_io.dumps(payload))
+            return folder / name
+        except Exception:  # a failed safety copy must not block the import
+            logger.exception("No se pudo guardar la copia previa de categorías")
+            return None
 
     # ------------------------------------------------------------------
     # Theme

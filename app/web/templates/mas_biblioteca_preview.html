@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Revisar categorías{% endblock %}
+{% block topbar %}{{ ui.topnav("Revisar", "Exportar / importar", "/mas/categorias/biblioteca") }}{% endblock %}
+{% block content %}
+{% call ui.large_title("Revisar antes de importar", item.filename) %}{% endcall %}
+
+<div class="card tight split wrap">
+  <div class="wrap-gap">
+    {% if item.lib.source_user %}<span class="badge outline">{{ ui.icon("tag", "xs") }} de {{ item.lib.source_user }}</span>{% endif %}
+    {% if item.lib.exported_at %}<span class="badge outline">{{ ui.icon("calendar", "xs") }} {{ item.lib.exported_at[:10] }}</span>{% endif %}
+  </div>
+  <span class="faint t-sm">{{ item.lib.category_count }} categorías · {{ item.lib.rules|length }} reglas en el archivo</span>
+</div>
+
+<div class="seg fit section" aria-label="Modo">
+  <a href="/importar/categorias/{{ token }}?modo=merge" class="{{ 'on' if mode == 'merge' else '' }}">Fusionar</a>
+  <a href="/importar/categorias/{{ token }}?modo=replace" class="{{ 'on' if mode == 'replace' else '' }}">Reemplazar mis reglas</a>
+</div>
+<p class="faint t-sm">
+  {% if mode == "merge" %}Solo se añade lo que falta; no se borra ni cambia nada.
+  {% else %}Tus reglas personales quedarán exactamente como en el archivo. Las categorías nunca se borran.{% endif %}
+</p>
+
+<div class="kpis section">
+  {{ ui.kpi("Categorías nuevas", plan.new_types|length + plan.new_categories|length, "se crearán", "income") }}
+  {{ ui.kpi("Reglas nuevas", plan.new_rules|length, "se crearán", "income") }}
+  {{ ui.kpi("Ya existentes", plan.unchanged_rules, "sin cambios", "") }}
+  {% if mode == "replace" %}
+  {{ ui.kpi("Reglas eliminadas", plan.deleted_rules|length, "no están en el archivo", "expense") }}
+  {% endif %}
+</div>
+
+{% for w in plan.warnings %}
+<div class="alert warn section">{{ ui.icon("alert", "sm") }}<span>{{ w }}</span></div>
+{% endfor %}
+
+{% macro block(title, items) %}
+{% if items %}
+<div class="section-h"><h2>{{ title }} ({{ items|length }})</h2></div>
+<div class="list">
+  {% for text in items %}<div class="row"><div class="body"><div class="t">{{ text }}</div></div></div>{% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{{ block("Categorías nuevas", plan.new_types + plan.new_categories) }}
+{{ block("Reglas nuevas", new_rules) }}
+{% if mode == "replace" %}
+{{ block("Prioridad cambiada", priority_changes) }}
+{{ block("Reglas que se eliminan", plan.deleted_rules) }}
+{% endif %}
+
+<div class="sticky-actions section">
+  <form method="post" action="/importar/categorias/{{ token }}/cancelar" hx-boost="false">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <button class="btn ghost" type="submit">Cancelar</button>
+  </form>
+  {% if plan.has_changes %}
+  <form method="post" action="/importar/categorias/{{ token }}/confirmar" hx-boost="false" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <input type="hidden" name="modo" value="{{ mode }}">
+    {% if mode == "replace" and plan.deleted_rules %}
+    <label class="check"><input type="checkbox" name="entiendo" value="1" required>
+      <span>Entiendo que se eliminarán {{ plan.deleted_rules|length }} reglas mías</span></label>
+    {% endif %}
+    <button class="btn block {{ 'danger' if mode == 'replace' and plan.deleted_rules else '' }}" type="submit" data-busy-label="Importando…">{{ ui.icon("check", "sm") }} Importar</button>
+  </form>
+  {% else %}
+  <p class="muted">No hay nada que importar: ya tienes todo lo que contiene el archivo.</p>
+  {% endif %}
+</div>
+{% endblock %}
