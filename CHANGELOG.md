@@ -5,6 +5,58 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.8.0.md`  |  **Files:** 136  |  **Handler:** v1.0.0
+**Date:** 2026-10-27 23:10  |  **Type:** Release
+**Description:** La cartera de inversiones se gestiona ya desde el iPad: se importa el «Estado de cuenta» de DEGIRO y se actualizan las cotizaciones desde la web, sin pasar por el PC. El valor de la cartera incluye ahora el efectivo sin invertir del bróker, así que cuadra con la «Cuenta completa» de DEGIRO. Además, las categorías y reglas se pueden exportar e importar entre usuarios, hay búsqueda completa en Movimientos y en Reglas, y la aplicación trae su manual de usuario.
+
+### Antes de actualizar
+
+- La base de datos se actualiza automáticamente del esquema v5 al v6 la primera vez que se abre la aplicación. Antes se guarda una copia `profin.pre-migration-v6.<fecha>.db` junto a la base.
+
+### Novedades
+
+- **Importar el extracto de DEGIRO desde la web** (botón de subir en Inversiones): propone el símbolo de Yahoo de cada valor nuevo, enseña solo las operaciones que aún no tienes y las guarda todas o ninguna. Nunca se duplican, aunque el extracto se solape con uno anterior (`c618ebd`)
+- **Actualizar cotizaciones desde la web** (botón ↻ en Inversiones): el PC descarga los precios y la página se recarga sola al terminar. También se lanza al importar un extracto, para que los valores nuevos tengan precio enseguida (`c618ebd`)
+- **El efectivo del bróker cuenta en la cartera**: el valor total suma el «Margen libre» de DEGIRO, tomado del último «Saldo» del extracto, en la web, en el PC y en Resumen, y aparece como «Efectivo» en Distribución. La plusvalía y la rentabilidad siguen siendo las de los valores. Reimportar un extracto sin operaciones nuevas actualiza solo el efectivo (`c618ebd`)
+- **Versión visible en la web**, discreta, al pie de la barra lateral y en Ajustes (solo con la sesión iniciada) (`c618ebd`)
+
+### Correcciones
+
+- Algunos extractos de DEGIRO (como el de octubre de 2026) no se reconocían al importar, tampoco en la aplicación del PC (`c618ebd`)
+- **Buscar y filtrar reglas**, en el PC y en la web: por texto (patrón, categoría, tipo, ámbito, fecha, prioridad, uso) y con filtros de categoría, tipo, coincidencia, ámbito y uso. Las reglas globales muestran la categoría a la que se aplican para cada usuario (`85d91c8`)
+- **Búsqueda en Movimientos por todos los campos**, en el PC y en la web: conceptos, fechas, importes, saldo, tipo, categoría, cuenta y fichero de origen; sin distinguir mayúsculas ni acentos, y cada palabra puede estar en un campo distinto (`7a5c449`)
+- **Manual de usuario** dentro de la aplicación: botón «?» en el PC y enlace en la web (también desde la pantalla de entrada). Nuevo usuario **DEMO** para enseñar la aplicación sin mostrar datos de la familia: no ve ni aplica las reglas globales (`3b3e9dc`)
+- **Exportar e importar categorías y reglas** a un archivo `.profin-cats.json`, para copiarlas a otro usuario o a otro PC: fusionar (solo añade lo que falta) o reemplazar tus reglas personales, siempre con vista previa. En el PC desde Categorías y en la web desde Ajustes › Categorías; las reglas globales solo desde el PC (`97a8320`)
+
+### Interno
+
+- Registro de las sesiones de trabajo, lecciones aprendidas y plan de paridad web actualizados (`8a59436`, `2441f4a`)
+
+### Áreas afectadas
+
+- **Base de datos y migraciones**: `app/db/database.py`, `app/db/models.py`
+- **Categorías y reglas**: `app/categorization/admin_service.py`, `app/categorization/library_io.py`, `app/categorization/rule_search.py`, `app/categorization/rules_engine.py`
+- **Informes y gráficos**: `app/analytics/transaction_search.py`
+- **Interfaz**: `app/config.py`, `app/gui/categories_view.py`, `app/gui/investment_import.py`, `app/gui/investment_positions.py`, `app/gui/investments_view.py`, `app/gui/library_dialog.py` y 3 más
+- **Instalación y compilación Windows**: `build_profin.spec`
+- **Tests**: `tests/test_backup_and_migrations.py`, `tests/test_gui_smoke.py`, `tests/test_investments_cash.py`, `tests/test_investments_gui.py`, `tests/test_investments_import.py`, `tests/test_library_io.py` y 4 más
+- **Herramientas de desarrollo y agentes**: `.claude/agents/familyfin-engineer.md`, `.gitignore`, `tools/demo/PROFIN_DEMO.bat`, `tools/demo/_sandbox.py`, `tools/demo/build_demo.py`, `tools/demo/capture_screens.py` y 4 más
+- **Documentación**: `docs/agent/agent_log.md`, `docs/agent/lessons_learned.md`, `docs/manual/img/m_gastos.png`, `docs/manual/img/m_importar_preview.png`, `docs/manual/img/m_inv_evolucion.png`, `docs/manual/img/m_inversiones.png` y 31 más
+
+<details><summary>Commits incluidos (7 desde v0.7.1)</summary>
+
+- `8a59436` docs: record the sessions since v0.7.1 (agent log, lessons, web parity plan)
+- `c618ebd` feat(inversiones): DEGIRO import and price refresh from the web, broker cash (schema v6)
+- `85d91c8` feat(reglas): search and filter the rules (desktop + web)
+- `7a5c449` feat(movimientos): search every field of a movement (desktop + web)
+- `3b3e9dc` feat(manual): user manual in the app and an isolated DEMO account
+- `97a8320` feat(categorias): export/import the categories and rules library (desktop + web)
+- `2441f4a` docs(agent_log): record v0.7.1 release
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.7.1.md`  |  **Files:** 117  |  **Handler:** v1.0.0
 **Date:** 2026-10-11 00:21  |  **Type:** Release
 **Description:** El proyecto estrena una página de presentación (README) en GitHub que explica qué es FAMILYFIN, cómo instalarlo en otro PC y cómo funciona cada sección. La aplicación no cambia para quien ya la usa, salvo que el ejecutable se genera ahora con una versión de pandas que Windows no bloquea. No hay cambios en la base de datos: basta con instalar la nueva versión.
