@@ -7,15 +7,17 @@ Features:
   - Filterable/sortable table: Fecha | Emisor | Concepto | Importe
                                | Tipo | Categoría | Saldo
   - Inline category assignment via dropdown in Categoría column
-  - Filter bar: search text + type filter + date range
+  - Filter bar: search text (all fields, see app.analytics.transaction_search)
+    + type filter + category filter
   - Pagination for large datasets (100 rows per page)
 """
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing   import List, Optional
 
-from PySide6.QtCore    import Qt, QSortFilterProxyModel, QDate
+from PySide6.QtCore    import Qt, QSortFilterProxyModel, QDate, QTimer
 from PySide6.QtGui     import QFont, QColor, QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -25,7 +27,6 @@ from PySide6.QtWidgets import (
 )
 import qtawesome as qta
 
-from sqlalchemy        import or_
 from sqlalchemy.orm    import Session
 
 from app.config      import THEMES
@@ -38,10 +39,12 @@ from app.categorization.category_manager import (
 from app.categorization.admin_service import (
     add_rule_from_transaction, transaction_has_rule
 )
+from app.analytics.transaction_search import filtered_transactions_page
 from app.gui._style_utils import apply_card_shadow
 
 
 PAGE_SIZE = 100
+SEARCH_DEBOUNCE_MS = 250
 
 
 class TransactionsView(QWidget):
@@ -159,11 +162,22 @@ class TransactionsView(QWidget):
 
         # Search
         self._inp_search = QLineEdit()
-        self._inp_search.setPlaceholderText("🔍  Buscar por emisor o concepto...")
+        self._inp_search.setPlaceholderText("🔍  Buscar en todos los campos…")
+        self._inp_search.setToolTip(
+            "Busca cada palabra en conceptos, emisor, fecha, importe, saldo,\n"
+            "tipo, categoría, cuenta y archivo de origen. Sin distinguir\n"
+            "mayúsculas ni acentos; todas las palabras deben aparecer."
+        )
         self._inp_search.setFixedHeight(34)
         self._inp_search.setObjectName("filterInput")
         self._inp_search.setMinimumWidth(240)
-        self._inp_search.textChanged.connect(self._on_filter_changed)
+        # Debounced: the search scans every field of the filtered rows.
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(SEARCH_DEBOUNCE_MS)
+        self._search_timer.timeout.connect(self._on_filter_changed)
+        self._inp_search.textChanged.connect(self._search_timer.start)
+        self._inp_search.returnPressed.connect(self._on_filter_changed)
         layout.addWidget(self._inp_search)
 
         # Type filter
@@ -311,7 +325,7 @@ class TransactionsView(QWidget):
 
     def _load_data(self) -> None:
         t = self._t
-        search_text = self._inp_search.text().strip().lower()
+        search_text = self._inp_search.text()
         type_filter = self._cmb_type.currentData()
         cat_filter  = self._cmb_cat.currentData()
 
@@ -330,22 +344,17 @@ class TransactionsView(QWidget):
         elif cat_filter is not None:
             query = query.filter(Transaction.category_id == cat_filter)
 
-        if search_text:
-            query = query.filter(
-                or_(
-                    Transaction.issuer_name.ilike(f"%{search_text}%"),
-                    Transaction.concept.ilike(f"%{search_text}%"),
-                )
+        try:
+            transactions, self._total = filtered_transactions_page(
+                self._session, self._user.id, query, search_text,
+                self._page * PAGE_SIZE, PAGE_SIZE,
             )
-
-        query = query.order_by(
-            Transaction.transaction_date.desc(),
-            Transaction.id.desc()
-        )
-
-        self._total = query.count()
-        offset      = self._page * PAGE_SIZE
-        transactions = query.offset(offset).limit(PAGE_SIZE).all()
+        except Exception:
+            self._session.rollback()
+            logging.getLogger(__name__).exception(
+                "Error al cargar transacciones (búsqueda %r)", search_text
+            )
+            transactions, self._total = [], 0
 
         self._lbl_count.setText(
             f"{self._total} transacciones"
@@ -594,11 +603,15 @@ class TransactionsView(QWidget):
     # ------------------------------------------------------------------
 
     def _on_filter_changed(self) -> None:
+        self._search_timer.stop()
         self._page = 0
         self._load_data()
 
     def _clear_filters(self) -> None:
+        self._inp_search.blockSignals(True)
         self._inp_search.clear()
+        self._inp_search.blockSignals(False)
+        self._search_timer.stop()
         self._cmb_type.setCurrentIndex(0)
         self._cmb_cat.setCurrentIndex(0)
         self._page = 0

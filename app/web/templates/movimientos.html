@@ -12,7 +12,7 @@
   <label class="search">
     {{ ui.icon("search", "sm") }}
     <span class="sr-only">Buscar</span>
-    <input class="input" type="search" name="q" value="{{ params.get('q', '') }}" placeholder="Buscar por concepto o comercio" enterkeyhint="search" maxlength="100">
+    <input class="input" type="search" name="q" value="{{ params.get('q', '') }}" placeholder="Buscar en todos los campos…" title="Cada palabra se busca en conceptos, fecha, importe, categoría, cuenta… sin distinguir mayúsculas ni acentos" enterkeyhint="search" maxlength="100">
   </label>
   <div id="filters" class="filters" {% if not show_filters %}hidden{% endif %}>
     <label class="field"><span>Tipo</span>
