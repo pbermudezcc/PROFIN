@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Extracto importado{% endblock %}
+{% block topbar %}{{ ui.topnav("Completada", "Operaciones", "/inversiones/operaciones") }}{% endblock %}
+{% block content %}
+<div class="card done section">
+  <div class="art">{{ ui.icon("check") }}</div>
+  <h1 class="display">{% if not added and s.cash_updated %}Efectivo actualizado{% else %}{{ added }} operaciones importadas{% endif %}</h1>
+  <p class="muted">{{ item.filename }}{% if first %} · {{ first|fdate }} – {{ last|fdate }}{% endif %}</p>
+</div>
+
+<div class="kpis section">
+  {{ ui.kpi("Compras y ventas", s.trades, "añadidas", "income") }}
+  {{ ui.kpi("Dividendos", s.dividends, "añadidos", "income") }}
+  {{ ui.kpi("Omitidas", s.result.skipped, "ya estaban", "") }}
+</div>
+
+{% if s.cash_updated %}
+<div class="alert ok section">{{ ui.icon("wallet", "sm") }}<span>Efectivo en {{ item.statement.broker }} a {{ item.statement.cash_as_of|fdate }}:
+  {% for currency, amount in item.statement.cash.items() if amount %}<b class="num">{{ amount|num }} {{ currency }}</b>{{ ", " if not loop.last }}{% endfor %}. Ya cuenta en el valor total de la cartera.</span></div>
+{% endif %}
+{% if s.estimated %}
+<div class="alert warn section">{{ ui.icon("alert", "sm") }}<span>{{ s.estimated }} dividendo(s) en otra divisa se han pasado a euros con el tipo de cambio guardado de ese día. Revísalos si quieres el importe exacto.</span></div>
+{% endif %}
+<div class="alert info section">{{ ui.icon("info", "sm") }}<span>Las cotizaciones de los valores nuevos se están descargando en el PC; en Posiciones verás el progreso.</span></div>
+
+<div class="wrap-gap section">
+  <a class="btn" href="/inversiones/operaciones?broker={{ item.statement.broker }}">{{ ui.icon("list", "sm") }} Ver las operaciones</a>
+  <a class="btn secondary" href="/inversiones">{{ ui.icon("trend", "sm") }} Ver posiciones</a>
+  <a class="btn secondary" href="/inversiones/importar">{{ ui.icon("upload", "sm") }} Importar otro</a>
+</div>
+{% endblock %}

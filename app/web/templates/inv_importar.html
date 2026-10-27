@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Importar extracto del bróker{% endblock %}
+{% block topbar %}{{ ui.topnav("Importar extracto", "Operaciones", "/inversiones/operaciones") }}{% endblock %}
+{% block content %}
+{% call ui.large_title("Importar extracto del bróker", "«Estado de cuenta» de DEGIRO en Excel (.xlsx) o CSV. Verás una vista previa antes de guardar nada.") %}{% endcall %}
+
+<div class="grid g-main">
+  <section class="card">
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+    <form class="form-grid {{ 'section' if error else '' }}" method="post" action="/importar/inversiones" enctype="multipart/form-data" hx-boost="false" data-upload-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <label class="field"><span>Fichero del extracto</span>
+        <input class="input" type="file" name="fichero" required
+               accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        <small class="help">Máximo {{ max_mb }} MB. En el iPad se abre la app Archivos: busca el extracto en Descargas o iCloud Drive.</small>
+      </label>
+      <p class="faint t-sm">{{ ui.icon("trend", "xs") }} Las operaciones se añaden a la cartera de <b>{{ user.username }}</b>.</p>
+      <button class="btn block" type="submit" data-busy-label="Leyendo el extracto…">{{ ui.icon("upload", "sm") }} Subir y revisar</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h3 class="t-md strong">Cómo conseguir el extracto</h3>
+    <ol class="steps">
+      <li>En DEGIRO abre <b>Buzón › Estado de cuenta</b>.</li>
+      <li>Elige las fechas (puedes pedir desde la apertura de la cuenta) y exporta a <b>Excel</b> o <b>CSV</b>.</li>
+      <li>Súbelo aquí. Las operaciones que ya tengas se reconocen por su número de orden y no se duplican, aunque el extracto se solape con uno anterior.</li>
+    </ol>
+    <div class="alert info section">{{ ui.icon("shield", "sm") }}<span>El fichero se procesa en el PC de casa y se borra en cuanto se lee. Nada se guarda hasta que confirmes.</span></div>
+    <p class="faint t-sm section">Los movimientos de MyInvestor se importan, de momento, desde la aplicación del PC.</p>
+  </section>
+</div>
+{% endblock %}

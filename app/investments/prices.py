@@ -18,6 +18,7 @@ Prices typed in by hand (source 'manual') are never overwritten.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Dict, Iterable, List, Optional
@@ -48,6 +49,11 @@ logger = logging.getLogger(__name__)
 OVERLAP_DAYS = 5
 HISTORY_MARGIN_DAYS = 7
 STALE_AFTER = timedelta(minutes=15)
+
+# One refresh at a time in the whole process, whoever asks (the desktop view
+# or the web server it hosts): two downloads writing the same rows would only
+# contend on SQLite. A second caller waits and then finds little left to fetch.
+REFRESH_LOCK = threading.Lock()
 
 
 @dataclass
@@ -171,7 +177,17 @@ def refresh_market_data(
 
     Never raises for provider problems: the cache keeps its previous content
     and RefreshResult.error carries a Spanish message for the status bar.
+    Serialised with REFRESH_LOCK.
     """
+    with REFRESH_LOCK:
+        return _refresh_market_data(session, provider, today)
+
+
+def _refresh_market_data(
+    session: Session,
+    provider: MarketDataProvider,
+    today: Optional[date],
+) -> RefreshResult:
     today = today or date.today()
     result = RefreshResult(started_at=datetime.now())
     securities = _securities_to_refresh(session)

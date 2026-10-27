@@ -324,6 +324,24 @@ def test_positions_tab_shows_cards_and_rows(env):
         view.shutdown()
 
 
+def test_value_card_adds_the_broker_cash(env):
+    from app.investments.cash import save_statement_cash
+
+    buy(env, env.enr, 10, 1000.0, d=env.day - timedelta(days=40))
+    view = make_view(env)
+    try:
+        card = view._positions._cards["value"]
+        assert card._lbl_label.text() == "Valor de mercado"
+        securities = card._lbl_value.text()
+        save_statement_cash(env.session, env.user.id, "DEGIRO", {"EUR": 1002.42}, env.day)
+        view.reload()
+        assert card._lbl_label.text() == "Valor total"
+        assert card._lbl_value.text() != securities and "efectivo 1.002,42 €" in card._lbl_sub.text()
+        assert "DEGIRO" in card.toolTip()
+    finally:
+        view.shutdown()
+
+
 def test_positions_banner_for_missing_price_and_closed_toggle(env):
     tke = Security(symbol="TKE.DE", name="Take-Two", currency="EUR")
     env.session.add(tke)

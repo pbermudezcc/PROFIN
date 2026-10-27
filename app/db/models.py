@@ -140,6 +140,9 @@ class User(Base):
     investment_transactions: Mapped[List[InvestmentTransaction]] = relationship(
         "InvestmentTransaction", back_populates="user", cascade="all, delete-orphan"
     )
+    broker_cash: Mapped[List[BrokerCash]] = relationship(
+        "BrokerCash", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username!r}>"
@@ -565,3 +568,38 @@ class FxRate(Base):
 
     def __repr__(self) -> str:
         return f"<FxRate {self.currency} {self.rate_date} {self.rate}>"
+
+
+# ---------------------------------------------------------------------------
+# broker_cash  (uninvested cash at each broker, v6)
+# ---------------------------------------------------------------------------
+class BrokerCash(Base):
+    """Cash a user holds at a broker in one currency, as of a day.
+
+    DEGIRO's «Margen libre»: taken from the newest «Saldo» of an imported
+    account statement (an older statement never overwrites a newer value).
+    Together with the positions it gives the whole account value.
+    """
+
+    __tablename__ = "broker_cash"
+    __table_args__ = (
+        UniqueConstraint("user_id", "broker", "currency", name="ux_broker_cash_user_broker_currency"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    broker: Mapped[str] = mapped_column(String(64), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="extracto")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="broker_cash")
+
+    def __repr__(self) -> str:
+        return f"<BrokerCash user={self.user_id} {self.broker} {self.amount} {self.currency} {self.as_of}>"

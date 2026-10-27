@@ -236,6 +236,7 @@ ALLOCATION_DIMENSIONS = {
     "asset_type": "Por tipo de activo",
 }
 _ASSET_LABELS = {AssetType.stock: "Acciones", AssetType.etf: "ETF", AssetType.fund: "Fondos"}
+CASH_LABEL = "Efectivo"
 
 
 def allocation(
@@ -245,7 +246,7 @@ def allocation(
     snapshot: Optional[PortfolioSnapshot] = None,
     as_of: Optional[date] = None,
 ) -> List[Tuple[str, float]]:
-    """[(label, market value EUR)] of the open positions, largest first."""
+    """[(label, value EUR)] of the open positions plus the brokers' cash, largest first."""
     snapshot = snapshot or portfolio_snapshot(session, user_id, as_of=as_of)
     totals: Dict[str, float] = defaultdict(float)
     if by == "broker":
@@ -267,4 +268,10 @@ def allocation(
             else:
                 raise ValueError(f"Dimensión desconocida: {by}")
             totals[label] += row.market_value_eur
+    # Uninvested cash is part of the capital too (one slice, or by its currency/broker).
+    for line in snapshot.totals.cash:
+        if line.amount_eur is None or line.amount_eur <= 0:
+            continue
+        label = {"currency": line.currency, "broker": line.broker}.get(by, CASH_LABEL)
+        totals[label] += line.amount_eur
     return sorted(((k, v) for k, v in totals.items() if v > 0), key=lambda kv: -kv[1])

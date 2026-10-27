@@ -53,7 +53,8 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="card">{{ ui.empty("Sin operaciones", "Cambia los filtros o añade una con el botón +.", "receipt") }}</div>
+<div class="card">{{ ui.empty("Sin operaciones", "Cambia los filtros, añade una con el botón + o importa el extracto del bróker.", "receipt") }}</div>
+<a class="btn ghost block section" href="/inversiones/importar">{{ ui.icon("upload", "sm") }} Importar extracto del bróker</a>
 {% endif %}
 </div>
 {% endblock %}

@@ -68,7 +68,9 @@ def _read(path: Path) -> List[list]:
         from openpyxl import load_workbook
         workbook = load_workbook(path, read_only=True, data_only=True)
         try:
-            return [list(r) for r in workbook.worksheets[0].iter_rows(values_only=True)]
+            sheet = workbook.worksheets[0]
+            sheet.reset_dimensions()       # a wrong <dimension> would hide rows (see degiro.py)
+            return [list(r) for r in sheet.iter_rows(values_only=True)]
         finally:
             workbook.close()
     if suffix == ".csv":

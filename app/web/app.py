@@ -24,9 +24,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.config import APP_VERSION
 from app.gui._format import fmt_date, fmt_eur, fmt_number, fmt_pct, fmt_quantity
 from app.web.deps import CsrfFailed, LoginRequired
+from app.web.price_refresh import PriceRefreshJob
 from app.web.security import HardeningMiddleware, LoginLimiter, SessionStore
+from app.web.routers.investment_import import PendingStatements
+from app.web.routers.library import PendingLibraries
 from app.web.uploads import PendingImports, sweep_orphans
 
 logger = logging.getLogger(__name__)
@@ -69,6 +73,8 @@ def build_templates() -> Jinja2Templates:
     env = templates.env
     env.autoescape = True
     env.globals["asset"] = asset
+    # Shown only to signed-in users (sidebar foot, Ajustes): never on the login page.
+    env.globals["app_version"] = APP_VERSION
     env.filters.update(
         eur=fmt_eur,
         num=fmt_number,
@@ -88,6 +94,8 @@ def create_app(
     limiter: Optional[LoginLimiter] = None,
     on_change: Optional[Callable[[int, str], None]] = None,
     lan_only: bool = True,
+    market_provider=None,
+    session_factory=None,
 ) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.sessions = sessions or SessionStore()
@@ -97,6 +105,15 @@ def create_app(
     # WebServer.stop() clears it (deletes the temp files); folders orphaned
     # by a crash are swept when the app is created.
     app.state.imports = PendingImports()
+    # Categorization library files waiting for confirmation (memory only).
+    app.state.library_imports = PendingLibraries()
+    # Broker statements waiting for confirmation (memory only) and the
+    # threads that query the market-data provider for them.
+    app.state.investment_imports = PendingStatements()
+    app.state.market_provider = market_provider      # None → Yahoo Finance on first use
+    # Price refresh asked from the web, run on this PC in the background.
+    app.state.price_refresh = PriceRefreshJob()
+    app.state.session_factory = session_factory      # None → database.SessionLocal
     sweep_orphans()
     app.state.templates = build_templates()
 
@@ -146,8 +163,14 @@ def create_app(
                         media_type="text/javascript",
                         headers={"Service-Worker-Allowed": "/"})
 
-    from app.web.routers import admin, auth, dashboard, flows, imports, investments, more, transactions
+    from app.web.routers import (
+        admin, auth, dashboard, flows, help, imports, investment_import, investments, library, more,
+        transactions,
+    )
 
-    for router in (auth, dashboard, flows, transactions, investments, admin, imports, more):
+    # library before admin: its /mas/categorias/exportar|biblioteca would hit /mas/categorias/{id}.
+    # investment_import before imports: /importar/inversiones would hit /importar/{token}.
+    for router in (auth, help, dashboard, flows, transactions, investment_import, investments, library,
+                   admin, imports, more):
         app.include_router(router.router)
     return app

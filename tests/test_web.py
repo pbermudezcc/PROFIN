@@ -96,11 +96,27 @@ def family(factory):
     return ids
 
 
+class OfflineProvider:
+    """Default market data in these tests: never the network, nothing found."""
+    name = "offline"
+
+    def search(self, text, limit=10):
+        return []
+
+    def daily_closes(self, symbols, start, end=None):
+        return {}
+
+    def security_info(self, symbol):
+        from app.investments.market_data import MarketDataError
+        raise MarketDataError("sin conexión en los tests")
+
+
 @pytest.fixture
 def app(factory, family):
     changes = []
     application = create_app(sessions=SessionStore(), limiter=LoginLimiter(),
-                             on_change=lambda uid, area: changes.append((uid, area)), lan_only=True)
+                             on_change=lambda uid, area: changes.append((uid, area)), lan_only=True,
+                             market_provider=OfflineProvider())
 
     def _db():
         session = factory()
@@ -110,9 +126,13 @@ def app(factory, family):
             session.close()
 
     application.dependency_overrides[get_db] = _db
+    application.state.session_factory = factory          # background threads (price refresh)
     application.state.changes = changes
     yield application
     application.state.imports.clear()       # temp folders of unconfirmed uploads
+    application.state.investment_imports.close()
+    application.state.price_refresh.wait(timeout=10)     # never outlive the test database
+    application.state.price_refresh.close()
 
 
 def client_for(app) -> TestClient:
@@ -879,3 +899,582 @@ def test_category_sheet_can_create_a_rule(app, family, factory):
         db.close()
     # Covered by a rule now: the option is gone.
     assert 'name="regla"' not in client.get(f"/movimientos/{twin_id}").text
+
+
+# ---------------------------------------------------------------------------
+# Categorization library: export / import
+# ---------------------------------------------------------------------------
+
+def _library_upload(client: TestClient, content: bytes, name: str = "cats.profin-cats.json"):
+    return client.post("/importar/categorias", files={"fichero": (name, content, "application/json")},
+                       data={"csrf_token": csrf_of(client)}, headers=ORIGIN, follow_redirects=False)
+
+
+def _rules_of(factory, user_id):
+    from app.db.models import AutoCategorizationRule
+    db = factory()
+    try:
+        return sorted(r.match_pattern for r in db.query(AutoCategorizationRule).filter_by(user_id=user_id))
+    finally:
+        db.close()
+
+
+def _add_web_rule(factory, user_id, category_id, pattern, global_=False):
+    from app.db.models import AutoCategorizationRule
+    db = factory()
+    db.add(AutoCategorizationRule(user_id=None if global_ else user_id, category_id=category_id,
+                                  match_pattern=pattern))
+    db.commit()
+    db.close()
+
+
+def test_library_export_downloads_only_my_personal_rules(app, family, factory):
+    import json
+    _add_web_rule(factory, family["ana"], family["ana_cat"], "MERCADONA")
+    _add_web_rule(factory, family["beto"], family["beto_cat"], "SOLO BETO")
+    _add_web_rule(factory, family["ana"], family["ana_cat"], "GLOBAL", global_=True)
+    client = logged_in(app)
+    assert "Exportar / importar" in client.get("/mas/categorias").text
+    # The body is hx-boost'ed: without opting out, htmx swaps the JSON into
+    # the page instead of letting the browser save the file.
+    page = client.get("/mas/categorias/biblioteca").text
+    assert 'href="/mas/categorias/exportar" hx-boost="false" download' in page
+    response = client.get("/mas/categorias/exportar")
+    assert response.status_code == 200
+    assert "attachment" in response.headers["content-disposition"]
+    assert ".profin-cats.json" in response.headers["content-disposition"]
+    payload = json.loads(response.content)
+    assert [r["pattern"] for r in payload["rules"]] == ["MERCADONA"]
+    assert payload["source_user"] == "ana"
+
+
+def test_library_upload_preview_confirm(app, family, factory):
+    _add_web_rule(factory, family["ana"], family["ana_cat"], "MERCADONA")
+    ana_client = logged_in(app)
+    exported = ana_client.get("/mas/categorias/exportar").content
+
+    client = logged_in(app, "beto", "clave-beto")
+    _add_web_rule(factory, family["beto"], family["beto_cat"], "ALDI")
+    token = _token(_library_upload(client, exported))
+    preview = client.get(f"/importar/categorias/{token}")
+    assert preview.status_code == 200 and "MERCADONA" in preview.text and "Fusionar" in preview.text
+
+    # Replace without the explicit tick goes back to the preview.
+    response = client.post(f"/importar/categorias/{token}/confirmar",
+                           data={"csrf_token": csrf_of(client), "modo": "replace"},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 303 and "modo=replace" in response.headers["location"]
+    assert _rules_of(factory, family["beto"]) == ["ALDI"]
+
+    response = client.post(f"/importar/categorias/{token}/confirmar",
+                           data={"csrf_token": csrf_of(client), "modo": "merge"}, headers=ORIGIN)
+    assert response.status_code == 200 and "importadas" in response.text
+    assert _rules_of(factory, family["beto"]) == ["ALDI", "MERCADONA"]
+    assert (family["beto"], "transactions") in app.state.changes
+    # The token is single-use.
+    assert client.get(f"/importar/categorias/{token}").status_code == 404
+
+    token = _token(_library_upload(client, exported))
+    response = client.post(f"/importar/categorias/{token}/confirmar",
+                           data={"csrf_token": csrf_of(client), "modo": "replace", "entiendo": "1"},
+                           headers=ORIGIN)
+    assert response.status_code == 200
+    assert _rules_of(factory, family["beto"]) == ["MERCADONA"]
+
+
+def test_library_web_never_imports_global_rules(app, family, factory):
+    from app.categorization import library_io
+    from app.db.models import AutoCategorizationRule
+    payload = {
+        "format": library_io.FORMAT_NAME, "format_version": 1,
+        "types": [{"name": "GASTO", "transaction_type": "expense", "categories": ["Supermercados"]}],
+        "rules": [{"type": "GASTO", "category": "Supermercados", "pattern": "CARREFOUR",
+                   "match_type": "contains", "priority": 100, "scope": "global"}],
+    }
+    client = logged_in(app)
+    token = _token(_library_upload(client, library_io.dumps(payload)))
+    preview = client.get(f"/importar/categorias/{token}").text
+    assert "reglas globales" in preview and "No hay nada que importar" in preview
+    client.post(f"/importar/categorias/{token}/confirmar",
+                data={"csrf_token": csrf_of(client), "modo": "merge"}, headers=ORIGIN)
+    db = factory()
+    try:
+        assert db.query(AutoCategorizationRule).filter_by(user_id=None).count() == 0
+    finally:
+        db.close()
+
+
+def test_library_upload_rejects_bad_files_and_needs_csrf(app, family):
+    client = logged_in(app)
+    response = _library_upload(client, b"esto no es json")
+    assert response.status_code == 400 and "JSON" in response.text
+    response = client.post("/importar/categorias", files={"fichero": ("c.json", b"{}", "application/json")},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 403
+
+
+def test_library_preview_is_private_to_the_uploader(app, family, factory):
+    from app.categorization import library_io
+    payload = {"format": library_io.FORMAT_NAME, "format_version": 1,
+               "types": [{"name": "GASTO", "transaction_type": "expense", "categories": ["Nueva"]}],
+               "rules": []}
+    token = _token(_library_upload(logged_in(app), library_io.dumps(payload)))
+    other = logged_in(app, "beto", "clave-beto")
+    assert other.get(f"/importar/categorias/{token}").status_code == 404
+    response = other.post(f"/importar/categorias/{token}/confirmar",
+                          data={"csrf_token": csrf_of(other)}, headers=ORIGIN)
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# User manual (/ayuda) and the DEMO account
+# ---------------------------------------------------------------------------
+def test_manual_is_public_with_its_own_csp(app):
+    client = client_for(app)
+    assert client.get("/ayuda", follow_redirects=False).headers["location"] == "/ayuda/"
+    response = client.get("/ayuda/")
+    assert response.status_code == 200
+    assert "Manual de FAMILYFIN" in response.text
+    assert '<a class="brand" href="/"' in response.text      # back to the app
+    csp = response.headers["content-security-policy"]
+    assert "script-src 'sha256-" in csp and "unsafe-inline" not in csp.split("script-src")[1].split(";")[0]
+    assert client.get("/ayuda/img/w_resumen.png").headers["content-type"] == "image/png"
+    assert client.get("/ayuda/manual.pdf").headers["content-type"] == "application/pdf"
+
+
+def test_manual_images_reject_other_files(app):
+    client = client_for(app)
+    for name in ("..%2Findex.html", "..%2F..%2F..%2Fapp%2Fconfig.py", "nope.png", "index.html"):
+        assert client.get(f"/ayuda/img/{name}").status_code == 404
+
+
+def test_manual_is_linked_without_htmx_boost(app):
+    link = 'href="/ayuda/" hx-boost="false"'
+    assert "/ayuda/" in client_for(app).get("/login").text     # the login page is not boosted
+    client = logged_in(app)
+    assert link in client.get("/").text                        # sidebar
+    assert link in client.get("/mas").text
+
+
+def test_demo_account_does_not_see_family_global_rules(app, family, factory):
+    from app.config import DEMO_USERNAME
+
+    db = factory()
+    demo = create_user(db, DEMO_USERNAME, "123456")
+    db.close()
+    _add_web_rule(factory, demo.id, family["ana_cat"], "PATRON DEMO")
+    _add_web_rule(factory, family["ana"], family["ana_cat"], "TIENDA DE LA FAMILIA", global_=True)
+
+    ana = logged_in(app)
+    assert "TIENDA DE LA FAMILIA" in ana.get("/mas/reglas").text
+    visitor = logged_in(app, DEMO_USERNAME, "123456")
+    page = visitor.get("/mas/reglas").text
+    assert "TIENDA DE LA FAMILIA" not in page and "PATRON DEMO" in page
+    reglas = re.search(r'href="/mas/reglas">.*?<div class="v num">(\d+)</div>', visitor.get("/mas").text, re.S)
+    assert reglas.group(1) == "1"
+
+
+# ---------------------------------------------------------------------------
+# Inversiones: DEGIRO statement upload (W9d)
+# ---------------------------------------------------------------------------
+
+def _degiro_xlsx(tmp_path, rows=None, name="Account.xlsx") -> bytes:
+    from tests.test_investments_import import ROWS, write_xlsx
+
+    return write_xlsx(tmp_path / name, ROWS if rows is None else rows).read_bytes()
+
+
+def _broker_upload(client: TestClient, content: bytes, name: str = "Account.xlsx", csrf: bool = True):
+    data = {"csrf_token": csrf_of(client)} if csrf else {}
+    return client.post("/importar/inversiones", files={"fichero": (name, content, XLSX)},
+                       data=data, headers=ORIGIN, follow_redirects=False)
+
+
+def _wait_job(item):
+    if item.job is not None:
+        item.job.exception(timeout=10)              # background step finished (or failed)
+
+
+def _broker_item(app, response):
+    assert response.status_code == 303, response.text[:400]
+    token = response.headers["location"].rsplit("/", 1)[1]
+    item = app.state.investment_imports._items[token]
+    _wait_job(item)
+    return token, item
+
+
+# Preview order is by product name: Acme, Siemens, US Co, World ETF.
+BROKER_SYMBOLS = ["ACM.DE", "SIX.DE", "USC", "WLD.AS"]
+
+
+def _broker_confirm(app, client, token, symbols):
+    """Confirm; when new securities need data, wait for it and poll like the page does.
+    Returns the poll's HX-Redirect target, or the confirm response."""
+    response = client.post(f"/importar/inversiones/{token}/confirmar",
+                           data={"csrf_token": csrf_of(client), "simbolo": symbols},
+                           headers=ORIGIN, follow_redirects=False)
+    item = app.state.investment_imports._items.get(token)
+    if response.status_code == 303 and item is not None and item.job is not None:
+        _wait_job(item)
+        poll = client.post(f"/importar/inversiones/{token}/estado", headers=_hx(client))
+        assert poll.status_code == 204, poll.text[:300]
+        return poll.headers["HX-Redirect"]
+    return response
+
+
+def _degiro_ops(factory, user_id):
+    db = factory()
+    try:
+        return db.query(InvestmentTransaction).filter(InvestmentTransaction.user_id == user_id,
+                                                      InvestmentTransaction.broker == "DEGIRO").all()
+    finally:
+        db.close()
+
+
+@pytest.fixture
+def market(app):
+    from tests.test_investments_import import FakeProvider
+
+    app.state.market_provider = FakeProvider()
+    return app.state.market_provider
+
+
+def test_broker_import_preview_confirm_and_overlap_without_duplicates(app, family, factory, market, tmp_path):
+    from tests.test_investments_import import ROWS
+
+    client = logged_in(app)
+    assert "/inversiones/importar" in client.get("/inversiones").text        # entry point
+
+    # 1. An older statement (everything but the last sale).
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path, ROWS[:-2], "old.xlsx")))
+    page = client.get(f"/importar/inversiones/{token}").text
+    assert "Acme Corp." in page and 'value="ACM.DE"' in page                 # proposed symbol
+    assert "Sin coincidencia" in page                                         # Siemens: type it
+    assert page.count('name="simbolo"') == 4
+    target = _broker_confirm(app, client, token, BROKER_SYMBOLS)
+    assert target == f"/importar/inversiones/{token}/hecho"
+    assert "7 operaciones importadas" in client.get(target).text
+    assert len(_degiro_ops(factory, family["ana"])) == 7
+    assert (family["ana"], "investments") in app.state.changes
+
+    # 2. The full statement overlaps: only the sale is new.
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path)))
+    page = client.get(f"/importar/inversiones/{token}").text
+    assert page.count('name="simbolo"') == 1 and "Ya está en el catálogo" in page
+    assert "Importar 1 operaciones" in page
+    response = _broker_confirm(app, client, token, ["WLD.AS"])                 # known symbol: no fetch
+    assert response.status_code == 303 and response.headers["location"].endswith("/hecho")
+    assert "1 operaciones importadas" in client.get(response.headers["location"]).text
+    refs = [t.broker_ref for t in _degiro_ops(factory, family["ana"])]
+    assert len(refs) == 8 and len(set(refs)) == 8
+
+    # 3. The same file again: nothing to do, and confirming anyway changes nothing.
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path)))
+    page = client.get(f"/importar/inversiones/{token}").text
+    assert "Nada nuevo que importar" in page and 'name="simbolo"' not in page
+    response = client.post(f"/importar/inversiones/{token}/confirmar", data={"csrf_token": csrf_of(client)},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 303
+    assert len(_degiro_ops(factory, family["ana"])) == 8
+    db = factory()
+    try:
+        logs = db.query(AuditLog).filter(AuditLog.table_affected == "investment_transactions").all()
+        assert len(logs) == 2 and all("web 192.168.1.50" in log.new_value for log in logs)
+    finally:
+        db.close()
+
+
+def test_broker_import_cannot_be_confirmed_twice(app, family, factory, market, tmp_path):
+    client = logged_in(app)
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path)))
+    for _ in range(2):                                    # double tap
+        response = client.post(f"/importar/inversiones/{token}/confirmar",
+                               data={"csrf_token": csrf_of(client), "simbolo": BROKER_SYMBOLS},
+                               headers=ORIGIN, follow_redirects=False)
+        assert response.status_code == 303
+    _wait_job(item)
+    for _ in range(2):
+        client.post(f"/importar/inversiones/{token}/estado", headers=_hx(client))
+    assert len(_degiro_ops(factory, family["ana"])) == 8
+
+
+def test_broker_import_skips_operations_imported_meanwhile(app, family, factory, market, tmp_path):
+    from app.investments.importers.degiro import parse_statement
+    from app.investments.importers.service import apply_import, fetch_security_infos, symbols_to_fetch
+    from tests.test_investments_import import ACME, ETF, SIE, USCO, write_xlsx
+
+    client = logged_in(app)
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path)))
+    # The PC app imports the same statement while the preview is open.
+    symbols = dict(zip([ACME, SIE, USCO, ETF], BROKER_SYMBOLS))
+    db = factory()
+    try:
+        statement = parse_statement(write_xlsx(tmp_path / "pc.xlsx"))
+        infos = fetch_security_infos(market, symbols_to_fetch(db, symbols.values()))
+        apply_import(db, family["ana"], statement, symbols, infos)
+    finally:
+        db.close()
+    response = _broker_confirm(app, client, token, BROKER_SYMBOLS)
+    assert response.status_code == 303
+    assert "0 operaciones importadas" in client.get(response.headers["location"]).text
+    assert len(_degiro_ops(factory, family["ana"])) == 8
+
+
+def test_broker_import_is_all_or_nothing_and_keeps_the_preview(app, family, factory, market, tmp_path):
+    from tests.test_investments_import import ROWS
+
+    client = logged_in(app)
+    rows = [r for r in ROWS if r[-1] != "o2"]                 # the ETF sale has no purchase
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path, rows)))
+    target = _broker_confirm(app, client, token, BROKER_SYMBOLS)
+    assert target == f"/importar/inversiones/{token}"
+    page = client.get(target).text
+    assert "No se ha importado nada" in page and 'name="simbolo"' in page
+    assert _degiro_ops(factory, family["ana"]) == []
+    db = factory()
+    try:
+        assert db.query(Security).count() == 1               # new securities rolled back too
+    finally:
+        db.close()
+
+
+def test_broker_import_validates_symbols(app, family, factory, market, tmp_path):
+    client = logged_in(app)
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path)))
+    response = _broker_confirm(app, client, token, ["ACM.DE", "", "<script>", "WLD.AS"])
+    assert response.status_code == 400
+    assert "Falta el símbolo de «Siemens X AG»" in response.text and "no es válido" in response.text
+    response = _broker_confirm(app, client, token, ["ACM.DE"])            # wrong field count
+    assert response.status_code == 400
+    assert _degiro_ops(factory, family["ana"]) == []
+
+
+def test_broker_import_reports_market_data_errors(app, family, factory, market, tmp_path):
+    from app.investments.market_data import MarketDataError
+
+    def broken(symbol):
+        raise MarketDataError("Yahoo no responde")
+
+    market.security_info = broken
+    client = logged_in(app)
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path)))
+    target = _broker_confirm(app, client, token, BROKER_SYMBOLS)
+    page = client.get(target).text
+    assert "Yahoo no responde" in page and 'name="simbolo"' in page
+    assert _degiro_ops(factory, family["ana"]) == []
+
+
+def test_broker_import_is_private_to_the_uploader(app, family, factory, market, tmp_path):
+    ana = logged_in(app)
+    token, item = _broker_item(app, _broker_upload(ana, _degiro_xlsx(tmp_path)))
+    beto = logged_in(app, "beto", "clave-beto")
+    assert beto.get(f"/importar/inversiones/{token}").status_code == 404
+    response = beto.post(f"/importar/inversiones/{token}/confirmar",
+                         data={"csrf_token": csrf_of(beto), "simbolo": BROKER_SYMBOLS},
+                         headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 404
+    assert logged_in(app).get(f"/importar/inversiones/{token}").status_code == 404   # other session
+    assert _degiro_ops(factory, family["ana"]) == [] and len(_degiro_ops(factory, family["beto"])) == 1
+
+
+def test_broker_import_rejects_bad_files(app, family, market, tmp_path):
+    from tests.test_investments_import_myinvestor import write_csv as myinvestor_csv
+
+    client = logged_in(app)
+    page = _broker_upload(client, b"%PDF-1.4", "extracto.pdf")
+    assert page.status_code == 400 and "Excel (.xlsx) o CSV" in page.text
+    page = _broker_upload(client, b"not really excel", "Account.xlsx")
+    assert "no es un Excel válido" in page.text
+    page = _broker_upload(client, "Fecha;Importe\n\xe9".encode("latin-1"), "Account.csv")
+    assert "UTF-8" in page.text
+    page = _broker_upload(client, b"Concepto,Importe\nx,1\n", "Account.csv")
+    assert "No se reconoce el archivo" in page.text
+    page = _broker_upload(client, myinvestor_csv(tmp_path / "mi.csv").read_bytes(), "mi.csv")
+    assert "desde la aplicación del PC" in page.text
+    assert len(app.state.investment_imports) == 0
+    response = _broker_upload(client, _degiro_xlsx(tmp_path), csrf=False)
+    assert response.status_code == 403 and len(app.state.investment_imports) == 0
+
+
+def test_broker_import_cancel(app, family, market, tmp_path):
+    client = logged_in(app)
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path)))
+    response = client.post(f"/importar/inversiones/{token}/cancelar", data={"csrf_token": csrf_of(client)},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 303 and len(app.state.investment_imports) == 0
+    assert client.get(f"/importar/inversiones/{token}").status_code == 404
+
+
+def test_broker_import_starts_a_price_refresh(app, family, factory, market, tmp_path):
+    client = logged_in(app)
+    token, item = _broker_item(app, _broker_upload(client, _degiro_xlsx(tmp_path)))
+    _broker_confirm(app, client, token, BROKER_SYMBOLS)
+    result = app.state.price_refresh.wait(timeout=10)
+    assert result is not None and result.ok and "ACM.DE" in result.updated
+
+
+# ---------------------------------------------------------------------------
+# Inversiones: «Actualizar cotizaciones» from the web (W9b)
+# ---------------------------------------------------------------------------
+
+class PricesProvider(OfflineProvider):
+    """Closes for ACME (held by beto in the fixture); optionally blocks or fails."""
+
+    def __init__(self, gate=None, error=None):
+        self.calls, self.gate, self.error = 0, gate, error
+
+    def daily_closes(self, symbols, start, end=None):
+        from datetime import timedelta
+
+        self.calls += 1
+        if self.gate is not None:
+            assert self.gate.wait(timeout=10)
+        if self.error:
+            from app.investments.market_data import MarketDataError
+            raise MarketDataError(self.error)
+        end = end or date.today()
+        days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+        return {"ACME": [(d, 12.5) for d in days if d.weekday() < 5]} if "ACME" in symbols else {}
+
+
+def _refresh(client, htmx=True):
+    headers = _hx(client) if htmx else {**ORIGIN}
+    data = {} if htmx else {"csrf_token": csrf_of(client)}
+    return client.post("/inversiones/cotizaciones/actualizar", data=data, headers=headers,
+                       follow_redirects=False)
+
+
+def test_price_refresh_runs_on_the_server_and_reloads_the_page(app, family, factory):
+    from app.db.models import PriceHistory
+
+    provider = app.state.market_provider = PricesProvider()
+    client = logged_in(app, "beto", "clave-beto")
+    page = client.get("/inversiones").text
+    assert 'action="/inversiones/cotizaciones/actualizar"' in page and 'id="price-status"' in page
+
+    response = _refresh(client)
+    assert response.status_code == 200 and 'id="price-status"' in response.text
+    result = app.state.price_refresh.wait(timeout=10)
+    assert result.ok and result.updated == ["ACME"] and provider.calls == 1
+
+    status = client.get("/inversiones/cotizaciones/estado", headers=_hx(client))
+    assert "Cotizaciones actualizadas a las" in status.text and "hx-get" not in status.text
+    assert "refreshPage" in status.headers["HX-Trigger"]
+    assert "Cotizaciones actualizadas a las" in client.get("/inversiones").text
+    db = factory()
+    try:
+        assert db.query(PriceHistory).filter(PriceHistory.security_id == family["security"]).count() > 0
+        log = db.query(AuditLog).filter(AuditLog.table_affected == "price_history").one()
+        assert log.user_id == family["beto"] and "web 192.168.1.50" in log.new_value
+    finally:
+        db.close()
+    assert (family["beto"], "investments") in app.state.changes
+
+    # A second tap right after: no new download.
+    again = _refresh(client)
+    assert "se acaban de actualizar" in again.text and provider.calls == 1
+
+
+def test_price_refresh_is_one_at_a_time(app, family):
+    import threading
+
+    gate = threading.Event()
+    provider = app.state.market_provider = PricesProvider(gate=gate)
+    ana, beto = logged_in(app), logged_in(app, "beto", "clave-beto")
+    try:
+        first = _refresh(beto)
+        assert "Actualizando las cotizaciones" in first.text and 'hx-get="/inversiones/cotizaciones/estado"' in first.text
+        second = _refresh(ana)                                   # other user, same job
+        assert "Actualizando las cotizaciones" in second.text
+        poll = ana.get("/inversiones/cotizaciones/estado", headers=_hx(ana))
+        assert "hx-get" in poll.text and "HX-Trigger" not in poll.headers
+        assert "disabled" in ana.get("/inversiones").text.split('aria-label="Actualizar cotizaciones"')[1][:80]
+    finally:
+        gate.set()
+    app.state.price_refresh.wait(timeout=10)
+    assert provider.calls == 1
+
+
+def test_price_refresh_waits_for_a_desktop_refresh(app, family):
+    from app.investments.prices import REFRESH_LOCK
+
+    provider = app.state.market_provider = PricesProvider()
+    client = logged_in(app, "beto", "clave-beto")
+    with REFRESH_LOCK:                                   # the PC app is downloading
+        _refresh(client)
+        assert app.state.price_refresh.running and provider.calls == 0
+    assert app.state.price_refresh.wait(timeout=10).ok and provider.calls == 1
+
+
+def test_price_refresh_reports_errors_and_can_be_retried(app, family):
+    provider = app.state.market_provider = PricesProvider(error="Yahoo no responde")
+    client = logged_in(app, "beto", "clave-beto")
+    _refresh(client)
+    assert app.state.price_refresh.wait(timeout=10).error == "Yahoo no responde"
+    status = client.get("/inversiones/cotizaciones/estado", headers=_hx(client))
+    assert "Yahoo no responde" in status.text and "toastError" in status.headers["HX-Trigger"]
+    provider.error = None
+    _refresh(client)                                     # a failure does not block a retry
+    assert app.state.price_refresh.wait(timeout=10).ok and provider.calls == 2
+
+
+def test_price_refresh_without_htmx_and_without_csrf(app, family):
+    app.state.market_provider = PricesProvider()
+    client = logged_in(app, "beto", "clave-beto")
+    response = client.post("/inversiones/cotizaciones/actualizar", headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 403 and not app.state.price_refresh.running
+    response = _refresh(client, htmx=False)
+    assert response.status_code == 303 and response.headers["location"] == "/inversiones"
+    assert app.state.price_refresh.wait(timeout=10).ok
+
+
+# ---------------------------------------------------------------------------
+# Inversiones: broker cash in the portfolio value
+# ---------------------------------------------------------------------------
+
+def test_broker_import_stores_the_cash_and_the_portfolio_shows_the_total(app, family, factory, market, tmp_path):
+    from tests.test_investments_cash import write_with_balances
+    from tests.test_investments_import import ROWS
+
+    def statement(final_balance, name):
+        balances = [("EUR", 10.0)] * (len(ROWS) - 1) + [("EUR", final_balance)]
+        return write_with_balances(tmp_path / name, ROWS, balances).read_bytes()
+
+    client = logged_in(app)
+    token, item = _broker_item(app, _broker_upload(client, statement(1002.42, "oct.xlsx")))
+    page = client.get(f"/importar/inversiones/{token}").text
+    assert "Efectivo en DEGIRO según el extracto" in page and "1.002,42 EUR" in page
+    target = _broker_confirm(app, client, token, BROKER_SYMBOLS)
+    done = client.get(target).text
+    assert "8 operaciones importadas" in done and "Ya cuenta en el valor total" in done
+
+    page = client.get("/inversiones").text
+    assert "Valor total · valores + efectivo" in page and "Efectivo" in page
+    assert "según el extracto del 03/03/2026" in page
+    assert "Efectivo" in client.get("/inversiones/distribucion").text
+    api = client.get("/api/inversiones/posiciones").json()["totals"]
+    assert api["cash_eur"] == pytest.approx(1002.42)
+    assert api["total_value_eur"] == pytest.approx(api["market_value_eur"] + 1002.42)
+
+    # Same operations, new balance: only the cash changes, and it can be saved.
+    token, item = _broker_item(app, _broker_upload(client, statement(50.0, "oct2.xlsx")))
+    page = client.get(f"/importar/inversiones/{token}").text
+    assert "Actualizar el efectivo" in page and "antes 1.002,42" in page and 'name="simbolo"' not in page
+    response = client.post(f"/importar/inversiones/{token}/confirmar", data={"csrf_token": csrf_of(client)},
+                           headers=ORIGIN, follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"].endswith("/hecho")
+    assert "Efectivo actualizado" in client.get(response.headers["location"]).text
+    assert client.get("/api/inversiones/posiciones").json()["totals"]["cash_eur"] == pytest.approx(50.0)
+    assert len(_degiro_ops(factory, family["ana"])) == 8
+    # Nobody else sees it.
+    beto = logged_in(app, "beto", "clave-beto")
+    assert beto.get("/api/inversiones/posiciones").json()["totals"]["cash_eur"] == 0
+
+
+def test_app_version_is_shown_only_after_login(app):
+    from app.config import APP_VERSION
+
+    assert APP_VERSION not in client_for(app).get("/login").text      # not disclosed before sign-in
+    client = logged_in(app)
+    assert f'<div class="ver num" title="Versión de FAMILYFIN">v{APP_VERSION}</div>' in client.get("/").text
+    assert f"FAMILYFIN versión {APP_VERSION}" in client.get("/mas").text

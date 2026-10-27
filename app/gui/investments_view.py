@@ -494,6 +494,8 @@ class InvestmentsView(QWidget):
         if summary.estimated:
             text += (f"\n{summary.estimated} dividendos se han convertido a EUR con el tipo de "
                      "cambio del día (el extracto no tenía su cambio de divisa).")
+        if summary.cash_updated:
+            text += "\nEfectivo del bróker actualizado: ya cuenta en el valor total de la cartera."
         QMessageBox.information(self, "Extracto importado", text)
         self.reload()
         self._refresher.refresh()               # history of the new securities

@@ -290,6 +290,27 @@ def test_migration_5_adds_broker_ref_to_a_v4_database(tmp_path):
     assert indexes["ux_investment_transactions_broker_ref"] == 1      # unique
 
 
+def test_migration_6_adds_broker_cash_to_a_v5_database(tmp_path):
+    db = tmp_path / "profin.db"
+    _make_legacy_db(db)
+    migrate_schema(db)
+    with closing(sqlite3.connect(db)) as conn:       # a v5 file (v0.7.x)
+        conn.execute("DROP TABLE broker_cash")
+        conn.execute("PRAGMA user_version = 5")
+        conn.commit()
+        before = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+    assert migrate_schema(db) == 5
+    assert _user_version(db) == SCHEMA_VERSION
+    assert list(tmp_path.glob(f"profin.pre-migration-v{SCHEMA_VERSION}.*.db"))     # backup first
+    with closing(sqlite3.connect(db)) as conn:
+        columns = {r[1] for r in conn.execute('PRAGMA table_info("broker_cash")')}
+        indexes = {r[1]: r[2] for r in conn.execute('PRAGMA index_list("broker_cash")')}
+        assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == before
+    assert {"user_id", "broker", "currency", "amount", "as_of", "source"} <= columns
+    assert 1 in indexes.values()                                      # unique per user/broker/currency
+
+
 def test_migration_is_noop_when_up_to_date(tmp_path):
     db = tmp_path / "profin.db"
     _make_legacy_db(db)

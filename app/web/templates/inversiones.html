@@ -4,11 +4,17 @@
 {% include "_inv_head.html" %}
 
 {% if not snap.rows %}
-<div class="card">{{ ui.empty("Aún no hay inversiones", "Añade tu primera operación con el botón +, o importa el extracto del bróker desde la aplicación del PC.", "trend") }}</div>
+<div class="card">{{ ui.empty("Aún no hay inversiones", "Añade tu primera operación con el botón +, o importa el extracto de DEGIRO con el botón de subir.", "trend") }}</div>
 {% else %}
 <section class="hero inv fade-in" aria-label="Valor de la cartera">
+  {% if t.cash %}
+  <div class="lbl">Valor total · valores + efectivo</div>
+  <div class="big num">{{ t.total_value_eur|eur }}</div>
+  <div class="split-line num">Valores {{ t.market_value_eur|eur }} · Efectivo {{ t.cash_eur|eur }}</div>
+  {% else %}
   <div class="lbl">Valor de la cartera</div>
   <div class="big num">{{ t.market_value_eur|eur }}</div>
+  {% endif %}
   <div class="row3">
     <div><div class="k">Plusvalía</div><div class="v num">{{ t.unrealized_gain_eur|eur(signed=True) }}</div></div>
     <div><div class="k">Rentab.</div><div class="v num">{{ t.unrealized_pct|pct if t.unrealized_pct is not none else "—" }}</div></div>
@@ -17,7 +23,7 @@
 </section>
 
 {% if t.missing_prices %}
-<div class="alert warn section">{{ ui.icon("info", "sm") }}<span>Sin cotización para {{ t.missing_prices|join(", ") }}: se valoran a coste. Las cotizaciones se actualizan desde la aplicación del PC.</span></div>
+<div class="alert warn section">{{ ui.icon("info", "sm") }}<span>Sin cotización para {{ t.missing_prices|join(", ") }}: se valoran a coste. Pulsa {{ ui.icon("refresh", "xs") }} «Actualizar cotizaciones» arriba para descargarlas.</span></div>
 {% endif %}
 
 <div class="kpis k4 section">
@@ -80,6 +86,23 @@
     </table>
   </div>
 </div>
+
+{% if t.cash %}
+<div class="section-h"><h2>Efectivo</h2><span class="faint">sin invertir en el bróker</span></div>
+<div class="list section">
+  {% for c in t.cash %}
+  <div class="row">
+    <div class="ic accent">{{ ui.icon("wallet", "sm") }}</div>
+    <div class="body">
+      <div class="t">{{ c.broker }}{% if c.currency != "EUR" %} · {{ c.currency }}{% endif %}</div>
+      <div class="d"><span class="faint">según el extracto del {{ c.as_of|fdate }}</span>{% if c.currency != "EUR" %}<span class="faint num">{{ c.amount|num }} {{ c.currency }}</span>{% endif %}</div>
+    </div>
+    <div class="end"><span class="num amt">{{ c.amount_eur|eur if c.amount_eur is not none else "sin cambio " ~ c.currency }}</span></div>
+  </div>
+  {% endfor %}
+</div>
+<p class="faint t-sm">Se actualiza al importar el extracto del bróker (su último «Saldo»). No cuenta en la plusvalía ni en la rentabilidad, que son de los valores.</p>
+{% endif %}
 
 {% if has_closed %}
 <div class="section">

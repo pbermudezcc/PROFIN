@@ -1,7 +1,8 @@
 """Inversiones: positions, evolution, allocation, operations and tax report.
 
-Read-only on market data: the web never downloads prices (the desktop app
-refreshes them); it shows what is cached.
+Pages show the cached prices. «Actualizar cotizaciones» asks the PC to
+download new ones in the background (app/web/price_refresh.py); the page
+polls until it ends and then reloads its content.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.db.models import AssetType, AuditAction, InvestmentKind, Security
@@ -32,6 +33,7 @@ from app.investments.portfolio import LedgerError
 from app.investments.snapshot import portfolio_snapshot
 from app.investments.tax_report import export_xlsx, report_years, tax_report
 from app.web.deps import DB, USER, WebUser, notify_change
+from app.web.price_refresh import RECENT, STARTED, start_price_refresh
 from app.web.render import audit, hx_trigger, is_htmx, parse_date, parse_float, parse_int, render
 
 logger = logging.getLogger(__name__)
@@ -49,9 +51,43 @@ HISTORY_PERIODS = [("1m", "1M", 31), ("6m", "6M", 183), ("ytd", "Año", "ytd"),
 ASSET_LABELS = {AssetType.stock: "Acción", AssetType.etf: "ETF", AssetType.fund: "Fondo"}
 
 
+def _price_status(request: Request, recent: bool = False) -> Dict[str, Any]:
+    job = request.app.state.price_refresh
+    return {"running": job.running, "result": job.last_result, "recent": recent}
+
+
 def _page(request: Request, template: str, tab: str, user: WebUser, ctx: Dict[str, Any]):
-    ctx.update({"tabs": TABS, "tab": tab})
+    ctx.update({"tabs": TABS, "tab": tab, "pr": _price_status(request)})
     return render(request, template, ctx, user=user, active="inversiones")
+
+
+# ---------------------------------------------------------------------------
+# Price refresh (runs on the PC)
+# ---------------------------------------------------------------------------
+
+@router.post("/inversiones/cotizaciones/actualizar")
+def refresh_prices(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
+    outcome = start_price_refresh(request.app, user.id)
+    if outcome == STARTED:
+        audit(db, request, user, "price_history", None, AuditAction.update, new="actualizar cotizaciones")
+    if not is_htmx(request):
+        return RedirectResponse("/inversiones", status_code=303)
+    return render(request, "partials/price_status.html",
+                  {"pr": _price_status(request, recent=outcome == RECENT)}, user=user)
+
+
+@router.get("/inversiones/cotizaciones/estado")
+def refresh_status(request: Request, user: WebUser = USER) -> Response:
+    """Polled while a refresh runs; when it has ended, reload the page content."""
+    pr = _price_status(request)
+    response = render(request, "partials/price_status.html", {"pr": pr}, user=user)
+    result = pr["result"]
+    if not pr["running"] and result is not None:
+        if result.ok:
+            hx_trigger(response, toast="Cotizaciones actualizadas", refreshPage=True)
+        else:
+            hx_trigger(response, toastError="No se pudieron actualizar las cotizaciones")
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +114,7 @@ def positions_api(user: WebUser = USER, db: Session = DB) -> JSONResponse:
         "as_of": snapshot.as_of.isoformat(),
         "totals": {
             "market_value_eur": t.market_value_eur, "cost_basis_eur": t.cost_basis_eur,
+            "cash_eur": t.cash_eur, "total_value_eur": t.total_value_eur,
             "unrealized_gain_eur": t.unrealized_gain_eur, "unrealized_pct": t.unrealized_pct,
             "day_change_eur": t.day_change_eur, "day_change_pct": t.day_change_pct,
             "realized_ytd_eur": t.realized_ytd_eur, "dividends_ytd_eur": t.dividends_ytd_eur,

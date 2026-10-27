@@ -23,6 +23,7 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.db.models import InvestmentKind, InvestmentTransaction, Security
+from app.investments.cash import CashLine, user_cash
 from app.investments.portfolio import build_positions, value_position
 from app.investments.prices import fx_rate, latest_prices
 from app.investments.returns import investor_cash_flows, xirr
@@ -76,6 +77,16 @@ class PortfolioTotals:
     open_positions:        int = 0
     missing_prices:        List[str] = field(default_factory=list)
     last_price_date:       Optional[date] = None
+    # Uninvested cash at the brokers (cash.py). Not part of market_value_eur,
+    # gains, weights or XIRR: those describe the securities.
+    cash:                  List[CashLine] = field(default_factory=list)
+    cash_eur:              float = 0.0
+    cash_missing_fx:       List[str] = field(default_factory=list)
+
+    @property
+    def total_value_eur(self) -> float:
+        """Securities + cash: the whole account («Cuenta completa» in DEGIRO)."""
+        return self.market_value_eur + self.cash_eur
 
 
 @dataclass
@@ -205,6 +216,12 @@ def portfolio_snapshot(
         if row.is_open and totals.market_value_eur > 0:
             row.weight = row.market_value_eur / totals.market_value_eur
     totals.xirr = xirr(investor_cash_flows(transactions, totals.market_value_eur, as_of))
+    totals.cash = user_cash(session, user_id, broker=broker, on=as_of)
+    for line in totals.cash:
+        if line.amount_eur is None:
+            totals.cash_missing_fx.append(line.currency)
+        else:
+            totals.cash_eur += line.amount_eur
 
     rows.sort(key=lambda r: (not r.is_open, -r.market_value_eur, r.security.name.lower()))
     return PortfolioSnapshot(rows=rows, totals=totals, as_of=as_of)

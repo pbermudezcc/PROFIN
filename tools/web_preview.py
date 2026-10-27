@@ -20,6 +20,10 @@ Dev-only helpers (this process only, never in the real app):
   * /__demo-extracto.xlsx serves a small CaixaBank-style statement to test
     /importar in a browser (attach it to the file input with a DataTransfer,
     see docs/web_parity_plan.md → "Cómo probar").
+  * /__demo-degiro.xlsx serves a DEGIRO-style account statement to test
+    /inversiones/importar. Symbol lookups use the tests' fake market-data
+    provider (no network, ~1 s delay to show the waiting page); pass --yahoo
+    to query Yahoo Finance for real.
 """
 from __future__ import annotations
 
@@ -52,6 +56,7 @@ from app.web.security import LoginLimiter, SessionStore  # noqa: E402
 HERE = ROOT / "dist" / "web_preview"
 DB = HERE / "preview.db"
 STATEMENT = HERE / "extracto_demo.xlsx"
+DEGIRO_STATEMENT = HERE / "degiro_demo.xlsx"
 USER, PASSWORD = "demo", "demo-pass"
 
 
@@ -114,7 +119,26 @@ def _statement() -> None:
     ])
 
 
-def build_app(reset: bool = False):
+class _SlowFakeProvider:
+    """The tests' offline provider, a little slow so the waiting page shows."""
+
+    def __init__(self):
+        from tests.test_investments_import import FakeProvider
+        self._fake = FakeProvider()
+
+    def __getattr__(self, name):
+        import time
+        attr = getattr(self._fake, name)
+        if not callable(attr):
+            return attr
+
+        def slow(*args, **kwargs):
+            time.sleep(1)
+            return attr(*args, **kwargs)
+        return slow
+
+
+def build_app(reset: bool = False, yahoo: bool = False):
     HERE.mkdir(parents=True, exist_ok=True)
     if reset and DB.exists():
         DB.unlink()
@@ -127,6 +151,9 @@ def build_app(reset: bool = False):
         _seed(Session)
     if not STATEMENT.exists():
         _statement()
+    if not DEGIRO_STATEMENT.exists():
+        from tests.test_investments_import import write_xlsx
+        write_xlsx(DEGIRO_STATEMENT)
 
     def demo_db():
         session = Session()
@@ -135,7 +162,10 @@ def build_app(reset: bool = False):
         finally:
             session.close()
 
-    app = create_app(sessions=SessionStore(), limiter=LoginLimiter(), on_change=lambda *a: None, lan_only=True)
+    app = create_app(sessions=SessionStore(), limiter=LoginLimiter(), on_change=lambda *a: None, lan_only=True,
+                     market_provider=None if yahoo else _SlowFakeProvider(),
+                     # Background threads (price refresh) too: never the family's database.
+                     session_factory=Session)
     app.dependency_overrides[get_db] = demo_db
 
     @app.middleware("http")
@@ -145,6 +175,8 @@ def build_app(reset: bool = False):
         web_app_module.asset.cache_clear()
         if request.url.path == "/__demo-extracto.xlsx":
             return Response(STATEMENT.read_bytes(), media_type="application/octet-stream")
+        if request.url.path == "/__demo-degiro.xlsx":
+            return Response(DEGIRO_STATEMENT.read_bytes(), media_type="application/octet-stream")
         if request.url.path == "/__frame":
             w = int(request.query_params.get("w", 820))
             h = int(request.query_params.get("h", 1180))
@@ -164,8 +196,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--reset", action="store_true", help="rebuild the demo database")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--yahoo", action="store_true", help="real Yahoo Finance lookups for broker imports")
     args = parser.parse_args()
-    app = build_app(args.reset)
+    app = build_app(args.reset, args.yahoo)
     print(f"FAMILYFIN web preview (DEMO data): http://localhost:{args.port}  user {USER} / {PASSWORD}")
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
 

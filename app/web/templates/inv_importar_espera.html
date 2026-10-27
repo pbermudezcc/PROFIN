@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Importando extracto{% endblock %}
+{% block topbar %}{{ ui.topnav("Importar extracto", "Operaciones", "/inversiones/operaciones") }}{% endblock %}
+{% block content %}
+<div class="card done section" aria-live="polite">
+  <div class="art spin">{{ ui.icon("refresh") }}</div>
+  {% if importing %}
+  <h1 class="display">Obteniendo los datos de los valores nuevos…</h1>
+  <p class="muted">Se consultan en Yahoo Finance y después se guardan todas las operaciones de una vez.</p>
+  {% else %}
+  <h1 class="display">Buscando la cotización de cada valor…</h1>
+  <p class="muted">{{ item.filename }} · se consulta Yahoo Finance para proponer el símbolo de cada valor nuevo.</p>
+  {% endif %}
+</div>
+
+{% include "partials/inv_import_poll.html" %}
+
+<form class="section" method="post" action="/importar/inversiones/{{ token }}/estado" hx-boost="false">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <button class="btn ghost block" type="submit">{{ ui.icon("refresh", "sm") }} Comprobar ahora</button>
+</form>
+{% endblock %}

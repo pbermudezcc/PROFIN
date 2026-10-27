@@ -50,6 +50,7 @@ from app.investments.importers.degiro import StatementError
 from app.investments.importers.service import (
     ImportSummary,
     already_imported,
+    statement_cash_changes,
     apply_import,
     catalogue_isins,
     estimate_quantities,
@@ -119,6 +120,7 @@ class ImportStatementDialog(QDialog):
         self.summary: Optional[ImportSummary] = None
         self._combos: Dict[str, QComboBox] = {}
         self._known_refs: set = set()
+        self._cash_changes: dict = {}
         self._filling = False
         self._estimate_timer = QTimer(self)
         self._estimate_timer.setSingleShot(True)
@@ -218,6 +220,7 @@ class ImportStatementDialog(QDialog):
             return
         self.statement = statement
         self._known_refs = already_imported(self._session, self._user_id, statement)
+        self._cash_changes = statement_cash_changes(self._session, self._user_id, statement)
         self._lbl_file.setText(
             f"{path.name} · {statement.broker} · del {fmt_date(statement.first_day)} "
             f"al {fmt_date(statement.last_day)}")
@@ -424,17 +427,23 @@ class ImportStatementDialog(QDialog):
         elif no_qty:
             text = (f"Faltan las acciones de {len(no_qty)} movimiento(s): escríbelas con doble clic "
                     "en la columna «Acciones».")
+        elif not self._new and self._cash_changes:
+            text = "Todas las operaciones ya estaban importadas; solo se actualizará el efectivo."
         elif not self._new:
             text = "Todas las operaciones de este extracto ya estaban importadas."
         else:
             text = f"Listo para importar {self._new} movimientos nuevos."
+        if self._cash_changes:
+            text += " Efectivo en " + self.statement.broker + ": " + ", ".join(
+                fmt_money(new, currency, 2) + ("" if old is None else f" (antes {fmt_money(old, currency, 2)})")
+                for currency, (old, new) in self._cash_changes.items()) + "."
         if self.statement.ignored:
             text += " Se ignoran: " + ", ".join(
                 f"{k} ({v})" for k, v in self.statement.ignored.items()) + "."
         if self.statement.warnings:
             text += " Avisos: " + " ".join(self.statement.warnings)
         self._set_status(text)
-        self._btn_import.setEnabled(bool(self._new) and not missing and not no_qty
+        self._btn_import.setEnabled((bool(self._new) or bool(self._cash_changes)) and not missing and not no_qty
                                     and not self.busy)
 
     # ------------------------------------------------------------------

@@ -149,6 +149,25 @@ def test_dividend_without_conversion_is_warned(tmp_path):
     assert any("no se encontró su cambio" in w for w in statement.warnings)
 
 
+def test_xlsx_with_a_wrong_dimension_is_read_whole(tmp_path):
+    # Real DEGIRO export (Oct 2026): <dimension ref="A1"/> although the sheet
+    # has 12 columns and ~120 rows; read-only openpyxl used to see one cell.
+    import re
+    import zipfile
+
+    good = write_xlsx(tmp_path / "good.xlsx")
+    bad = tmp_path / "bad.xlsx"
+    with zipfile.ZipFile(good) as src, zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as dst:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            if info.filename == "xl/worksheets/sheet1.xml":
+                data = re.sub(rb'<dimension ref="[^"]*"/>', b'<dimension ref="A1"/>', data)
+                assert b'<dimension ref="A1"/>' in data
+            dst.writestr(info, data)
+    statement = parse_statement(bad)
+    assert len(statement.trades) == 5 and len(statement.dividends) == 3
+
+
 def test_other_files_are_rejected(tmp_path):
     wb = Workbook()
     wb.active.append(["Concepto", "Importe"])
@@ -183,6 +202,7 @@ class FakeProvider:
 
     def daily_closes(self, symbols, start, end=None):
         data = {"ACM.F": 99.0, "ACM.DE": 99.6, "WLDA.DE": 56.0, "WLD.AS": 50.2}
+        end = end or date.today()                    # a price refresh asks up to today
         days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
         return {s: [(d, data[s]) for d in days] for s in symbols if s in data}
 

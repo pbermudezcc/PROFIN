@@ -608,12 +608,26 @@ def _migration_5_broker_ref(db_path: Path) -> None:
     logger.info("Migración 5: referencia del bróker en las operaciones de inversión")
 
 
+def _migration_6_broker_cash(db_path: Path) -> None:
+    """Create broker_cash: uninvested cash per user, broker and currency
+    (from the «Saldo» of imported statements). Idempotent."""
+    from app.db.models import BrokerCash
+
+    migration_engine = _build_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(migration_engine, tables=[BrokerCash.__table__])
+    finally:
+        migration_engine.dispose()
+    logger.info("Migración 6: efectivo en los brókers")
+
+
 SCHEMA_MIGRATIONS = (
     (1, _migration_1_category_source),
     (2, _migration_2_indexes_and_cents),
     (3, _migration_3_fix_cross_user_categories),
     (4, _migration_4_investments),
     (5, _migration_5_broker_ref),
+    (6, _migration_6_broker_cash),
 )
 SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1][0]
 

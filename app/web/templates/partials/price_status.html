@@ -1,0 +1,16 @@
+{% import "_ui.html" as ui %}
+{% set r = pr.result %}
+{% if pr.running %}
+<div id="price-status" class="price-status" aria-live="polite"
+     hx-get="/inversiones/cotizaciones/estado" hx-trigger="load delay:2s" hx-target="this" hx-swap="outerHTML" hx-push-url="false">
+  <span class="spin">{{ ui.icon("refresh", "xs") }}</span><span>Actualizando las cotizaciones en el PC…</span>
+</div>
+{% elif pr.recent %}
+<div id="price-status" class="price-status" aria-live="polite">{{ ui.icon("check", "xs") }}<span>Las cotizaciones se acaban de actualizar.</span></div>
+{% elif r and r.error %}
+<div id="price-status" class="price-status neg" aria-live="polite">{{ ui.icon("alert", "xs") }}<span>{{ r.error }}</span></div>
+{% elif r %}
+<div id="price-status" class="price-status" aria-live="polite">{{ ui.icon("check", "xs") }}<span>Cotizaciones actualizadas a las {{ r.finished_at.strftime("%H:%M") }}{% if r.missing|length > 3 %} · <span title="{{ r.missing|join(', ') }}">sin datos de {{ r.missing|length }} valores</span>{% elif r.missing %} · sin datos de {{ r.missing|join(", ") }}{% endif %}</span></div>
+{% else %}
+<div id="price-status" class="price-status" hidden></div>
+{% endif %}

@@ -180,8 +180,19 @@ class PositionsPanel(QWidget):
         prices = (f" · precios del {fmt_date(tot.last_price_date)}"
                   if tot.last_price_date else "")
         c = self._cards
-        c["value"].set_metric(fmt_eur(tot.market_value_eur),
-                              (f"{n} posición abierta" if n == 1 else f"{n} posiciones abiertas") + prices)
+        positions = (f"{n} posición abierta" if n == 1 else f"{n} posiciones abiertas") + prices
+        c["value"]._lbl_label.setText("Valor total" if tot.cash else "Valor de mercado")
+        if tot.cash:
+            # Whole account, like DEGIRO's «Cuenta completa»: securities + cash.
+            c["value"].set_metric(fmt_eur(tot.total_value_eur),
+                                  f"Valores {fmt_eur(tot.market_value_eur)} + efectivo "
+                                  f"{fmt_eur(tot.cash_eur)} · {positions}")
+            c["value"].setToolTip("Efectivo sin invertir, según el último extracto importado: " + ", ".join(
+                f"{line.broker} {fmt_money(line.amount, line.currency, 2)} ({fmt_date(line.as_of)})"
+                for line in tot.cash))
+        else:
+            c["value"].set_metric(fmt_eur(tot.market_value_eur), positions)
+            c["value"].setToolTip("")
         c["cost"].set_metric(fmt_eur(tot.cost_basis_eur), "Coste FIFO de lo que tienes")
         c["gain"].set_metric(fmt_eur(tot.unrealized_gain_eur, signed=True),
                              "Si vendieras hoy, antes de impuestos",

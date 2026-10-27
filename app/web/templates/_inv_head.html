@@ -1,4 +1,10 @@
 {% call ui.large_title("Inversiones") %}
+  <form class="contents" method="post" action="/inversiones/cotizaciones/actualizar"
+        hx-post="/inversiones/cotizaciones/actualizar" hx-target="#price-status" hx-swap="outerHTML" hx-push-url="false">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <button class="icon-btn" type="submit" aria-label="Actualizar cotizaciones" title="Actualizar cotizaciones" {% if pr and pr.running %}disabled{% endif %}>{{ ui.icon("refresh", "sm") }}</button>
+  </form>
+  <a class="icon-btn" href="/inversiones/importar" aria-label="Importar extracto del bróker" title="Importar extracto del bróker">{{ ui.icon("upload", "sm") }}</a>
   <button class="icon-btn acc" type="button" hx-get="/inversiones/operaciones/nueva" hx-target="#sheet-body" hx-push-url="false" data-open-sheet aria-label="Nueva operación">{{ ui.icon("plus", "sm") }}</button>
 {% endcall %}
 <nav class="pills" aria-label="Secciones de inversiones">
@@ -6,3 +12,4 @@
   <a href="{{ href }}" class="{{ 'on' if tab == key else '' }}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}</a>
   {% endfor %}
 </nav>
+{% include "partials/price_status.html" %}

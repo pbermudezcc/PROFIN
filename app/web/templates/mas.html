@@ -39,6 +39,7 @@
 <div class="list">
   <a class="row" href="/ingresos"><div class="ic income">{{ ui.icon("arrow-down", "sm") }}</div><div class="body"><div class="t">Ingresos</div><div class="d">por categoría y mes</div></div>{{ ui.icon("right", "sm chev") }}</a>
   <a class="row" href="/inversiones/fiscal"><div class="ic investment">{{ ui.icon("receipt", "sm") }}</div><div class="body"><div class="t">Fiscalidad de inversiones</div><div class="d">ventas y dividendos por año · Excel</div></div>{{ ui.icon("right", "sm chev") }}</a>
+  <a class="row" href="/ayuda/" hx-boost="false" target="_blank" rel="noopener"><div class="ic">{{ ui.icon("help", "sm") }}</div><div class="body"><div class="t">Manual de usuario</div><div class="d">cómo funciona FAMILYFIN · también en PDF</div></div>{{ ui.icon("right", "sm chev") }}</a>
 </div>
 
 <div class="grid g2">
@@ -81,4 +82,5 @@
   </form>
 </div>
 <p class="note">La sesión se cierra sola tras 30 minutos sin uso. La carpeta de datos y el acceso web se configuran en la aplicación del PC.</p>
+<p class="note num">FAMILYFIN versión {{ app_version }}</p>
 {% endblock %}

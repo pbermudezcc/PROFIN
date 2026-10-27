@@ -254,6 +254,8 @@ svg.i.xs { width: 14px; height: 14px; }
 .sidebar .who { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
                 border-radius: var(--r-md); border: 1px solid var(--border); }
 .sidebar .who .meta { min-width: 0; flex: 1; }
+.sidebar .ver { color: var(--text-3); font-size: var(--fs-xs); text-align: center; opacity: .8; }
+@media (min-width: 1024px) { .sidebar .ver { text-align: left; padding-left: var(--s-3); } }
 .sidebar .who .meta b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar .who .meta small { display: flex; align-items: center; gap: 4px; color: var(--income); font-size: var(--fs-xs); font-weight: 500; }
 
@@ -351,6 +353,7 @@ svg.i.xs { width: 14px; height: 14px; }
 .hero .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-3);
               padding-top: var(--s-4); border-top: 1px solid rgba(255, 255, 255, .16); }
 .hero .row3 .k { font-size: var(--fs-xs); opacity: .75; font-weight: 500; }
+.hero .split-line { font-size: var(--fs-sm); opacity: .85; margin: calc(-1 * var(--s-4)) 0 var(--s-5); }
 .hero .row3 .v { font-weight: 600; font-size: var(--fs-lg); letter-spacing: -0.01em; }
 .hero .pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 99px;
               background: rgba(255, 255, 255, .16); font-size: var(--fs-xs); font-weight: 600; }
@@ -485,6 +488,13 @@ label.row { cursor: pointer; }
              background: var(--income-soft); color: var(--income); }
 .done .art svg { width: 30px; height: 30px; }
 .done p { margin-top: var(--s-2); }
+.price-status { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-3);
+                font-size: var(--fs-sm); color: var(--text-2); }
+.price-status.neg { color: var(--expense); }
+.price-status .spin svg { animation: spin 1s linear infinite; }
+form.contents { display: contents; }
+.done .art.spin { background: var(--accent-soft); color: var(--accent); }
+.done .art.spin svg { animation: spin 1s linear infinite; }
 details > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
 .tree .row { padding-left: calc(var(--s-4) + var(--lvl, 0) * 18px); }
 
@@ -737,6 +747,8 @@ dialog.confirm .acts { display: flex; gap: var(--s-2); justify-content: flex-end
 .login .card { padding: var(--s-6); border-radius: var(--r-xl); box-shadow: var(--shadow-md); }
 .login .secure { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-3);
                  font-size: var(--fs-sm); margin-top: var(--s-5); }
+.login .secure + .secure { margin-top: var(--s-2); }
+.login .secure a { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); }
 .pw { position: relative; }
 .pw .input { padding-right: 48px; }
 .pw button { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px;

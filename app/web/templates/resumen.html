@@ -36,7 +36,7 @@
   {% if portfolio %}
   <a class="kpi" href="/inversiones">
     <div class="k"><i class="dot investment"></i>Cartera</div>
-    <div class="v num">{{ portfolio.market_value_eur|eur }}</div>
+    <div class="v num">{{ portfolio.total_value_eur|eur }}</div>
     <div class="s num {{ 'pos' if portfolio.unrealized_gain_eur >= 0 else 'neg' }}">{{ portfolio.unrealized_gain_eur|eur(signed=True) }}{% if portfolio.unrealized_pct is not none %} · {{ portfolio.unrealized_pct|pct }}{% endif %}</div>
   </a>
   {% endif %}

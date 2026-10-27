@@ -245,6 +245,12 @@ class WebServer:
                 imports = getattr(self._server.config.app.state, "imports", None)
                 if imports is not None:
                     imports.clear()        # uploaded statements never confirmed
+                investment_imports = getattr(self._server.config.app.state, "investment_imports", None)
+                if investment_imports is not None:
+                    investment_imports.close()     # pending broker statements + their threads
+                price_refresh = getattr(self._server.config.app.state, "price_refresh", None)
+                if price_refresh is not None:
+                    price_refresh.close()
                 logger.info("Web: servidor detenido")
             self._server = None
             self._thread = None

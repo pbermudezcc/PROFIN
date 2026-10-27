@@ -84,6 +84,34 @@ def test_main_window_builds_views_lazily_and_themes_them(qt_app, session, monkey
         assert errors == []
         assert "2 transacciones" in window._views["expenses"]._lbl_count.text()
         assert "1 transacciones" in window._views["income"]._lbl_count.text()
+
+        # The help button opens the bundled manual in the browser.
+        opened = []
+        monkeypatch.setattr(main_window_module.QDesktopServices, "openUrl", opened.append)
+        window._btn_help.click()
+        assert opened and opened[0].toLocalFile().endswith("docs/manual/index.html")
     finally:
         window.close()
         window.deleteLater()
+
+
+def test_library_import_dialog_previews_merge_and_replace(qt_app, session):
+    from app.categorization import library_io
+    from app.categorization.category_manager import seed_default_categories, seed_default_rules
+    from app.gui.library_dialog import LibraryImportDialog
+
+    ana = create_user(session, "ana", "secreto1")
+    beto = create_user(session, "beto", "secreto2")
+    seed_default_categories(session, ana.id)
+    seed_default_rules(session, ana.id)
+    lib = library_io.parse_library(library_io.dumps(library_io.export_library(session, ana.id)))
+
+    dialog = LibraryImportDialog(session, beto.id, lib, "ana.profin-cats.json")
+    assert dialog.mode == library_io.MODE_MERGE and dialog.plan.has_changes
+    assert dialog._ok.isEnabled()
+    dialog._replace.setChecked(True)
+    assert dialog.mode == library_io.MODE_REPLACE and dialog.plan.mode == library_io.MODE_REPLACE
+
+    # Already up to date: nothing to import, the button is disabled.
+    same = LibraryImportDialog(session, ana.id, lib, "ana.profin-cats.json")
+    assert not same.plan.has_changes and not same._ok.isEnabled()

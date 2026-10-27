@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Revisar extracto del bróker{% endblock %}
+{% block topbar %}{{ ui.topnav("Revisar", "Importar extracto", "/inversiones/importar") }}{% endblock %}
+{% block content %}
+{% set kind_labels = {"buy": "Compra", "sell": "Venta", "dividend": "Dividendo"} %}
+{% call ui.large_title("Revisar antes de importar", item.filename) %}{% endcall %}
+
+<div class="card tight split wrap">
+  <div class="wrap-gap">
+    <span class="badge outline">{{ ui.icon("trend", "xs") }} {{ item.statement.broker }}</span>
+    {% if first %}<span class="badge outline">{{ ui.icon("calendar", "xs") }} {{ first|fdate }} – {{ last|fdate }}</span>{% endif %}
+  </div>
+  <span class="faint t-sm">Cartera de {{ user.username }}</span>
+</div>
+
+<div class="kpis section">
+  {{ ui.kpi("Compras y ventas", n_trades, "nuevas", "income") }}
+  {{ ui.kpi("Dividendos", n_dividends, "nuevos", "income") }}
+  {{ ui.kpi("Ya importadas", n_known, "se omiten solas", "") }}
+</div>
+
+{% if error %}<div class="alert err section" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+{% for w in warnings %}
+<div class="alert warn section">{{ ui.icon("alert", "sm") }}<span>{{ w }}</span></div>
+{% endfor %}
+
+{% if cash_changes %}
+<div class="alert info section">{{ ui.icon("wallet", "sm") }}<span>Efectivo en {{ item.statement.broker }} según el extracto ({{ item.statement.cash_as_of|fdate }}):
+  {% for currency, (old, new) in cash_changes.items() %}<b class="num">{{ new|num }} {{ currency }}</b>{% if old is not none %} (antes {{ old|num }}){% endif %}{{ ", " if not loop.last }}{% endfor %}.
+  Se guardará al importar.</span></div>
+{% endif %}
+
+{% if not rows and cash_changes %}
+<form method="post" action="/importar/inversiones/{{ token }}/confirmar" hx-boost="false">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <div class="card section">{{ ui.empty("No hay operaciones nuevas", "Todas las operaciones de este extracto ya estaban en tu cartera; solo cambia el efectivo.", "check") }}</div>
+  <div class="sticky-actions section">
+    <button class="btn ghost" type="submit" form="cancel-form">Cancelar</button>
+    <button class="btn block" type="submit" data-busy-label="Guardando…">{{ ui.icon("check", "sm") }} Actualizar el efectivo</button>
+  </div>
+</form>
+{% elif rows %}
+<form method="post" action="/importar/inversiones/{{ token }}/confirmar" hx-boost="false">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+
+  <div class="section-h"><h2>Valores y su cotización en Yahoo Finance</h2></div>
+  <p class="faint t-sm">Comprueba el símbolo propuesto para cada valor (la bolsa debe cotizar en la divisa en la que compraste). Puedes elegir otra sugerencia o escribir cualquier símbolo de Yahoo.</p>
+  <div class="list section">
+    {% for s in symbols %}
+    <div class="row">
+      <div class="body">
+        <div class="t">{{ s.name }}</div>
+        <div class="d"><span class="faint num">{{ s.key }}</span><span class="faint">{{ s.currency }} · {{ s.operations }} op.</span>
+          <span class="{{ 'badge warn' if s.warn else 'faint' }}">{{ s.detail }}</span></div>
+      </div>
+      <div class="end">
+        <label class="sr-only" for="simbolo-{{ s.index }}">Símbolo de {{ s.name }}</label>
+        <input class="input num" id="simbolo-{{ s.index }}" name="simbolo" value="{{ s.symbol }}" required
+               maxlength="20" autocapitalize="characters" autocomplete="off" spellcheck="false"
+               pattern="[A-Za-z0-9][A-Za-z0-9.=^\-]{0,19}" placeholder="Símbolo" size="10"
+               {% if s.candidates %}list="cands-{{ s.index }}"{% endif %}>
+        {% if s.candidates %}
+        <datalist id="cands-{{ s.index }}">
+          {% for symbol, label in s.candidates %}<option value="{{ symbol }}">{{ label }}</option>{% endfor %}
+        </datalist>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="section-h"><h2>Operaciones nuevas ({{ rows|length }})</h2></div>
+  <div class="list section hide-lg">
+    {% for r in rows %}
+    <div class="row">
+      <div class="ic {{ 'investment' if r.kind == 'buy' else 'income' }}">{{ ui.icon({"buy": "plus", "sell": "arrow-down", "dividend": "wallet"}[r.kind], "sm") }}</div>
+      <div class="body">
+        <div class="t">{{ r.name }}</div>
+        <div class="d"><span>{{ kind_labels[r.kind] }}</span><span class="faint">{{ r.day|sdate }} {{ r.day.year }}</span>{% if r.quantity %}<span class="faint num">{{ r.quantity|qty }} acc.</span>{% endif %}</div>
+      </div>
+      <div class="end">{% if r.amount is none %}<span class="faint t-sm">se estimará</span>{% else %}{{ ui.signed(r.sign * r.amount) }}{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card flush section hide-sm">
+    <div class="table-wrap scroll">
+      <table class="data">
+        <thead><tr>
+          <th>Fecha</th><th>Valor</th><th>Tipo</th><th class="r">Acciones</th><th class="r">Precio</th><th class="r">Importe (EUR)</th><th class="r">Comisiones / retención</th>
+        </tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="num">{{ r.day|fdate }}</td>
+          <td><b>{{ r.name }}</b>{% if r.detail %}<div class="sub">{{ r.detail }}</div>{% endif %}</td>
+          <td>{{ kind_labels[r.kind] }}</td>
+          <td class="r num">{{ r.quantity|qty if r.quantity else "—" }}</td>
+          <td class="r num">{{ (r.price|qty) ~ " " ~ r.currency if r.price else "—" }}</td>
+          <td class="r">{% if r.amount is none %}<span class="faint">se estimará</span>{% else %}{{ ui.signed(r.sign * r.amount) }}{% endif %}</td>
+          <td class="r num faint">{{ r.costs|eur if r.costs else "—" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if ignored %}
+  <details class="card tight section">
+    <summary class="strong">Movimientos de efectivo que no son operaciones (se ignoran)</summary>
+    <div class="list flat">
+      {% for label, count in ignored %}
+      <div class="row compact"><div class="body"><div class="t t-sm">{{ label }}</div></div><span class="num t-sm faint">{{ count }}</span></div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  <div class="alert info section">{{ ui.icon("shield", "sm") }}<span>Se guarda todo o nada: si alguna operación dejara la cartera imposible (una venta sin acciones), no se importa ninguna. Las que ya tengas se vuelven a comprobar al guardar y nunca se duplican.</span></div>
+
+  <div class="sticky-actions section">
+    <button class="btn ghost" type="submit" form="cancel-form">Cancelar</button>
+    <button class="btn block" type="submit" data-busy-label="Importando…">{{ ui.icon("check", "sm") }} Importar {{ rows|length }} operaciones</button>
+  </div>
+</form>
+{% else %}
+<div class="card section">{{ ui.empty("Nada nuevo que importar", "Todas las operaciones de este extracto ya estaban en tu cartera.", "check") }}</div>
+<div class="sticky-actions section">
+  <button class="btn ghost" type="submit" form="cancel-form">Volver a operaciones</button>
+</div>
+{% endif %}
+
+<form id="cancel-form" method="post" action="/importar/inversiones/{{ token }}/cancelar" hx-boost="false">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+</form>
+{% endblock %}

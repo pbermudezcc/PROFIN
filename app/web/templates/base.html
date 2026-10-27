@@ -50,6 +50,7 @@
     </nav>
     <div class="foot">
       <button class="btn ghost sm" type="button" data-theme-toggle title="Cambiar tema">{{ ui.icon("moon", "sm") }}<span>Tema claro / oscuro</span></button>
+      <a class="btn ghost sm" href="/ayuda/" hx-boost="false" target="_blank" rel="noopener" title="Manual de usuario">{{ ui.icon("help", "sm") }}<span>Manual de usuario</span></a>
       <div class="who">
         <div class="avatar">{{ ui.initials(user.username) }}</div>
         <div class="meta"><b>{{ user.username }}</b><small>{{ ui.icon("lock", "xs") }} Cifrado</small></div>
@@ -58,6 +59,7 @@
           <button class="icon-btn" title="Cerrar sesión" aria-label="Cerrar sesión">{{ ui.icon("logout", "sm") }}</button>
         </form>
       </div>
+      <div class="ver num" title="Versión de FAMILYFIN">v{{ app_version }}</div>
     </div>
   </aside>
 

@@ -34,6 +34,7 @@ from app.investments.importers.base import (
     KIND_SELL,
     is_isin,
 )
+from app.investments.cash import cash_changes, save_statement_cash
 from app.investments.importers.degiro import StatementError
 from app.investments.ledger import ImportResult, TransactionDraft, existing_refs, import_drafts
 from app.investments.market_data import MarketDataProvider, SecurityInfo
@@ -100,6 +101,7 @@ class ImportSummary:
     dividends:  int
     estimated:  int          # dividends whose EUR amount had to be estimated
     ignored:    int = 0      # rows the user (or the reader) marked "ignore"
+    cash_updated: bool = False   # the broker's cash balance was stored (cash.py)
 
 
 def build_drafts(session: Session, statement, security_ids: Dict[str, int]) -> Tuple[list, int, int]:
@@ -181,10 +183,21 @@ def apply_import(
         session.rollback()          # also drops securities created for this import
         raise
     added = result.added
-    return ImportSummary(
+    summary = ImportSummary(
         result=result,
         trades=sum(1 for t in added if InvestmentKind(t.kind) != InvestmentKind.dividend),
         dividends=sum(1 for t in added if InvestmentKind(t.kind) == InvestmentKind.dividend),
         estimated=estimated,
         ignored=ignored,
     )
+    # After the operations (all or nothing): the cash the statement shows.
+    summary.cash_updated = save_statement_cash(
+        session, user_id, statement.broker, getattr(statement, "cash", None) or {},
+        getattr(statement, "cash_as_of", None))
+    return summary
+
+
+def statement_cash_changes(session: Session, user_id: int, statement) -> Dict[str, tuple]:
+    """currency → (stored, statement) for the cash an import would change."""
+    return cash_changes(session, user_id, statement.broker, getattr(statement, "cash", None) or {},
+                        getattr(statement, "cash_as_of", None))

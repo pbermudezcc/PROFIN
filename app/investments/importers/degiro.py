@@ -90,6 +90,9 @@ class ParsedStatement:
     first_day: Optional[date] = None
     last_day:  Optional[date] = None
     broker:    str = BROKER
+    # Cash left at DEGIRO («Margen libre»): the newest «Saldo» of each currency.
+    cash:       Dict[str, float] = field(default_factory=dict)
+    cash_as_of: Optional[date] = None
 
     needs_prices = False                  # DEGIRO gives exact quantities
 
@@ -150,7 +153,11 @@ def _read_rows(path: Path) -> List[list]:
         from openpyxl import load_workbook
         workbook = load_workbook(path, read_only=True, data_only=True)
         try:
-            return [list(r) for r in workbook.worksheets[0].iter_rows(values_only=True)]
+            sheet = workbook.worksheets[0]
+            # Some DEGIRO exports declare <dimension ref="A1"/>: read-only mode
+            # trusts it and would see a single cell. Read the real extent.
+            sheet.reset_dimensions()
+            return [list(r) for r in sheet.iter_rows(values_only=True)]
         finally:
             workbook.close()
     if suffix == ".csv":
@@ -170,6 +177,8 @@ class _Row:
     currency: str
     amount:   Optional[float]
     order_id: str
+    balance_currency: str = ""
+    balance:  Optional[float] = None
 
 
 def _parse_rows(raw: List[list]) -> List[_Row]:
@@ -196,8 +205,12 @@ def _parse_rows(raw: List[list]) -> List[_Row]:
             currency=str(values[7] or "").strip(),
             amount=_number(values[8]),
             order_id=str(values[11] or "").strip(),
+            balance_currency=str(values[9] or "").strip(),
+            balance=_number(values[10]),
         ))
-    rows.sort(key=lambda r: r.when)       # the export is newest first
+    # The export is newest first. A stable sort keeps that order within the
+    # same minute, so there the first row of a time is the newest.
+    rows.sort(key=lambda r: r.when)
     return rows
 
 
@@ -209,6 +222,7 @@ def parse_statement(path) -> ParsedStatement:
     statement = ParsedStatement()
     if rows:
         statement.first_day, statement.last_day = rows[0].when.date(), rows[-1].when.date()
+    _read_cash(rows, statement)
 
     orders: Dict[str, dict] = {}
     order_rows: Dict[str, List[_Row]] = defaultdict(list)
@@ -254,6 +268,24 @@ def parse_statement(path) -> ParsedStatement:
     for dividend in statement.dividends:
         dividend.name = names.get(dividend.isin, dividend.name)
     return statement
+
+
+def _read_cash(rows: List[_Row], statement: ParsedStatement) -> None:
+    """Newest «Saldo» per currency = the cash DEGIRO shows as «Margen libre».
+
+    Rows are oldest first; within one minute the export's own order (newest
+    first) is kept, so the newest row is the first one of the latest time.
+    """
+    newest: Dict[str, _Row] = {}
+    for row in rows:
+        if not row.balance_currency or row.balance is None:
+            continue
+        current = newest.get(row.balance_currency)
+        if current is None or row.when > current.when:
+            newest[row.balance_currency] = row
+    statement.cash = {currency: round(row.balance, 2) for currency, row in newest.items()}
+    if newest:
+        statement.cash_as_of = max(row.when for row in newest.values()).date()
 
 
 def _build_trade(ref, order, extra: List[_Row], statement) -> Optional[ParsedTrade]:
