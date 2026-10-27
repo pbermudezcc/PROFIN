@@ -311,3 +311,13 @@ Entry format:
 - Validation: new `tests/test_investments_cash.py` (6), migration 6 test, 1 web test, 1 desktop card test; full suite 547 passed. Real exports through the web flow on a temp DB (Sept 355.30 → Oct 1002.42 → Sept again keeps 1002.42). On a migrated COPY of the family DB (real DB untouched, still v5): PEDRO's securities 7.380,99 vs DEGIRO 7.401,89 (−20,90 €, Yahoo close vs DEGIRO live price); with cash 8.383,41 vs 8.404,31. Browser check (preview, iPad width).
 - To get PEDRO's cash: restart the app (migration v6), then re-import the October statement (web or PC) → «Actualizar el efectivo».
 - Not done: cash for brokers whose statements have no balance (MyInvestor) — needs a manual entry; cash history in the Evolución chart; XIRR including cash.
+
+## 2026-10-27 — Release v0.8.0
+- Type: release
+- Version / channel / tag: 0.8.0 / R (stable, main) / `v0.8.0` (annotated, notes as message)
+- Commits: `97a8320` feat(categorias) library I/O, `3b3e9dc` feat(manual) manual + DEMO account, `7a5c449` feat(movimientos) search, `85d91c8` feat(reglas) search + filters, `c618ebd` feat(inversiones) web DEGIRO import + web price refresh + broker cash (schema v6) + web version label + DEGIRO xlsx fix, `8a59436` docs, `bde28ef` chore(release): v0.8.0. Split by feature at file level; files touched by several features went into `c618ebd` (intermediate commits do not run on their own; the tag does). main fast-forwarded from `2441f4a`.
+- Asset: `PROFIN.R.0.8.0-windows.zip` (118 MB) attached to https://github.com/pbermudezcc/PROFIN/releases/tag/v0.8.0
+- Snapshot: `versions/FAMILYFIN.R.0.8.0.md/.prj`; CHANGELOG entry with the full notes.
+- Validation: preflight → 548 passed (first run stopped only on the untracked `.vscode/settings.json`, now in `.git/info/exclude`); verify-notes OK; postflight OK (local) and OK `--published`.
+- Schema migration v5 → v6 (`broker_cash`), warned in «Antes de actualizar». `docs/manual/*.pdf` is gitignored (generated); the build still bundles it if present locally.
+- Leftovers: `stash@{0}` (pre-v0.7.1 freeze of the library feature, now committed) can be dropped; branch `feature/categorization-library-io` is local only and fully contained in main.
