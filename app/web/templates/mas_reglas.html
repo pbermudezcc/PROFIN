@@ -27,6 +27,62 @@
 {% endif %}
 {%- endmacro %}
 
+{% if total_rules %}
+<form id="rule-filters" class="section" action="/mas/reglas" method="get"
+      hx-get="/mas/reglas" hx-target="#rules-results" hx-select="#rules-results" hx-swap="outerHTML" hx-push-url="true"
+      hx-trigger="input changed delay:350ms from:input[name=q], change">
+  <div class="toolbar">
+    <label class="search">
+      {{ ui.icon("search", "sm") }}
+      <span class="sr-only">Buscar reglas</span>
+      <input class="input" type="search" name="q" value="{{ params.get('q', '') }}" placeholder="Buscar reglas…" title="Cada palabra se busca en el texto, la coincidencia, la categoría, el tipo, el ámbito, la prioridad… sin distinguir mayúsculas ni acentos" enterkeyhint="search" maxlength="100">
+    </label>
+    <button class="icon-btn" type="button" data-toggle="#rule-filter-fields" aria-label="Filtros" aria-controls="rule-filter-fields">{{ ui.icon("filter", "sm") }}</button>
+  </div>
+  <div id="rule-filter-fields" class="filters" {% if not show_filters %}hidden{% endif %}>
+    <label class="field"><span>Categoría</span>
+      <select class="input" name="categoria">
+        <option value="">Todas</option>
+        {% for cid, cname, tname in filter_categories %}<option value="{{ cid }}" {% if params.get('categoria') == cid|string %}selected{% endif %}>{{ cname }}{% if tname %} ({{ tname }}){% endif %}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Tipo</span>
+      <select class="input" name="tipo">
+        <option value="">Todos</option>
+        {% for tname in filter_types %}<option value="{{ tname }}" {% if params.get('tipo') == tname %}selected{% endif %}>{{ tname }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Coincidencia</span>
+      <select class="input" name="coincidencia">
+        <option value="">Todas</option>
+        {% for value, label in match_types %}<option value="{{ value }}" {% if params.get('coincidencia') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Ámbito</span>
+      <select class="input" name="ambito">
+        <option value="">Todos</option>
+        <option value="global" {% if params.get('ambito') == 'global' %}selected{% endif %}>Global</option>
+        <option value="personal" {% if params.get('ambito') == 'personal' %}selected{% endif %}>Personal</option>
+      </select>
+    </label>
+    <label class="field"><span>Uso</span>
+      <select class="input" name="uso">
+        <option value="">Cualquiera</option>
+        <option value="con" {% if params.get('uso') == 'con' %}selected{% endif %}>Con movimientos</option>
+        <option value="sin" {% if params.get('uso') == 'sin' %}selected{% endif %}>Sin movimientos</option>
+      </select>
+    </label>
+  </div>
+</form>
+{% endif %}
+
+<div id="rules-results">
+{% if total_rules %}
+<div class="wrap-gap section">
+  <p class="faint" id="rules-count">{{ count_label }}</p>
+  {% if filtered %}<a class="btn ghost sm" href="/mas/reglas">{{ ui.icon("close", "xs") }} Quitar filtros</a>{% endif %}
+</div>
+{% endif %}
 {% if rules %}
 <div class="list section hide-lg">
   {% for r in rules %}
@@ -67,6 +123,8 @@
   </div>
 </div>
 <p class="note">«Movimientos» indica cuántos de tus movimientos asignaría hoy cada regla. Las reglas globales son de toda la familia y se editan desde la aplicación del PC.</p>
+{% elif total_rules %}
+<div class="card section">{{ ui.empty("Sin resultados", "Ninguna regla coincide con la búsqueda o los filtros.", "search") }}</div>
 {% else %}
 <div class="card section">
   {% call ui.empty("Sin reglas", "Crea una regla para categorizar automáticamente los movimientos que contengan un texto.", "rules") %}
@@ -74,4 +132,5 @@
   {% endcall %}
 </div>
 {% endif %}
+</div>
 {% endblock %}

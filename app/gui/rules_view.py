@@ -8,12 +8,17 @@ Features:
   - Create new rule: pattern + match type + category + priority
   - Delete rule
   - Visual indicator for match type (contains/exact/regex)
+  - Search box + filters (categoría, tipo, coincidencia, ámbito, uso) over
+    the rows built by app.categorization.rule_search; the table only holds
+    the filtered rows and every action resolves the rule by the id stored in
+    column 0 (never by row index), so sorting/filtering can't misdirect it.
 """
 from __future__ import annotations
 
+import logging
 from typing import List
 
-from PySide6.QtCore    import Qt
+from PySide6.QtCore    import Qt, QTimer
 from PySide6.QtGui     import QFont, QColor, QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -32,10 +37,22 @@ from app.db.models   import (
     Transaction,
 )
 from app.categorization.rules_engine  import (
-    apply_rules, create_rule, delete_rule, get_all_rules, update_rule
+    apply_rules, create_rule, delete_rule, get_all_rules, shares_global_rules, update_rule
 )
 from app.categorization.category_manager import get_all_categories
+from app.categorization.rule_search import (
+    MATCH_TYPE_LABELS, SCOPE_GLOBAL, SCOPE_PERSONAL, USAGE_WITH, USAGE_WITHOUT,
+    RuleFilters, RuleRow, build_rule_rows, count_label, filter_options,
+    filter_rule_rows,
+)
+from app.analytics.transaction_search import fold_text
 from app.gui._style_utils import apply_card_shadow
+
+logger = logging.getLogger(__name__)
+
+RULE_ID_ROLE = Qt.ItemDataRole.UserRole          # column 0: the rule id
+SORT_ROLE    = Qt.ItemDataRole.UserRole + 1      # typed sort key per cell
+SEARCH_DEBOUNCE_MS = 250
 
 
 class RulesView(QWidget):
@@ -48,6 +65,8 @@ class RulesView(QWidget):
         self._theme   = theme
         self._t       = THEMES[theme]
         self._rules:  List[AutoCategorizationRule] = []
+        self._rows:   List[RuleRow] = []          # all visible rules (unfiltered)
+        self._shown:  List[RuleRow] = []          # after search + filters
         self._categories: List[Category] = []
 
         self._build_ui()
@@ -65,6 +84,8 @@ class RulesView(QWidget):
         root.setSpacing(0)
 
         root.addWidget(self._make_topbar())
+        self._filter_bar = self._make_filter_bar()
+        root.addWidget(self._filter_bar)
 
         # Table
         self._table = QTableView()
@@ -85,7 +106,11 @@ class RulesView(QWidget):
             "Categoría", "Ámbito", "Transacciones vinculadas",
             "Total (€)",
         ])
+        # Numbers sort as numbers, text without case/accents (SORT_ROLE).
+        self._model.setSortRole(SORT_ROLE)
         self._table.setModel(self._model)
+        self._table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+        self._table.doubleClicked.connect(lambda _index: self._on_edit_rule())
 
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -175,6 +200,66 @@ class RulesView(QWidget):
 
         return bar
 
+    def _make_filter_bar(self) -> QFrame:
+        bar = QFrame()
+        bar.setObjectName("filterBar")
+        bar.setFixedHeight(52)
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setSpacing(10)
+
+        self._inp_search = QLineEdit()
+        self._inp_search.setPlaceholderText("Buscar reglas…")
+        self._inp_search.setClearButtonEnabled(True)
+        self._inp_search.setToolTip(
+            "Busca cada palabra en el patrón, tipo de coincidencia, categoría,\n"
+            "tipo, ámbito, fecha de creación, prioridad y nº de movimientos.\n"
+            "Sin distinguir mayúsculas ni acentos; todas las palabras deben aparecer."
+        )
+        self._inp_search.setFixedHeight(34)
+        self._inp_search.setMinimumWidth(220)
+        self._inp_search.setObjectName("filterInput")
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(SEARCH_DEBOUNCE_MS)
+        self._search_timer.timeout.connect(self._on_filter_changed)
+        self._inp_search.textChanged.connect(self._search_timer.start)
+        self._inp_search.returnPressed.connect(self._on_filter_changed)
+        layout.addWidget(self._inp_search, 1)
+
+        def combo(first: str, tooltip: str, min_width: int = 0) -> QComboBox:
+            cmb = QComboBox()
+            cmb.setFixedHeight(34)
+            cmb.setObjectName("filterCombo")
+            cmb.setToolTip(tooltip)
+            if min_width:
+                cmb.setMinimumWidth(min_width)
+            cmb.addItem(first, None)
+            cmb.currentIndexChanged.connect(self._on_filter_changed)
+            layout.addWidget(cmb)
+            return cmb
+
+        self._cmb_cat = combo("Todas las categorías", "Categoría que asigna la regla", 170)
+        self._cmb_type = combo("Todos los tipos", "Tipo de la categoría (Gasto, Ingreso…)")
+        self._cmb_match = combo("Toda coincidencia", "Tipo de coincidencia")
+        for mt, label in MATCH_TYPE_LABELS.items():
+            self._cmb_match.addItem(label, mt)
+        self._cmb_scope = combo("Todo ámbito", "Global (toda la familia) o personal")
+        self._cmb_scope.addItem("Global", SCOPE_GLOBAL)
+        self._cmb_scope.addItem("Personal", SCOPE_PERSONAL)
+        self._cmb_usage = combo("Cualquier uso", "Si la regla clasifica hoy algún movimiento")
+        self._cmb_usage.addItem("Con movimientos", USAGE_WITH)
+        self._cmb_usage.addItem("Sin movimientos", USAGE_WITHOUT)
+
+        btn_clear = QPushButton("Limpiar filtros")
+        btn_clear.setFixedHeight(34)
+        btn_clear.setObjectName("btnSecondary")
+        btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_clear.clicked.connect(self._clear_filters)
+        layout.addWidget(btn_clear)
+        self._btn_clear = btn_clear
+        return bar
+
     # ------------------------------------------------------------------
     # Data
     # ------------------------------------------------------------------
@@ -185,71 +270,123 @@ class RulesView(QWidget):
         )
 
     def refresh(self) -> None:
-        self._rules = get_all_rules(self._session, user_id=self._user.id)
-        self._model.removeRows(0, self._model.rowCount())
-        t = self._t
-        rule_transactions = self._get_rule_transactions()
+        """Reload rules and their usage stats (dry run of the engine), then
+        re-apply the current search/filters. Only called after a change or
+        an explicit action — filtering itself never re-runs the engine."""
+        try:
+            self._rules = get_all_rules(self._session, user_id=self._user.id)
+            rule_transactions = self._get_rule_transactions()
+            self._rows = build_rule_rows(
+                self._session, self._user.id,
+                matches={rid: len(txns) for rid, txns in rule_transactions.items()},
+                totals={rid: sum(t.amount for t in txns)
+                        for rid, txns in rule_transactions.items()},
+                rules=self._rules,
+            )
+        except Exception:
+            self._session.rollback()
+            logger.exception("Error al cargar las reglas (user_id=%s)", self._user.id)
+            self._rules, self._rows = [], []
+        self._refresh_filter_options()
+        self._populate()
 
-        cat_map = {c.id: c.name for c in self._categories}
-        match_labels = {
-            MatchType.contains: "Contiene",
-            MatchType.exact:    "Exacto",
-            MatchType.regex:    "Regex",
-        }
+    def _refresh_filter_options(self) -> None:
+        """Fill the category/type combos from the rules, keeping the choice."""
+        categories, types = filter_options(self._rows)
+        for cmb, items in (
+            (self._cmb_cat, [(f"{name} ({type_name})" if type_name else name, cid)
+                             for cid, name, type_name in categories]),
+            (self._cmb_type, [(name, name) for name in types]),
+        ):
+            keep = cmb.currentData()
+            cmb.blockSignals(True)
+            while cmb.count() > 1:
+                cmb.removeItem(1)
+            for label, value in items:
+                cmb.addItem(label, value)
+            index = cmb.findData(keep) if keep is not None else 0
+            cmb.setCurrentIndex(max(0, index))
+            cmb.blockSignals(False)
+
+    def current_filters(self) -> RuleFilters:
+        return RuleFilters(
+            text=self._inp_search.text(),
+            category_id=self._cmb_cat.currentData(),
+            type_name=self._cmb_type.currentData(),
+            match_type=self._cmb_match.currentData(),
+            scope=self._cmb_scope.currentData(),
+            usage=self._cmb_usage.currentData(),
+        )
+
+    def _populate(self) -> None:
+        """Show the rows passing the search/filters (no DB access)."""
+        t = self._t
+        filters = self.current_filters()
+        self._shown = filter_rule_rows(self._rows, filters)
+
         match_colors = {
             MatchType.contains: t["accent"],
             MatchType.exact:    t["income"],
             MatchType.regex:    t["investment"],
         }
+        center = Qt.AlignmentFlag.AlignCenter
+        right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 
-        for rule in self._rules:
-            item_pri = QStandardItem(str(rule.priority))
-            item_pri.setData(rule.id, Qt.ItemDataRole.UserRole)
-            item_pri.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        def cell(text: str, sort_key, align=None) -> QStandardItem:
+            item = QStandardItem(text)
+            item.setData(sort_key, SORT_ROLE)
+            item.setEditable(False)
+            if align is not None:
+                item.setTextAlignment(align)
+            return item
 
-            item_pat = QStandardItem(rule.match_pattern)
+        self._model.removeRows(0, self._model.rowCount())
+        for row in self._shown:
+            # Ties keep priority order: the key includes the rule id.
+            item_pri = cell(str(row.priority), row.priority * 10_000_000 + row.id, center)
+            item_pri.setData(row.id, RULE_ID_ROLE)
 
-            item_mt = QStandardItem(
-                match_labels.get(rule.match_type, str(rule.match_type))
-            )
-            item_mt.setForeground(
-                QColor(match_colors.get(rule.match_type, t["text_primary"]))
-            )
-            item_mt.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item_pat = cell(row.pattern, fold_text(row.pattern))
+
+            item_mt = cell(row.match_label, row.match_label, center)
+            item_mt.setForeground(QColor(match_colors.get(row.match_type, t["text_primary"])))
             item_mt.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
 
-            cat_name = cat_map.get(rule.category_id, f"id={rule.category_id}")
-            item_cat = QStandardItem(cat_name)
+            cat_name = row.category_name or "—"
+            item_cat = cell(cat_name, fold_text(cat_name))
+            if row.type_name:
+                item_cat.setToolTip(f"{row.type_name} › {cat_name}")
+            if row.category_id is None:
+                item_cat.setForeground(QColor(t["warning"]))
+                item_cat.setToolTip(
+                    "Regla global sin categoría equivalente en tus categorías: "
+                    "no se aplica a tus movimientos."
+                )
 
-            scope = "Global" if rule.user_id is None else "Personal"
-            item_scope = QStandardItem(scope)
-            item_scope.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if scope == "Global":
-                item_scope.setForeground(QColor(t["investment"]))
-            else:
-                item_scope.setForeground(QColor(t["text_secondary"]))
-
-            linked_transactions = rule_transactions.get(rule.id, [])
-            item_linked = QStandardItem(str(len(linked_transactions)))
-            item_linked.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-
-            total_amount = sum(
-                transaction.amount for transaction in linked_transactions
+            scope = "Global" if row.is_global else "Personal"
+            item_scope = cell(scope, scope, center)
+            item_scope.setForeground(
+                QColor(t["investment"] if row.is_global else t["text_secondary"])
             )
-            item_total = QStandardItem(_format_amount(total_amount))
-            item_total.setTextAlignment(Qt.AlignmentFlag.AlignRight)
 
-            row = [
+            matches = row.matches or 0
+            item_linked = cell(str(matches), matches, center)
+            total = row.total or 0.0
+            item_total = cell(_format_amount(total), total, right)
+
+            self._model.appendRow([
                 item_pri, item_pat, item_mt, item_cat, item_scope,
                 item_linked, item_total,
-            ]
-            for item in row:
-                item.setEditable(False)
-            self._model.appendRow(row)
+            ])
+
+        # Keep the column the user sorted by (rebuilding the rows drops it).
+        hdr = self._table.horizontalHeader()
+        self._model.sort(hdr.sortIndicatorSection(), hdr.sortIndicatorOrder())
 
         self._lbl_count.setText(
-            f"{len(self._rules)} regla(s) activa(s)"
+            count_label(len(self._shown), len(self._rows), not filters.is_empty())
         )
+        self._btn_clear.setEnabled(not filters.is_empty())
 
     def _get_rule_transactions(
         self,
@@ -285,8 +422,34 @@ class RulesView(QWidget):
         if not idx.isValid():
             return None
 
-        rule_id = self._model.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole)
+        # The model holds only the filtered, sorted rows: always resolve the
+        # rule by the id stored in column 0 of that row, never by position.
+        item = self._model.item(idx.row(), 0)
+        if item is None:
+            return None
+        rule_id = item.data(RULE_ID_ROLE)
         return next((rule for rule in self._rules if rule.id == rule_id), None)
+
+    # ------------------------------------------------------------------
+    # Search / filters
+    # ------------------------------------------------------------------
+
+    def _on_filter_changed(self) -> None:
+        self._search_timer.stop()
+        self._populate()
+
+    def _clear_filters(self) -> None:
+        self._search_timer.stop()
+        widgets = (self._inp_search, self._cmb_cat, self._cmb_type,
+                   self._cmb_match, self._cmb_scope, self._cmb_usage)
+        for widget in widgets:
+            widget.blockSignals(True)
+        self._inp_search.clear()
+        for cmb in widgets[1:]:
+            cmb.setCurrentIndex(0)
+        for widget in widgets:
+            widget.blockSignals(False)
+        self._populate()
 
     # ------------------------------------------------------------------
     # Slots
@@ -351,7 +514,8 @@ class RulesView(QWidget):
         # Scope
         cmb_scope = QComboBox()
         cmb_scope.setFixedHeight(38)
-        cmb_scope.addItem("Global (todos los usuarios)", None)
+        if shares_global_rules(self._session, self._user.id):
+            cmb_scope.addItem("Global (todos los usuarios)", None)
         cmb_scope.addItem("Personal (solo yo)",         self._user.id)
         form.addRow("Ámbito:", cmb_scope)
 
@@ -691,6 +855,24 @@ class RulesView(QWidget):
             QLabel#dashTitle {{
                 color: {t["text_primary"]};
                 font-size: 16px; font-weight: 700;
+            }}
+            QFrame#filterBar {{
+                background-color: {t["bg_primary"]};
+                border-bottom: 1px solid {t["border"]};
+            }}
+            QLineEdit#filterInput, QComboBox#filterCombo {{
+                background-color: {t["bg_secondary"]};
+                border: 1px solid {t["border"]};
+                border-radius: 6px;
+                padding: 4px 10px;
+                color: {t["text_primary"]};
+                font-size: 13px;
+            }}
+            QLineEdit#filterInput:focus, QComboBox#filterCombo:focus {{
+                border-color: {t["accent"]};
+            }}
+            QPushButton#btnSecondary:disabled {{
+                color: {t["text_secondary"]};
             }}
             QPushButton#btnPrimary {{
                 background-color: {t["accent"]}; color: #FFFFFF;

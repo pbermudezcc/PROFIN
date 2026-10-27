@@ -33,6 +33,17 @@ from app.categorization.admin_service import (
     rule_match_counts,
     visible_rules,
 )
+from app.categorization.rule_search import (
+    SCOPE_GLOBAL,
+    SCOPE_PERSONAL,
+    USAGE_WITH,
+    USAGE_WITHOUT,
+    RuleFilters,
+    build_rule_rows,
+    count_label,
+    filter_options,
+    filter_rule_rows,
+)
 from app.db.models import AuditAction, Category, CategoryLevel, MatchType, Transaction
 from app.web.deps import DB, USER, WebUser, notify_change
 from app.web.render import audit, hx_trigger, is_htmx, parse_int, render
@@ -196,18 +207,50 @@ def category_defaults(request: Request, user: WebUser = USER, db: Session = DB) 
 # Rules
 # ---------------------------------------------------------------------------
 
+RULE_FILTER_KEYS = ("q", "categoria", "tipo", "coincidencia", "ambito", "uso")
+
+
+def _rule_filters(params) -> RuleFilters:
+    match_type = params.get("coincidencia")
+    scope = params.get("ambito")
+    usage = params.get("uso")
+    return RuleFilters(
+        text=(params.get("q") or "")[:100],
+        category_id=parse_int(params.get("categoria")),
+        type_name=(params.get("tipo") or None),
+        match_type=MatchType(match_type) if match_type in MatchType._value2member_map_ else None,
+        scope=scope if scope in (SCOPE_GLOBAL, SCOPE_PERSONAL) else None,
+        usage=usage if usage in (USAGE_WITH, USAGE_WITHOUT) else None,
+    )
+
+
 @router.get("/mas/reglas")
 def rules(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
-    rows = visible_rules(db, user.id)
+    all_rules = visible_rules(db, user.id)
+    counts = rule_match_counts(db, user.id)
+    rule_rows = build_rule_rows(db, user.id, matches=counts, rules=all_rules)
+    filters = _rule_filters(request.query_params)
+    shown_ids = {r.id for r in filter_rule_rows(rule_rows, filters)}
+    rows = [r for r in all_rules if r.id in shown_ids]
     names = dict(
         db.query(Category.id, Category.name).filter(Category.id.in_({r.category_id for r in rows})).all()
     ) if rows else {}
     uncategorized = db.query(func.count(Transaction.id)).filter(
         Transaction.user_id == user.id, Transaction.category_id.is_(None)).scalar() or 0
+    filter_categories, filter_types = filter_options(rule_rows)
+    filtered = not filters.is_empty()
     return render(request, "mas_reglas.html", {
         "rules": rows, "names": names, "match_labels": MATCH_LABELS,
-        "counts": rule_match_counts(db, user.id), "uncategorized": uncategorized,
-        "first_id": rows[0].id if rows else None, "last_id": rows[-1].id if rows else None,
+        "counts": counts, "uncategorized": uncategorized,
+        # Priority arrows move a rule among *all* of them, not just the shown ones.
+        "first_id": all_rules[0].id if all_rules else None,
+        "last_id": all_rules[-1].id if all_rules else None,
+        "total_rules": len(all_rules), "filtered": filtered,
+        "count_label": count_label(len(rows), len(all_rules), filtered),
+        "params": request.query_params,
+        "filter_categories": filter_categories, "filter_types": filter_types,
+        "match_types": MATCH_TYPES,
+        "show_filters": any(request.query_params.get(k) for k in RULE_FILTER_KEYS[1:]),
     }, user=user, active="reglas")
 
 
