@@ -58,6 +58,16 @@ app/analytics/period_summary.py  SQL aggregates for Gastos/Ingresos (summarize_p
                                  period_totals, category_totals) — no widgets
 tools/ExportVersionHandler.py    version bump + CHANGELOG + versions/*.md/.prj (interactive CLI)
 tools/build_windows.py           PyInstaller wrapper (build_profin.spec owns the artifact name)
+tools/web_preview.py             web front-end on a small demo DB (localhost, demo/demo-pass)
+tools/demo/                      DEMO user JPN / demo1234 for showing the app to others:
+                                 _sandbox.py (import first: QSettings → INI, %LOCALAPPDATA% and
+                                 data folder → dist/demo_jpn/), build_demo.py (CaixaBank-format
+                                 statements through the real importer + DEGIRO portfolio with
+                                 real Yahoo prices), run_demo.py / PROFIN_DEMO.bat (opens the app
+                                 on the demo), capture_screens.py (manual screenshots: web over
+                                 HTTPS via headless Edge; --desktop for the Qt app)
+docs/manual/                     user manual (index.html + img/, also printed to PDF);
+                                 published as a private claude.ai artifact
 conftest.py                      redirects every QSettings(org, app) to temp INI files in tests
 ```
 
@@ -266,6 +276,13 @@ Verify still true before acting (history in `docs/agent/agent_log.md`):
 - `app.db.database` resolves the data dir (and may run the legacy copy) at
   import time, also under pytest.
 - Build artifacts are still named `PROFIN.<B|R>.<version>` by design.
+- Nothing ever sets `Transaction.type = investment`: the importer derives
+  income/expense from the sign only, so transfers to a broker count as
+  expense and the "Inversión(es)" tile on the desktop dashboard and the web
+  Resumen always shows 0,00 € (seen 2026-10-18 on the demo; not fixed).
+- Desktop light theme: the sidebar user card shows the name/"Personal"
+  labels on white boxes, because the window-wide `QWidget { background-color }`
+  rule in `MainWindow._apply_theme` also paints those QLabels (not fixed).
 
 ---
 

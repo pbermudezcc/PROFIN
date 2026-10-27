@@ -135,3 +135,10 @@ Entry format:
 - Root cause: Smart App Control (enforce mode) refused `pandas/_libs/parsers.cp311-win_amd64.pyd` of pandas 3.0.5 (pandas 3.0.6 was worse: `pandas_parser` blocked). The web imports router imported the ingestion pipeline (and pandas) at startup, so one blocked DLL took the whole web server down.
 - Fix: lazy import of the ingestion pipeline in `app/web/routers/imports.py` (Importar shows "no disponible" instead) — `7e32a36`; global pandas moved to 3.0.3, which loads, and pinned in requirements.txt — `bfaf7a0`.
 - Prevention: when a native import fails, read `Microsoft-Windows-CodeIntegrity/Operational` first (events 3033/3077/3118). Test candidate versions in an isolated `pip install --target <scratch>` + PYTHONPATH and run the full suite there before changing the global install. Never "fix" it by upgrading blindly — new builds have no reputation yet.
+
+## 2026-10-27 — Dev web preview read the family database from a background thread
+- Area: web / dev tooling
+- Symptom: in `tools/web_preview.py`, «Actualizar cotizaciones» listed the family's real symbols (SU.PA, 0P… funds) as "sin datos"; the demo's own securities were not refreshed.
+- Root cause: the preview overrides `get_db` (request sessions) with its demo DB, but the new background price refresh opens sessions through `app.state.session_factory`, which defaults to `database.SessionLocal` — the real `%LOCALAPPDATA%\FAMILYFIN\data\profin.db`. Verified nothing was written (the fake provider had no data for real symbols).
+- Fix: `create_app(session_factory=…)`; the preview and `tests/test_web.py` pass their own factory.
+- Prevention: anything in the web layer that opens a session outside a request must go through `app.state.session_factory`, and every harness that overrides `get_db` must set it too. Same for `market_provider` (tests use an offline one by default: never the network).
