@@ -38,12 +38,12 @@ def session():
 
 @pytest.fixture
 def ana(session):
-    return create_user(session, "ana", "secreto1").id
+    return create_user(session, "ana", "clave-secreta-1").id
 
 
 @pytest.fixture
 def beto(session):
-    return create_user(session, "beto", "secreto2").id
+    return create_user(session, "beto", "clave-secreta-2").id
 
 
 def _cat(session, user_id, type_name, name):

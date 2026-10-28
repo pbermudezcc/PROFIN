@@ -27,6 +27,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import APP_VERSION
 from app.gui._format import fmt_date, fmt_eur, fmt_number, fmt_pct, fmt_quantity
 from app.web.deps import CsrfFailed, LoginRequired
+from app.web.invites import InviteStore
 from app.web.price_refresh import PriceRefreshJob
 from app.web.security import HardeningMiddleware, LoginLimiter, SessionStore
 from app.web.routers.investment_import import PendingStatements
@@ -91,14 +92,18 @@ def build_templates() -> Jinja2Templates:
 def create_app(
     *,
     sessions: Optional[SessionStore] = None,
+    invites: Optional[InviteStore] = None,
     limiter: Optional[LoginLimiter] = None,
     on_change: Optional[Callable[[int, str], None]] = None,
     lan_only: bool = True,
     market_provider=None,
     session_factory=None,
+    backup_before_delete: Optional[Callable[[str], Path]] = None,
 ) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.sessions = sessions or SessionStore()
+    # Invitation codes to join the family (memory only, like the sessions).
+    app.state.invites = invites or InviteStore()
     app.state.limiter = limiter or LoginLimiter()
     app.state.on_change = on_change
     # Uploaded statements waiting for confirmation (temp files on this PC).
@@ -114,6 +119,10 @@ def create_app(
     # Price refresh asked from the web, run on this PC in the background.
     app.state.price_refresh = PriceRefreshJob()
     app.state.session_factory = session_factory      # None → database.SessionLocal
+    # Full backup on this PC before an account is deleted from the web
+    # (WebServer passes SettingsManager.backup_before_delete). None → the
+    # web refuses to delete accounts: never delete without a copy.
+    app.state.backup_before_delete = backup_before_delete
     sweep_orphans()
     app.state.templates = build_templates()
 
@@ -164,13 +173,13 @@ def create_app(
                         headers={"Service-Worker-Allowed": "/"})
 
     from app.web.routers import (
-        admin, auth, dashboard, flows, help, imports, investment_import, investments, library, more,
-        transactions,
+        account, admin, auth, dashboard, flows, help, imports, investment_import, investments, library, more,
+        transactions, users,
     )
 
     # library before admin: its /mas/categorias/exportar|biblioteca would hit /mas/categorias/{id}.
     # investment_import before imports: /importar/inversiones would hit /importar/{token}.
     for router in (auth, help, dashboard, flows, transactions, investment_import, investments, library,
-                   admin, imports, more):
+                   admin, imports, account, more, users):
         app.include_router(router.router)
     return app

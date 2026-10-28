@@ -203,6 +203,14 @@ class SettingsManager:
 
         return backup_path
 
+    PREDELETE_BACKUP_PREFIX = "profin_predelete"
+
+    def backup_before_delete(self, user_name: str | None = None) -> Path:
+        """Full backup taken right before an account is deleted (desktop or
+        web). Goes to the backup folder of this PC and is never pruned."""
+        folder = self.auto_backup_dir(self.load())
+        return self.backup_all_data(str(folder), user_name=user_name, prefix=self.PREDELETE_BACKUP_PREFIX)
+
     # -- Automatic backups ---------------------------------------------
 
     AUTO_BACKUP_PREFIX = "profin_autobackup"

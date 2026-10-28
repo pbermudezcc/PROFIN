@@ -46,7 +46,7 @@ def session():
 
 @pytest.fixture
 def user_id(session):
-    return create_user(session, "ana", "secreto1").id
+    return create_user(session, "ana", "clave-secreta-1").id
 
 
 def test_seeding_is_idempotent_and_per_user(session, user_id):
@@ -59,7 +59,7 @@ def test_seeding_is_idempotent_and_per_user(session, user_id):
 
     types = {c.name for c in get_all_categories(session, user_id, level=CategoryLevel.type)}
     assert types == {"GASTO", "INGRESO", "SERV. BANCARIO", "INVERSION"}
-    other = create_user(session, "pedro", "secreto1").id
+    other = create_user(session, "pedro", "clave-secreta-1").id
     assert get_all_categories(session, other) == []
 
 
@@ -155,7 +155,7 @@ def test_apply_to_similar_only_touches_same_merchant_type_and_uncategorized(sess
     refund = txn("EROSKI CITY URQUI", amount=5.0, kind=TransactionType.income)
     already = txn("EROSKI CITY URQUI", category_id=other.id)
     different = txn("EROSKI CENTER")
-    pedro = create_user(session, "pedro", "secreto1").id
+    pedro = create_user(session, "pedro", "clave-secreta-1").id
     foreign = txn("EROSKI CITY URQUI", owner=pedro)
     no_issuer = txn(None, concept="TRASPASO TARJETA DE CREDITO")
     no_issuer_same = txn(None, concept="Traspaso tarjeta de credito")
@@ -209,6 +209,6 @@ def test_rule_from_transaction_is_offered_once_and_fills_uncategorized(session, 
     assert add_rule_from_transaction(session, user_id, twin.id, cat.id) is None
     assert session.query(AutoCategorizationRule).count() == 1
 
-    pedro = create_user(session, "pedro", "secreto1").id
+    pedro = create_user(session, "pedro", "clave-secreta-1").id
     with pytest.raises(NotFound):
         add_rule_from_transaction(session, pedro, other.id, cat.id)

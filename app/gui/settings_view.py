@@ -422,9 +422,10 @@ class SettingsView(QWidget):
             return False
         self._session.commit()
         init_db()
-        # Web sessions belong to users of the previous database.
+        # Web sessions and invitations belong to users of the previous database.
         from app.web.server import get_web_server
         get_web_server().sessions.revoke_all()
+        get_web_server().invites.revoke_all()
         QMessageBox.information(
             self,
             "Ubicación de datos actualizada",

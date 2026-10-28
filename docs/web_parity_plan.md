@@ -30,7 +30,7 @@ Base técnica ya hecha (ver `app/web/`, `docs/agent/agent_log.md` 2026-10-04):
 | Exportar | Biblioteca de categorías y reglas por usuario (`/mas/categorias/biblioteca`, W7b). El resto no existe (placeholder en escritorio) | Definir con el usuario el resto (movimientos, informes) |
 | Previsiones | No existe (placeholder en escritorio) | Definir con el usuario |
 | Configuración | No existe | Ajustes de usuario (contraseña, tema por defecto); copias de seguridad (crear/descargar); lo que afecte al PC (carpeta de datos, acceso web) probablemente solo en escritorio |
-| Cuenta de usuario (menú de MainWindow) | No existe | Cambiar contraseña; borrar cuenta (con confirmación fuerte) |
+| Cuenta de usuario (menú de MainWindow) | **Hecho (W10, 2026-10-28, sin confirmar en git)**: *Ajustes → Mi cuenta* (cambiar contraseña, nombre y borrar la cuenta propia con copia previa en el PC) y *Familia* (miembros + invitaciones de un solo uso; alta en `/registro`). Servicio compartido `app/auth/account_rules.py` / `account_service.py` | Cambiar contraseña o nombre desde el PC; exportación de copia **por usuario** |
 
 ## Avance 2026-10-04 (W6–W8)
 
@@ -97,3 +97,10 @@ todo lo que llame a Internet en el servidor y en segundo plano; tests en `tests/
 Después: **W10** ajustes y cuenta (cambiar contraseña → nueva `change_password` en
 `app/auth/auth_service.py`; borrar cuenta extrayendo `MainWindow._do_delete` y revocando sus
 sesiones web; exportación **por usuario** en lugar de `backup_all_data`).
+
+**W10 hecho (2026-10-28, pendiente de revisión y commit):** sin administrador; altas solo por
+invitación (código de 8 caracteres, 15 min, un solo uso, solo se guarda su SHA-256, máximo 3 por
+miembro; `app/web/invites.py`); «Mi cuenta» (`app/web/routers/account.py`) con reautenticación
+limitada por `LoginLimiter`; borrar la propia cuenta con copia previa (`profin_predelete_*`) y
+fila de auditoría superviviente; el escritorio usa el mismo `delete_user`. Queda fuera: cambiar
+contraseña/nombre desde el PC y la exportación por usuario.

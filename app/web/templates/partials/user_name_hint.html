@@ -1,0 +1,1 @@
+{% import "_ui.html" as ui %}{% if not name %}<small class="help">{{ idle or "Con este nombre entrará en el PC y en la web." }}</small>{% elif error %}<small class="error">{{ error }}</small>{% else %}<small class="help ok">{{ ui.icon("check", "xs") }} «{{ name }}» está libre</small>{% endif %}

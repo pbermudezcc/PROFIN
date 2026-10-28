@@ -1,0 +1,9 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">Invitar a alguien</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  <div class="alert warn" role="alert">{{ ui.icon("alert", "sm") }}<span>Ya tienes {{ max_active }} invitaciones activas. Anula alguna en Ajustes › Familia o espera a que caduquen (15 minutos).</span></div>
+  <div class="sticky-actions"><button class="btn block ghost" type="button" data-close-sheet>Entendido</button></div>
+</div>

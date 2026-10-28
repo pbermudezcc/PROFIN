@@ -167,6 +167,7 @@ svg.i.xs { width: 14px; height: 14px; }
 .num, .amt { font-variant-numeric: tabular-nums; font-feature-settings: "tnum", "cv11"; white-space: nowrap; }
 .pos { color: var(--income); }
 .neg { color: var(--expense); }
+.caution { color: var(--warning); }
 .muted { color: var(--text-2); }
 .faint { color: var(--text-3); }
 .strong { font-weight: 600; }
@@ -608,6 +609,8 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 .alert.warn { background: var(--warning-soft); color: var(--warning); }
 .alert.info { background: var(--accent-soft); color: var(--accent); }
 .alert.ok { background: var(--income-soft); color: var(--income); }
+.alert .reasons { margin: var(--s-2) 0 0; padding-left: 1.1em; display: grid; gap: 4px; font-size: var(--fs-sm);
+                  overflow-wrap: anywhere; }
 
 /* Buttons: primary (default) · secondary · ghost · danger · danger solid */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
@@ -769,6 +772,63 @@ dialog.confirm .acts { display: flex; gap: var(--s-2); justify-content: flex-end
 .profile { display: flex; align-items: center; gap: var(--s-4); }
 .profile b { font-size: var(--fs-lg); font-weight: 650; }
 .profile .ok { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); font-weight: 500; color: var(--income); margin-top: 2px; }
+
+/* ── Familia (Ajustes) and the «Nuevo usuario» sheet ──────────────── */
+.list.members .row { cursor: default; }
+.list.members .row.add { cursor: pointer; }
+.list.members .row.add .t { color: var(--accent); }
+.sheet-lead { margin: 0 0 var(--s-4); }
+.field .help.ok { color: var(--income); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+.hint-slot { min-height: 1.1rem; }
+.pw-rules { list-style: none; margin: calc(-1 * var(--s-2)) 0 0; padding: 0; display: grid; gap: 4px;
+            font-size: var(--fs-sm); color: var(--text-3); }
+.pw-rules li { display: flex; align-items: center; gap: 6px; transition: color .15s; }
+.pw-rules li svg { opacity: .3; transition: opacity .15s; }
+.pw-rules li.ok { color: var(--income); }
+.pw-rules li.ok svg { opacity: 1; }
+.busy-able .idle, .busy-able .busy { display: inline-flex; align-items: center; gap: var(--s-2); }
+.busy-able .busy { display: none; }
+form.htmx-request .busy-able .idle { display: none; }
+form.htmx-request .busy-able .busy { display: inline-flex; }
+.busy-able .busy svg { animation: spin 1s linear infinite; }
+
+.pw-rules li.hint { color: var(--text-3); font-size: var(--fs-xs); margin-top: 2px; }
+.list.account .row .ic.danger, .row .ic.danger { background: var(--expense-soft); color: var(--expense); }
+.list.account .row.danger .t { color: var(--expense); }
+.profile .since { color: var(--text-3); font-size: var(--fs-sm); margin-top: 2px; }
+.danger-panel { display: flex; gap: var(--s-3); padding: var(--s-4); border-radius: var(--r-md);
+                background: var(--expense-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--expense) 30%, transparent); }
+.danger-panel > .ic { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none;
+                      background: var(--expense); color: #fff; }
+.danger-panel b { color: var(--expense); }
+.danger-panel p { margin-top: var(--s-2); font-size: var(--fs-sm); color: var(--text-2); }
+.danger-list { margin: var(--s-2) 0 0; padding-left: 1.1rem; display: grid; gap: 2px; font-size: var(--fs-sm); }
+.btn.danger.solid[disabled] { opacity: .45; }
+
+/* ── Invitations and /registro ─────────────────────────────────────── */
+.invite { text-align: center; }
+.invite-code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 2.25rem; font-weight: 700;
+               letter-spacing: .12em; margin: var(--s-3) auto var(--s-2); padding: var(--s-4) var(--s-5);
+               border-radius: var(--r-lg); background: var(--accent-soft); color: var(--accent);
+               border: 2px dashed color-mix(in srgb, var(--accent) 40%, transparent);
+               user-select: all; -webkit-user-select: all; width: fit-content; max-width: 100%; }
+.invite-timer { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-sm); }
+.invite.expired .invite-code { opacity: .35; text-decoration: line-through; }
+.invite.expired .invite-timer { display: none; }
+.invite-expired { margin-top: var(--s-3); color: var(--expense); font-size: var(--fs-sm); display: inline-flex; gap: 6px; align-items: center; }
+.invite .steps { text-align: left; margin-top: var(--s-5); font-size: var(--fs-sm); }
+.invite-row .btn { flex: none; }
+.invite-input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 1.375rem; letter-spacing: .14em;
+                text-align: center; text-transform: uppercase; }
+.invited-by { display: flex; align-items: center; gap: var(--s-2); padding: 10px 14px; border-radius: var(--r-md);
+              background: var(--income-soft); color: var(--income); font-size: var(--fs-md); }
+.invited-by b { font-weight: 650; }
+.login .newcomer { margin-top: var(--s-4); }
+.card.welcome { display: flex; gap: var(--s-4); align-items: flex-start; }
+.card.welcome .art { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; flex: none;
+                     background: var(--income-soft); color: var(--income); }
+.card.welcome h2 { font-size: var(--fs-lg); font-weight: 650; }
+.card.welcome .wrap-gap { margin-top: var(--s-3); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }

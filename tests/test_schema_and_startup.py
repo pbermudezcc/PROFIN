@@ -97,7 +97,7 @@ def test_init_db_creates_migrates_and_reopens_idempotently(data_folder):
     with database.get_session() as session:
         assert session.get_bind().url.database == str(db)
         from app.auth.auth_service import create_user
-        create_user(session, "ana", "secreto1")
+        create_user(session, "ana", "clave-secreta-1")
     database.init_db()
 
     assert database.get_database_users(data_folder) == ["ana"]

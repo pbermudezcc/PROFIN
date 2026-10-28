@@ -24,7 +24,7 @@ from PySide6.QtGui     import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QFrame, QStackedWidget, QSizePolicy,
-    QScrollArea, QApplication,
+    QScrollArea, QApplication, QMessageBox,
 )
 import qtawesome as qta
 
@@ -219,6 +219,7 @@ class MainWindow(QWidget):
         # ── User chip (avatar dot + name, no extra separator) ─────────
         initials = self._user.username[:2].upper()
         lbl_av = QLabel(initials)
+        self._lbl_top_avatar = lbl_av
         lbl_av.setObjectName("topBarAvatar")
         lbl_av.setFixedSize(26, 26)
         lbl_av.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -356,6 +357,7 @@ class MainWindow(QWidget):
         lbl_avatar.setObjectName("avatarCircle")
         initials = self._user.username[:2].upper()
         lbl_avatar.setText(initials)
+        self._lbl_sidebar_avatar = lbl_avatar
         avatar_layout.addWidget(lbl_avatar)
 
         avatar_layout.addSpacing(8)
@@ -363,6 +365,7 @@ class MainWindow(QWidget):
         user_info = QVBoxLayout()
         user_info.setSpacing(1)
         lbl_name = QLabel(self._user.username.capitalize())
+        self._lbl_sidebar_name = lbl_name
         lbl_name.setObjectName("sidebarUsername")
         lbl_role = QLabel("Personal")
         lbl_role.setObjectName("sidebarRole")
@@ -525,19 +528,53 @@ class MainWindow(QWidget):
 
     _RELOAD_METHODS = ("refresh_data", "refresh", "reload", "_load_data")
 
-    def _on_web_data_changed(self, user_id: int, _area: str) -> None:
+    def _on_web_data_changed(self, user_id: int, area: str) -> None:
         """Someone changed this user's data from a phone: drop the cached ORM
-        state and reload the visible view; the others reload on next visit."""
+        state and reload the visible view; the others reload on next visit.
+        «account»: renamed (or new password) from the web → show the new name;
+        «account_deleted»: this account was deleted from the web → back to login."""
         if user_id != self._user.id:
+            return
+        if area == "account_deleted":
+            self._on_account_deleted_from_web()
             return
         try:
             self._session.expire_all()
         except Exception:
             logging.getLogger(__name__).exception("Web: no se pudo refrescar la sesión")
             return
+        if area == "account":
+            self._refresh_username()
+            return
         self._stale_views = set(self._views)
         if self._current_view in self._views:
             self._reload_view(self._current_view)
+
+    def _refresh_username(self) -> None:
+        from app.db.models import User as UserModel
+        fresh = self._session.get(UserModel, self._user.id)
+        if fresh is None:
+            return
+        old_name = self._user.username
+        self._user = fresh
+        name = fresh.username
+        for label in (getattr(self, "_lbl_user", None), getattr(self, "_lbl_sidebar_name", None)):
+            if label is not None:
+                label.setText(name.capitalize())
+        for label in (getattr(self, "_lbl_top_avatar", None), getattr(self, "_lbl_sidebar_avatar", None)):
+            if label is not None:
+                label.setText(name[:2].upper())
+        if old_name != name and self._settings.value("auth/last_username", "", type=str) == old_name:
+            self._settings.setValue("auth/last_username", name)
+
+    def _on_account_deleted_from_web(self) -> None:
+        self._settings.remove("auth/last_username")
+        QMessageBox.information(
+            self, "Cuenta borrada",
+            "Esta cuenta se ha borrado desde la web. Se guardó una copia de seguridad "
+            "en la carpeta de copias de este PC.",
+        )
+        self._on_logout()
 
     def _reload_view(self, view_key: str) -> None:
         self._stale_views.discard(view_key)
@@ -925,7 +962,8 @@ class MainWindow(QWidget):
         lbl_msg = QLabel(
             f"Vas a eliminar la cuenta <b>{username}</b> y "
             f"<b>todos sus datos</b>.\n\n"
-            f"Para confirmar, escribe tu nombre de usuario:"
+            "Antes se guardará una copia de seguridad en la carpeta de copias de este PC.\n\n"
+            f"Para confirmar, escribe tu nombre de usuario y tu contraseña:"
         )
         lbl_msg.setWordWrap(True)
         lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -952,6 +990,14 @@ class MainWindow(QWidget):
             }}
         """)
         layout.addWidget(inp_confirm)
+
+        inp_password = QLineEdit()
+        inp_password.setPlaceholderText("Tu contraseña")
+        inp_password.setEchoMode(QLineEdit.EchoMode.Password)
+        inp_password.setFixedHeight(42)
+        inp_password.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        inp_password.setStyleSheet(inp_confirm.styleSheet())
+        layout.addWidget(inp_password)
 
         # Error label
         lbl_err = QLabel("")
@@ -1012,43 +1058,52 @@ class MainWindow(QWidget):
         dlg.setStyleSheet(f"QDialog {{ background-color: {t['bg_secondary']}; }}")
 
         # Enable confirm button only when username matches exactly
-        def _on_text_changed(text: str) -> None:
-            btn_confirm.setEnabled(text.strip() == username)
+        def _on_text_changed(_text: str = "") -> None:
+            btn_confirm.setEnabled(
+                inp_confirm.text().strip() == username and bool(inp_password.text())
+            )
             lbl_err.setVisible(False)
 
         inp_confirm.textChanged.connect(_on_text_changed)
-        inp_confirm.returnPressed.connect(
+        inp_password.textChanged.connect(_on_text_changed)
+        inp_confirm.returnPressed.connect(inp_password.setFocus)
+        inp_password.returnPressed.connect(
             lambda: btn_confirm.click() if btn_confirm.isEnabled() else None
         )
 
         def _do_delete() -> None:
-            if inp_confirm.text().strip() != username:
-                lbl_err.setText("El nombre de usuario no coincide.")
-                lbl_err.setVisible(True)
-                return
+            from app.auth.account_service import AccountError, delete_user
+
+            # Shared with the web «Borrar mi cuenta»: checks the name and the
+            # password, refuses while family rules depend on this user's
+            # categories, takes a backup first (nothing is deleted if it
+            # fails) and leaves an audit row that survives the cascade.
             try:
-                # Expire all cached objects to avoid stale lazy-load
-                # on columns added after the DB was first created
                 self._session.expire_all()
-
-                # Re-fetch user within this session to ensure clean state
-                from app.db.models import User as UserModel
-                user_to_delete = self._session.get(
-                    UserModel, self._user.id
+                backup = delete_user(
+                    self._session, self._user.id, inp_password.text(), inp_confirm.text(),
+                    backup=lambda: SettingsManager().backup_before_delete(username),
+                    source="el PC",
                 )
-                if user_to_delete is None:
-                    lbl_err.setText("Usuario no encontrado en la base de datos.")
-                    lbl_err.setVisible(True)
-                    return
-
-                self._session.delete(user_to_delete)
-                self._session.commit()
-
-            except Exception as exc:
+            except AccountError as exc:
+                lbl_err.setText(exc.message)
+                lbl_err.setVisible(True)
+                if exc.field == "password":
+                    inp_password.clear()
+                    inp_password.setFocus()
+                return
+            except Exception:
                 self._session.rollback()
-                lbl_err.setText(f"Error al eliminar: {exc}")
+                logging.getLogger(__name__).exception("No se pudo borrar la cuenta")
+                lbl_err.setText("No se pudo borrar la cuenta. No se ha cambiado nada.")
                 lbl_err.setVisible(True)
                 return
+
+            # Its web sessions and invitations die with it.
+            from app.web.server import get_web_server
+            get_web_server().sessions.revoke_user(self._user.id)
+            get_web_server().invites.revoke_by(self._user.id)
+            logging.getLogger(__name__).info("Copia previa al borrado: %s", backup)
 
             dlg.accept()
 

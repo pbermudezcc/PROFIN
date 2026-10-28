@@ -12,6 +12,7 @@ Features:
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -105,6 +106,14 @@ class LoginWindow(QWidget):
         self._apply_theme()
         self._refresh_database_info()
         self._load_last_user()
+
+        # A family member who joins, is renamed or deleted from the web
+        # appears (or disappears) in the user list without restarting.
+        try:
+            from app.gui.web_bridge import web_bridge
+            web_bridge().data_changed.connect(self._on_web_users_changed)
+        except Exception:
+            logging.getLogger(__name__).exception("Web: no se pudo escuchar los cambios de usuarios")
 
         self.showMaximized()
 
@@ -302,6 +311,14 @@ class LoginWindow(QWidget):
         self._user_combo.addItems(users)
         self._refresh_status_style()
 
+    def _on_web_users_changed(self, _user_id: int, area: str) -> None:
+        if area not in ("user_created", "account", "account_deleted"):
+            return
+        current = self._user_combo.currentText()
+        self._refresh_database_info()
+        if current and self._user_combo.findText(current) >= 0:
+            self._user_combo.setCurrentText(current)
+
     def _refresh_status_style(self) -> None:
         self._database_status.style().unpolish(self._database_status)
         self._database_status.style().polish(self._database_status)
@@ -441,30 +458,22 @@ class LoginWindow(QWidget):
         dlg.setStyleSheet(self.styleSheet())
 
         def _try_create() -> None:
-            from app.auth.auth_service import create_user
+            from app.auth.auth_service import create_user, validate_new_user
             username = inp_user.text().strip()
             password = inp_pass.text()
             password2 = inp_pass2.text()
 
-            if not username:
-                lbl_err.setText("El nombre de usuario no puede estar vacío.")
-                lbl_err.setVisible(True)
-                return
-            if not password:
-                lbl_err.setText("La contraseña no puede estar vacía.")
-                lbl_err.setVisible(True)
-                return
-            if password != password2:
-                lbl_err.setText("Las contraseñas no coinciden.")
-                lbl_err.setVisible(True)
-                inp_pass2.clear()
-                return
-            if len(password) < 6:
-                lbl_err.setText("La contraseña debe tener al menos 6 caracteres.")
-                lbl_err.setVisible(True)
-                return
             try:
                 Base.metadata.create_all(bind=database_module.engine)
+                # Same rules as the web «Nuevo usuario» sheet (auth_service).
+                errors = validate_new_user(self._session, username, password, password2)
+                for field in ("username", "password", "confirm"):
+                    if field in errors:
+                        lbl_err.setText(errors[field])
+                        lbl_err.setVisible(True)
+                        if field == "confirm":
+                            inp_pass2.clear()
+                        return
                 create_user(self._session, username, password)
                 dlg.accept()
                 # Auto-fill username after successful registration

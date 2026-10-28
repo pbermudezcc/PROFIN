@@ -336,6 +336,21 @@ def test_backup_contains_consistent_database_snapshot(data_dir, tmp_path):
     assert _read_items(extracted) == ["original"]
 
 
+def test_backup_before_delete_goes_to_the_backup_folder(data_dir, tmp_path):
+    manager = SettingsManager()
+    settings = manager.load()
+    settings.backup_folder = str(tmp_path / "copias")
+    manager.save(settings)
+
+    backup = manager.backup_before_delete("Ana")
+
+    assert backup.parent == tmp_path / "copias"
+    assert backup.name.startswith("profin_predelete_ana_")
+    with zipfile.ZipFile(backup) as archive:
+        extracted = archive.extract("data/profin.db", tmp_path / "out")
+    assert _read_items(extracted) == ["original"]
+
+
 def test_auto_backup_respects_interval(data_dir, tmp_path):
     manager = SettingsManager()
     backup_dir = tmp_path / "auto"

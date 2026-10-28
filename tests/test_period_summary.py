@@ -35,8 +35,8 @@ def db_session():
 
 @pytest.fixture
 def family(db_session):
-    ana = create_user(db_session, "ana", "secreto1")
-    otro = create_user(db_session, "otro", "secreto1")
+    ana = create_user(db_session, "ana", "clave-secreta-1")
+    otro = create_user(db_session, "otro", "clave-secreta-1")
     accounts = {}
     for user in (ana, otro):
         account = Account(user_id=user.id, account_name="Cuenta")

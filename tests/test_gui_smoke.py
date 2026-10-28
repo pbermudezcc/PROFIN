@@ -42,7 +42,7 @@ def test_main_window_builds_views_lazily_and_themes_them(qt_app, session, monkey
     # Automatic backups would snapshot the real data folder.
     monkeypatch.setattr(main_window_module.MainWindow, "_run_auto_backup", lambda self: None)
 
-    user = create_user(session, "ana", "secreto1")
+    user = create_user(session, "ana", "clave-secreta-1")
     account = Account(user_id=user.id, account_name="Cuenta")
     session.add(account)
     session.flush()
@@ -100,8 +100,8 @@ def test_library_import_dialog_previews_merge_and_replace(qt_app, session):
     from app.categorization.category_manager import seed_default_categories, seed_default_rules
     from app.gui.library_dialog import LibraryImportDialog
 
-    ana = create_user(session, "ana", "secreto1")
-    beto = create_user(session, "beto", "secreto2")
+    ana = create_user(session, "ana", "clave-secreta-1")
+    beto = create_user(session, "beto", "clave-secreta-2")
     seed_default_categories(session, ana.id)
     seed_default_rules(session, ana.id)
     lib = library_io.parse_library(library_io.dumps(library_io.export_library(session, ana.id)))

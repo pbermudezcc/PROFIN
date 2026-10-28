@@ -1,0 +1,53 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">Borrar mi cuenta</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  <div class="danger-panel">
+    <div class="ic">{{ ui.icon("trash") }}</div>
+    <div>
+      <b>Se borrarán tu usuario y todos tus datos</b>
+      <ul class="danger-list">
+        <li><span class="num">{{ summary.accounts }}</span> cuentas bancarias y <span class="num">{{ summary.transactions }}</span> movimientos</li>
+        <li><span class="num">{{ summary.investment_operations }}</span> operaciones de inversión</li>
+        <li><span class="num">{{ summary.categories }}</span> categorías y <span class="num">{{ summary.rules }}</span> reglas personales</li>
+        <li><span class="num">{{ summary.imports }}</span> importaciones de extractos</li>
+      </ul>
+      <p>Los demás miembros de la familia no pierden nada. Antes se guarda una copia completa en la carpeta de copias del PC; solo desde allí se podría recuperar.</p>
+    </div>
+  </div>
+
+  {% if summary.blocked %}
+  <div class="alert warn section" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ summary.global_rules }} reglas globales de la familia usan tus categorías. Muévelas o bórralas desde el PC (Reglas) antes de borrar tu cuenta.</span></div>
+  <div class="sticky-actions"><button class="btn block ghost" type="button" data-close-sheet>Entendido</button></div>
+  {% else %}
+  <form class="form-grid section" hx-post="/mas/cuenta/borrar" hx-target="#sheet-body" hx-disabled-elt="find button[type=submit]"
+        data-delete-form data-username="{{ user.username }}" novalidate autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+
+    <label class="field{% if errors.confirm_name %} invalid{% endif %}"><span>Escribe <b>{{ user.username }}</b> para confirmar</span>
+      <input class="input" name="confirm_name" value="{{ confirm_name or '' }}" maxlength="64" required
+             autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
+      {% if errors.confirm_name %}<small class="error">{{ errors.confirm_name }}</small>{% endif %}
+    </label>
+
+    <label class="field{% if errors.password %} invalid{% endif %}"><span>Tu contraseña</span>
+      <div class="pw">
+        <input class="input" type="password" name="password" maxlength="256" required autocomplete="current-password" enterkeyhint="done">
+        <button type="button" data-toggle-password aria-label="Mostrar contraseña">{{ ui.icon("eye", "sm") }}</button>
+      </div>
+      {% if errors.password %}<small class="error">{{ errors.password }}</small>{% endif %}
+    </label>
+
+    <div class="sticky-actions">
+      <button class="btn ghost" type="button" data-close-sheet>Cancelar</button>
+      <button class="btn danger solid block busy-able" type="submit" data-delete-submit disabled>
+        <span class="idle">{{ ui.icon("trash", "sm") }} Borrar mi cuenta</span>
+        <span class="busy">{{ ui.icon("refresh", "sm") }} Copia y borrado…</span>
+      </button>
+    </div>
+  </form>
+  {% endif %}
+</div>

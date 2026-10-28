@@ -37,10 +37,20 @@ IDLE_TIMEOUT = 30 * 60
 ABSOLUTE_TIMEOUT = 12 * 3600
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
-# Request body caps: forms are tiny; only statement uploads are bigger.
+# Request body caps: forms are tiny; only statement uploads are bigger. The
+# CaixaBank upload takes several statements at once (imports.MAX_TOTAL_BYTES
+# plus room for the multipart framing).
 MAX_BODY = 256 * 1024
 MAX_UPLOAD_BODY = 6 * 1024 * 1024
 UPLOAD_PATHS = ("/importar",)
+STATEMENTS_PATH = "/importar"
+MAX_STATEMENTS_BODY = 26 * 1024 * 1024
+
+
+def _body_limit(path: str) -> int:
+    if path == STATEMENTS_PATH:
+        return MAX_STATEMENTS_BODY
+    return MAX_UPLOAD_BODY if path.startswith(UPLOAD_PATHS) else MAX_BODY
 
 
 # ---------------------------------------------------------------------------
@@ -101,12 +111,38 @@ class SessionStore:
         with self._lock:
             self._sessions.pop(sid, None)
 
-    def revoke_user(self, user_id: int) -> int:
+    def revoke_user(self, user_id: int, keep: Optional[str] = None) -> int:
+        """End every session of a user (except `keep`). Returns how many."""
         with self._lock:
-            sids = [s for s, v in self._sessions.items() if v.user_id == user_id]
+            sids = [s for s, v in self._sessions.items() if v.user_id == user_id and s != keep]
             for sid in sids:
                 del self._sessions[sid]
             return len(sids)
+
+    def rotate(self, sid: str) -> Optional[WebSession]:
+        """Replace a session by a fresh one (new id and CSRF token) for the
+        same user and device, e.g. after a password change. The old id stops
+        working at once. Returns None if the session no longer exists."""
+        now = self._clock()
+        with self._lock:
+            old = self._sessions.pop(sid, None)
+            if old is None:
+                return None
+            new = WebSession(
+                sid=secrets.token_urlsafe(32), user_id=old.user_id, username=old.username,
+                csrf=secrets.token_urlsafe(32), ip=old.ip, user_agent=old.user_agent,
+                created=now, last_seen=now,
+            )
+            self._sessions[new.sid] = new
+            return new
+
+    def rename_user(self, user_id: int, username: str) -> int:
+        """Show a new user name in that user's open sessions."""
+        with self._lock:
+            sessions = [v for v in self._sessions.values() if v.user_id == user_id]
+            for session in sessions:
+                session.username = username
+            return len(sessions)
 
     def revoke_all(self) -> int:
         with self._lock:
@@ -178,6 +214,13 @@ class LoginLimiter:
         with self._lock:
             for key in self._keys(ip, username):
                 self._state.pop(key, None)
+
+
+def too_many_attempts(wait: int) -> str:
+    """Spanish message for a LoginLimiter wait (login, re-authentication, invitation codes)."""
+    if wait < 60:
+        return f"Demasiados intentos. Vuelve a probar en {wait} s."
+    return f"Demasiados intentos. Vuelve a probar en {(wait + 59) // 60} min."
 
 
 def tokens_match(expected: str, received: Optional[str]) -> bool:
@@ -277,7 +320,7 @@ class HardeningMiddleware:
         is_static = path.startswith("/static/")
 
         if scope["method"] not in SAFE_METHODS:
-            limit = MAX_UPLOAD_BODY if path.startswith(UPLOAD_PATHS) else MAX_BODY
+            limit = _body_limit(path)
             declared = headers.get("content-length")
             if declared is not None and (not declared.isdigit() or int(declared) > limit):
                 logger.warning("Web: %s %s rechazado por tamaño (%s bytes)", scope["method"], path, declared)

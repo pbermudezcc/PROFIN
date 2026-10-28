@@ -385,7 +385,7 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
     </div>
     <ol class="steps">
       <li><h3>Instala en el PC</h3><p>FAMILYFIN se entrega como una carpeta para Windows: se descomprime y se abre <code>PROFIN.exe</code>. No necesita instalador.</p></li>
-      <li><h3>Crea tu usuario</h3><p>En la pantalla de acceso del PC pulsa «¿Primera vez? Crear cuenta». Cada miembro de la familia tiene el suyo y nadie ve los movimientos de los demás.</p></li>
+      <li><h3>Crea tu usuario</h3><p>En la pantalla de acceso del PC pulsa «¿Primera vez? Crear cuenta». Cada miembro de la familia tiene el suyo y nadie ve los movimientos de los demás. Desde el móvil, pide a alguien de la familia una <strong>invitación</strong> (<em>Ajustes → Familia → Invitar a alguien</em>) y escribe el código en «¿Tienes un código de invitación?» de la pantalla de acceso.</p></li>
       <li><h3>Activa el acceso web</h3><p>En el PC, <em>Configuración → Acceso web</em>. Cada iPhone o iPad instala una vez el certificado de FAMILYFIN y queda el candado de conexión segura.</p></li>
       <li><h3>Entra desde cualquier dispositivo</h3><p>Abre la dirección <code>https://…:8765</code> en Safari o Chrome con tu usuario y contraseña. Desde Safari, «Añadir a pantalla de inicio» la deja como una app.</p></li>
     </ol>
@@ -518,8 +518,8 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
     <h2>De CaixaBank Now a FAMILYFIN, también desde el iPhone</h2>
     <div class="note read"><strong>Desde el banco:</strong> en CaixaBank Now entra en la cuenta → <em>Movimientos</em> → elige fechas → <em>Exportar a Excel</em>. En el iPhone el fichero queda en Archivos → Descargas, y desde ahí se sube directamente.</div>
     <ol class="steps">
-      <li><h3>Elegir el fichero</h3><p>En <em>Importar extracto</em>, «Elegir archivo» y «Subir y revisar». Hasta 5 MB, <code>.xls</code> o <code>.xlsx</code>, tal como lo da el banco.</p></li>
-      <li><h3>Revisar</h3><p>Ves la cuenta, el IBAN, las fechas y cuántos movimientos son <strong>nuevos</strong>, <strong>posibles duplicados</strong> (decides tú) o <strong>ya importados</strong> (se omiten solos).</p></li>
+      <li><h3>Elegir los ficheros</h3><p>En <em>Importar extracto</em>, «Elegir archivos» y «Subir y revisar». Puedes elegir <strong>varios extractos a la vez</strong> (hasta 12, 5 MB cada uno), <code>.xls</code> o <code>.xlsx</code>, tal como los da el banco. En el escritorio también puedes arrastrarlos a la ventana.</p></li>
+      <li><h3>Revisar</h3><p>Ves la cuenta, el IBAN, las fechas y cuántos movimientos son <strong>nuevos</strong>, <strong>posibles duplicados</strong> (decides tú) o <strong>ya importados</strong> (se omiten solos). Con varios extractos, además, el detalle de cada uno: si se solapan, cada movimiento se guarda una sola vez. Un fichero que no sirve (de otra cuenta, repetido o ilegible) se indica con el motivo y el resto se importa igual.</p></li>
       <li><h3>Importar</h3><p>«Importar N movimientos» los guarda y las reglas los categorizan en el acto. Nada se guarda hasta que confirmas.</p></li>
     </ol>
     <figure class="win">
@@ -652,6 +652,13 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
       </figure>
       <div class="stack read">
         <p>En la web, <strong>Ajustes</strong> reúne la administración (categorías, reglas, cuentas e importaciones), los informes (ingresos y fiscalidad de inversiones en Excel), la apariencia y las sesiones abiertas.</p>
+        <p><strong>Mi cuenta</strong>: cada miembro gestiona solo su propia cuenta; nadie puede tocar la de otro.</p>
+        <ul class="ticks">
+          <li><strong>Cambiar contraseña</strong>: pide la actual. Al guardarla se cierra tu sesión en los demás dispositivos. La nueva debe tener entre 8 y 64 caracteres, no puede ser tu nombre ni una contraseña muy común; mejor una frase fácil de recordar.</li>
+          <li><strong>Cambiar nombre de usuario</strong>: con tu contraseña. El nombre nuevo vale en el PC y en la web; no se admiten nombres casi iguales a otro («Ana» y «ana») ni «DEMO».</li>
+          <li><strong>Borrar mi cuenta</strong>: escribe tu nombre y tu contraseña. Antes de borrar se guarda una copia completa en la carpeta de copias del PC (nunca se descarga en el móvil); si la copia falla, no se borra nada. Si alguna regla global de la familia usa tus categorías, primero hay que moverla o borrarla desde el PC.</li>
+        </ul>
+        <p><strong>Familia</strong>: la lista de miembros y las invitaciones. <em>Invitar a alguien</em> genera un código como <code>7KQM-4XTR</code> que sirve una sola vez y caduca a los 15 minutos; puedes copiarlo o compartirlo y anular las invitaciones pendientes (como mucho 3 a la vez). La persona invitada lo escribe en la pantalla de acceso, elige su usuario y su contraseña y entra directamente. Los códigos equivocados cuentan como intentos fallidos y bloquean un rato los nuevos intentos.</p>
         <p>En la aplicación del PC, <strong>Configuración</strong> añade lo que afecta a la instalación:</p>
         <ul class="ticks">
           <li><strong>Datos</strong>: la carpeta de la base de datos, que puede estar en una carpeta sincronizada (OneDrive, iCloud).</li>
@@ -712,6 +719,7 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
       <details><summary>¿Necesito dar mis claves de CaixaBank?</summary><p>No. FAMILYFIN nunca se conecta al banco. Tú descargas el Excel desde CaixaBank Now y lo importas.</p></details>
       <details><summary>¿Puedo usarlo fuera de casa?</summary><p>No directamente: la web está limitada a tu red local a propósito. Fuera de casa no hay acceso a tus datos.</p></details>
       <details><summary>¿Qué pasa si importo dos veces el mismo extracto?</summary><p>Nada: los movimientos idénticos se omiten. Si hay alguno dudoso, la revisión te pregunta antes de guardarlo.</p></details>
+      <details><summary>¿Puedo subir de golpe todos los extractos que tengo descargados?</summary><p>Sí, aunque se solapen (un histórico largo y varios semanales, por ejemplo). Se revisan juntos, cada movimiento entra una sola vez y en el historial queda una importación por fichero. Se guardan todos o ninguno.</p></details>
       <details><summary>¿Puedo usarlo con otros bancos?</summary><p>El importador de movimientos está hecho para el formato de CaixaBank. Para inversiones acepta extractos de DEGIRO y MyInvestor, y cualquier otro bróker introduciendo las operaciones a mano.</p></details>
       <details><summary>¿Y si cambio de ordenador?</summary><p>Copia la carpeta de datos (o restaura una copia de seguridad) y, en el nuevo PC, apunta FAMILYFIN a ella desde Configuración → Datos o con «Buscar BD» en la pantalla de acceso.</p></details>
     </div>

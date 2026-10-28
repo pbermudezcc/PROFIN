@@ -9,14 +9,18 @@ another's data by editing an id.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Iterator, Optional
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db import database
 from app.web.security import CSRF_FIELD, CSRF_HEADER, SAFE_METHODS, SESSION_COOKIE, WebSession, tokens_match
+
+
+logger = logging.getLogger(__name__)
 
 
 class LoginRequired(Exception):
@@ -65,6 +69,19 @@ async def current_user(request: Request) -> WebUser:
             raise CsrfFailed()
     request.state.user = user
     return user
+
+
+def is_family_member(db: Session, user: WebUser) -> bool:
+    """False for the demo account (shown to visitors): it never sees family
+    members, invitations or account management."""
+    from app.categorization.rules_engine import shares_global_rules
+    return shares_global_rules(db, user.id)
+
+
+def require_family_member(db: Session, user: WebUser) -> None:
+    if not is_family_member(db, user):
+        logger.warning("Web: la cuenta de demostración intentó gestionar cuentas (%s)", user.username)
+        raise HTTPException(status_code=403, detail="No disponible en la cuenta de demostración")
 
 
 def client_ip(request: Request) -> str:

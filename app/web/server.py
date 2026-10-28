@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, List, Optional
 
+from app.web.invites import InviteStore
 from app.web.security import LoginLimiter, SessionStore
 from app.web.tls import TlsMaterial, ensure_tls, host_names, is_lan_address, mobileconfig
 
@@ -150,6 +151,7 @@ class _OnboardingHandler(BaseHTTPRequestHandler):
 class WebServer:
     def __init__(self) -> None:
         self.sessions = SessionStore()
+        self.invites = InviteStore()
         self.limiter = LoginLimiter()
         self.on_change: Optional[Callable[[int, str], None]] = None
         self.material: Optional[TlsMaterial] = None
@@ -198,7 +200,9 @@ class WebServer:
                 self.error = f"No se pudieron crear los certificados: {exc}"
                 return False
 
-            app = create_app(sessions=self.sessions, limiter=self.limiter, on_change=self._changed)
+            app = create_app(sessions=self.sessions, invites=self.invites, limiter=self.limiter,
+                             on_change=self._changed,
+                             backup_before_delete=_backup_before_delete)
             config = uvicorn.Config(
                 app, host=host, port=port,
                 ssl_certfile=str(self.material.cert_file),
@@ -262,6 +266,7 @@ class WebServer:
         self.stop()
         self.material = ensure_tls(regenerate=True)
         self.sessions.revoke_all()
+        self.invites.revoke_all()          # codes were handed out for the old address/certificate
         if was_running:
             self.start(port)
 
@@ -320,6 +325,12 @@ class WebServer:
                 callback(user_id, area)
             except Exception:
                 logger.exception("Web: aviso de cambios al escritorio")
+
+
+def _backup_before_delete(user_name: str):
+    """Full backup on this PC before an account is deleted from the web."""
+    from app.settings import SettingsManager
+    return SettingsManager().backup_before_delete(user_name)
 
 
 _instance: Optional[WebServer] = None

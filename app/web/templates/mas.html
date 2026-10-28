@@ -3,13 +3,81 @@
 {% block content %}
 {% call ui.large_title("Ajustes", "Tu cuenta, administración y dispositivos") %}{% endcall %}
 
+{% if welcome %}
+<div class="card welcome section">
+  <div class="art">{{ ui.icon("check") }}</div>
+  <div>
+    <h2>¡Bienvenido/a, {{ user.username }}!</h2>
+    <p class="muted">Tu usuario ya está creado y has entrado. Para empezar:</p>
+    <div class="wrap-gap">
+      <button class="btn" type="button" hx-post="/mas/categorias/predeterminadas" hx-swap="none">{{ ui.icon("wand", "sm") }} Cargar categorías por defecto</button>
+      <a class="btn secondary" href="/importar">{{ ui.icon("upload", "sm") }} Importar tu primer extracto</a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="card profile">
   <div class="avatar lg">{{ ui.initials(user.username) }}</div>
   <div>
     <b>{{ user.username }}</b>
+    {% if member_since %}<div class="since">miembro desde {{ member_since.strftime("%d/%m/%Y") }}</div>{% endif %}
     <div class="ok">{{ ui.icon("lock", "xs") }} Conexión cifrada (HTTPS) · solo en tu red</div>
   </div>
 </div>
+
+{% if family %}
+<div class="section-h"><h2>Mi cuenta</h2></div>
+<div class="list account">
+  <button class="row" type="button" hx-get="/mas/cuenta/contrasena" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+    <div class="ic accent">{{ ui.icon("lock", "sm") }}</div>
+    <div class="body"><div class="t">Cambiar contraseña</div><div class="d">cierra la sesión en los demás dispositivos</div></div>
+    {{ ui.icon("right", "sm chev") }}
+  </button>
+  <button class="row" type="button" hx-get="/mas/cuenta/nombre" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+    <div class="ic accent">{{ ui.icon("edit", "sm") }}</div>
+    <div class="body"><div class="t">Cambiar nombre de usuario</div><div class="d">el nombre con el que entras</div></div>
+    {{ ui.icon("right", "sm chev") }}
+  </button>
+  <button class="row danger" type="button" hx-get="/mas/cuenta/borrar" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+    <div class="ic danger">{{ ui.icon("trash", "sm") }}</div>
+    <div class="body"><div class="t">Borrar mi cuenta</div><div class="d">con copia de seguridad previa en el PC</div></div>
+    {{ ui.icon("right", "sm chev") }}
+  </button>
+</div>
+{% endif %}
+
+{% if members is not none %}
+<div class="section-h"><h2>Familia</h2><span class="faint">{{ members|length }}</span></div>
+<div class="list members">
+  {% for m in members %}
+  <div class="row">
+    <div class="avatar">{{ ui.initials(m.username) }}</div>
+    <div class="body">
+      <div class="t">{{ m.username }}</div>
+      <div class="d faint">{% if m.created_at %}desde {{ m.created_at.strftime("%d/%m/%Y") }}{% else %}usuario{% endif %}</div>
+    </div>
+    {% if m.id == user.id %}<span class="badge acc">tú</span>{% elif m.username|upper == demo_name|upper %}<span class="badge outline">demostración</span>{% endif %}
+  </div>
+  {% endfor %}
+  {% for inv in invites %}
+  <div class="row invite-row">
+    <div class="ic">{{ ui.icon("calendar", "sm") }}</div>
+    <div class="body">
+      <div class="t">Invitación pendiente</div>
+      <div class="d faint">caduca a las {{ inv.expires_at.strftime("%H:%M") }} · un solo uso</div>
+    </div>
+    <button class="btn ghost sm" type="button" hx-post="/mas/invitaciones/{{ inv.id }}/anular" hx-swap="none">Anular</button>
+  </div>
+  {% endfor %}
+  <button class="row add" type="button" hx-post="/mas/invitaciones" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+    <div class="ic accent">{{ ui.icon("plus", "sm") }}</div>
+    <div class="body"><div class="t">Invitar a alguien</div><div class="d">código de un solo uso · 15 minutos</div></div>
+    {{ ui.icon("right", "sm chev") }}
+  </button>
+</div>
+<p class="note">Cada miembro entra con su usuario y solo ve sus datos. La persona invitada elige su nombre y su contraseña.</p>
+{% endif %}
 
 <div class="section-h"><h2>Administración</h2></div>
 <div class="tiles">

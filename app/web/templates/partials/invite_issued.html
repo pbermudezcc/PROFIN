@@ -1,0 +1,23 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">Invitar a alguien</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  <div class="invite" data-invite data-expires="{{ expires_ms }}">
+    <p class="muted">Dale este código a la persona que quieres invitar:</p>
+    <div class="invite-code" aria-label="Código de invitación {{ code }}" data-invite-text>{{ code }}</div>
+    <div class="invite-timer" aria-live="polite">{{ ui.icon("calendar", "xs") }} <span>Caduca en <b class="num" data-countdown>{{ minutes }}:00</b> · se usa una sola vez</span></div>
+    <div class="invite-expired" hidden>{{ ui.icon("alert", "sm") }} Ha caducado. Genera otra si todavía la necesitas.</div>
+    <ol class="steps">
+      <li>Abre FAMILYFIN en su móvil o en el PC de casa.</li>
+      <li>En la pantalla de acceso, «¿Tienes un código de invitación?».</li>
+      <li>Escribe el código y elige su usuario y su contraseña.</li>
+    </ol>
+  </div>
+  <div class="sticky-actions">
+    <button class="btn secondary" type="button" data-copy="{{ code }}">{{ ui.icon("file", "sm") }} Copiar</button>
+    <button class="btn block" type="button" data-share="{{ code }}" hidden>{{ ui.icon("upload", "sm") }} Compartir</button>
+    <button class="btn block ghost" type="button" data-close-sheet data-share-fallback>Hecho</button>
+  </div>
+</div>

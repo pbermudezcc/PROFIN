@@ -1,5 +1,8 @@
-"""Ajustes hub, accounts and import history (categories and rules: routers/admin.py)."""
+"""Ajustes hub, accounts and import history (categories and rules: routers/admin.py;
+family members: routers/users.py)."""
 from __future__ import annotations
+
+from datetime import datetime
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
@@ -7,6 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.categorization.rules_engine import rule_scope
+from app.config import DEMO_USERNAME
 from app.db.models import (
     Account,
     AutoCategorizationRule,
@@ -14,15 +18,17 @@ from app.db.models import (
     CategoryLevel,
     ImportBatch,
     Transaction,
+    User,
 )
 from app.web.deps import DB, USER, WebUser
 from app.web.render import render
+from app.web.routers.users import can_manage_users, family_members
 
 router = APIRouter()
 
 
 @router.get("/mas")
-def more(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
+def more(request: Request, bienvenida: str = "", user: WebUser = USER, db: Session = DB) -> Response:
     counts = {
         "categorias": db.query(func.count(Category.id)).filter(
             Category.user_id == user.id, Category.level != CategoryLevel.type).scalar() or 0,
@@ -35,7 +41,19 @@ def more(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
         db.query(func.max(ImportBatch.import_timestamp)).filter(ImportBatch.user_id == user.id).scalar()
     )
     sessions = [s for s in request.app.state.sessions.active() if s.user_id == user.id]
-    return render(request, "mas.html", {"counts": counts, "sessions": sessions, "last_import": last_import},
+    # Never list family names to the demo account (shown to visitors), and
+    # it cannot change its password, name or delete itself.
+    family = can_manage_users(db, user)
+    members = family_members(db) if family else None
+    me = db.get(User, user.id)
+    invites = [
+        {"id": inv.id, "expires_at": datetime.fromtimestamp(inv.expires)}
+        for inv in request.app.state.invites.active_by(user.id)
+    ] if family else []
+    return render(request, "mas.html", {"counts": counts, "sessions": sessions, "last_import": last_import,
+                                        "members": members, "demo_name": DEMO_USERNAME, "family": family,
+                                        "member_since": me.created_at if me else None, "invites": invites,
+                                        "welcome": bienvenida == "1" and not counts["categorias"]},
                   user=user, active="mas")
 
 

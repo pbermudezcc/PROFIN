@@ -8,6 +8,9 @@
     <h1>FAMILYFIN</h1>
     <p class="sub">Entra con tu usuario de la aplicación</p>
     <form class="card stack" method="post" action="/login" autocomplete="on">
+      {% if deleted %}
+      <div class="alert ok" role="status">{{ ui.icon("check", "sm") }}<span>Cuenta borrada · copia guardada en el PC</span></div>
+      {% endif %}
       {% if error %}
       <div class="alert err" role="alert">{{ ui.icon("info", "sm") }}<span>{{ error }}</span></div>
       {% endif %}
@@ -25,6 +28,7 @@
       </label>
       <button class="btn block" type="submit">Entrar</button>
     </form>
+    <a class="btn secondary block newcomer" href="/registro">{{ ui.icon("plus", "sm") }} ¿Tienes un código de invitación?</a>
     <p class="secure">{{ ui.icon("lock", "xs") }} Conexión cifrada · solo en tu red de casa</p>
     <p class="secure"><a href="/ayuda/" target="_blank" rel="noopener">{{ ui.icon("help", "xs") }} ¿Qué es FAMILYFIN? Ver el manual</a></p>
   </div>

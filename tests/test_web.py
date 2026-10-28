@@ -112,11 +112,21 @@ class OfflineProvider:
 
 
 @pytest.fixture
-def app(factory, family):
+def app(factory, family, tmp_path):
     changes = []
+    backups = []
+
+    def fake_backup(user_name):
+        # Never the real backup folder: a file in this test's tmp_path.
+        path = tmp_path / f"profin_predelete_{user_name}.zip"
+        path.write_bytes(b"copia")
+        backups.append(user_name)
+        return path
+
     application = create_app(sessions=SessionStore(), limiter=LoginLimiter(),
                              on_change=lambda uid, area: changes.append((uid, area)), lan_only=True,
-                             market_provider=OfflineProvider())
+                             market_provider=OfflineProvider(), backup_before_delete=fake_backup)
+    application.state.backups = backups
 
     def _db():
         session = factory()
@@ -348,12 +358,18 @@ def test_pages_render(app, path, user):
 def test_templates_have_no_inline_script_or_style(app):
     client = logged_in(app, "beto", "clave-beto")
     for path in ("/", "/gastos", "/movimientos", "/inversiones", "/inversiones/operaciones/nueva", "/mas",
-                 "/mas/categorias", "/mas/reglas", "/mas/reglas/nueva", "/mas/categorias/nueva", "/importar"):
+                 "/mas/categorias", "/mas/reglas", "/mas/reglas/nueva", "/mas/categorias/nueva", "/importar",
+                 "/mas/cuenta/contrasena", "/mas/cuenta/nombre", "/mas/cuenta/borrar"):
         html = client.get(path).text
         assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html), path
         assert " style=" not in html and "<style" not in html, path
         assert not re.search(r"\son[a-z]+=", html), path
     assert "<script" not in client.get("/login").text.split("</head>")[1]
+    for html in (client.post("/mas/invitaciones", headers=_hx(client)).text,
+                 client_for(app).get("/registro").text.split("</head>")[1]):
+        assert not re.search(r"<script", html)
+        assert " style=" not in html and "<style" not in html
+        assert not re.search(r"\son[a-z]+=", html)
 
 
 def test_tax_xlsx_download(app):
@@ -695,7 +711,7 @@ def statement(tmp_path):
 
 
 def _upload(client: TestClient, content: bytes, name: str = "extracto.xlsx", **data):
-    return client.post("/importar", files={"fichero": (name, content, XLSX)},
+    return client.post("/importar", files={"ficheros": (name, content, XLSX)},
                        data={"csrf_token": csrf_of(client), **data}, headers=ORIGIN, follow_redirects=False)
 
 
@@ -717,7 +733,7 @@ def test_import_upload_preview_confirm(app, family, factory, statement):
 
     response = client.post(f"/importar/{token}/confirmar", data={"csrf_token": csrf_of(client)},
                            headers=ORIGIN, follow_redirects=False)
-    assert response.status_code == 303 and "/importar/hecho/" in response.headers["location"]
+    assert response.status_code == 303 and response.headers["location"].startswith("/importar/hecho?lote=")
     assert not item.directory.exists() and len(app.state.imports) == 0
     done = client.get(response.headers["location"]).text
     assert "5 movimientos importados" in done
@@ -772,8 +788,12 @@ def test_import_rejects_bad_files(app, family, statement):
     page = _upload(client, b"PK\x03\x04garbage", "roto.xlsx")
     assert "No se pudo leer el extracto" in page.text
     assert len(app.state.imports) == 0
-    # Bodies over the upload cap are refused before they are read.
-    response = client.post("/importar", content=b"x" * (6 * 1024 * 1024 + 10),
+    # Bodies over the upload cap are refused before they are read: several
+    # statements at once for /importar, one file for the other uploads.
+    response = client.post("/importar", content=b"x" * (26 * 1024 * 1024 + 10),
+                           headers={**ORIGIN, "content-type": "application/octet-stream"})
+    assert response.status_code == 413
+    response = client.post("/importar/inversiones", content=b"x" * (6 * 1024 * 1024 + 10),
                            headers={**ORIGIN, "content-type": "application/octet-stream"})
     assert response.status_code == 413
     # Ordinary forms have a much smaller cap.
@@ -807,9 +827,76 @@ def test_import_preview_is_private_to_the_uploader(app, family, factory, stateme
         db.close()
 
 
+def _upload_many(client: TestClient, files: list, **data):
+    return client.post("/importar", files=[("ficheros", (name, content, XLSX)) for name, content in files],
+                       data={"csrf_token": csrf_of(client), **data}, headers=ORIGIN, follow_redirects=False)
+
+
+def test_import_several_overlapping_statements_at_once(app, family, factory, tmp_path):
+    from tests.test_import_pipeline import EXPORT_ROWS, _write_export
+
+    def export(rows, name):
+        _write_export(tmp_path / name, rows)
+        return (tmp_path / name).read_bytes()
+
+    client = logged_in(app)
+    september = export(EXPORT_ROWS[:4], "a.xlsx")
+    overlap = export(EXPORT_ROWS[2:], "b.xlsx")
+    # CaixaBank names every export alike: two uploads with the same name.
+    token = _token(_upload_many(client, [("movimientos.xlsx", overlap), ("movimientos.xlsx", september),
+                                         ("notas.txt", b"hola")]))
+    item = app.state.imports.get(token, family["ana"], next(iter(app.state.sessions.active())).sid)
+    assert item.filenames == ["movimientos (2).xlsx", "movimientos.xlsx"]       # chronological
+
+    preview = client.get(f"/importar/{token}").text
+    assert "2 extractos" in preview and "7 filas en 2 extractos" in preview
+    assert "Este fichero no se importará" in preview and "notas.txt" in preview
+    assert "Importar <span data-import-total>5</span> movimientos" in preview
+
+    response = client.post(f"/importar/{token}/confirmar", data={"csrf_token": csrf_of(client)},
+                           headers=ORIGIN, follow_redirects=False)
+    done = client.get(response.headers["location"]).text
+    assert "5 movimientos importados" in done and "2 extractos" in done
+    db = factory()
+    try:
+        batches = db.query(ImportBatch).filter(ImportBatch.user_id == family["ana"]).order_by(ImportBatch.id).all()
+        assert [(b.filename, b.rows_imported, b.rows_skipped) for b in batches] == [
+            ("movimientos (2).xlsx", 4, 0), ("movimientos.xlsx", 1, 2)]
+        assert db.query(Transaction).filter(Transaction.import_batch_id.in_([b.id for b in batches])).count() == 5
+        assert db.query(AuditLog).filter(AuditLog.table_affected == "import_batches").count() == 2
+    finally:
+        db.close()
+
+
+def test_import_upload_limits_and_all_files_rejected(app, family, statement, monkeypatch):
+    from app.web.routers import imports
+
+    client = logged_in(app)
+    page = _upload_many(client, [(f"e{i}.xlsx", statement) for i in range(imports.MAX_FILES + 1)])
+    assert page.status_code == 200 and f"como máximo {imports.MAX_FILES} extractos" in page.text
+    page = _upload_many(client, [("a.csv", b"x"), ("b.xlsx", b"no excel")])
+    assert "Ninguno de los extractos se puede importar" in page.text
+    assert "a.csv" in page.text and "b.xlsx" in page.text
+    monkeypatch.setattr(imports, "MAX_TOTAL_BYTES", len(statement) + 1)
+    page = _upload_many(client, [("a.xlsx", statement), ("b.xlsx", statement)])
+    assert "Súbelos en varias veces" in page.text
+    assert len(app.state.imports) == 0
+
+
+def test_import_done_page_only_shows_your_own_batches(app, family, factory, statement):
+    ana = logged_in(app)
+    token = _token(_upload(ana, statement))
+    location = ana.post(f"/importar/{token}/confirmar", data={"csrf_token": csrf_of(ana)},
+                        headers=ORIGIN, follow_redirects=False).headers["location"]
+    beto = logged_in(app, "beto", "clave-beto")
+    assert beto.get(location).status_code == 404
+    assert ana.get(location + "&lote=999").status_code == 404
+    assert ana.get("/importar/hecho").status_code == 404
+
+
 def test_import_upload_requires_csrf(app, family, statement):
     client = logged_in(app)
-    response = client.post("/importar", files={"fichero": ("e.xlsx", statement, XLSX)},
+    response = client.post("/importar", files={"ficheros": ("e.xlsx", statement, XLSX)},
                            headers=ORIGIN, follow_redirects=False)
     assert response.status_code == 403
     assert len(app.state.imports) == 0
@@ -1060,7 +1147,7 @@ def test_demo_account_does_not_see_family_global_rules(app, family, factory):
     from app.config import DEMO_USERNAME
 
     db = factory()
-    demo = create_user(db, DEMO_USERNAME, "123456")
+    demo = create_user(db, DEMO_USERNAME, "123456", enforce_policy=False)
     db.close()
     _add_web_rule(factory, demo.id, family["ana_cat"], "PATRON DEMO")
     _add_web_rule(factory, family["ana"], family["ana_cat"], "TIENDA DE LA FAMILIA", global_=True)
@@ -1478,3 +1565,457 @@ def test_app_version_is_shown_only_after_login(app):
     client = logged_in(app)
     assert f'<div class="ver num" title="Versión de FAMILYFIN">v{APP_VERSION}</div>' in client.get("/").text
     assert f"FAMILYFIN versión {APP_VERSION}" in client.get("/mas").text
+
+
+# ---------------------------------------------------------------------------
+# Ajustes › Familia: invitations; /registro: joining with a code (W10)
+# ---------------------------------------------------------------------------
+
+CODE_RE = re.compile(r'data-invite-text>([2-9A-Z]{4}-[2-9A-Z]{4})<')
+
+
+def _invite(client: TestClient) -> str:
+    response = client.post("/mas/invitaciones", headers=_hx(client))
+    assert response.status_code == 200, response.text
+    return CODE_RE.search(response.text).group(1)
+
+
+def _register(client: TestClient, code: str, username: str = "carla", password: str = "clave de carla",
+              confirm=None):
+    return client.post("/registro", data={"codigo": code, "username": username, "password": password,
+                                          "confirm": password if confirm is None else confirm},
+                       headers=ORIGIN, follow_redirects=False)
+
+
+def test_member_invites_and_the_new_person_joins_signed_in(app, family, factory, caplog):
+    from app.db.models import User
+
+    caplog.set_level("DEBUG")
+    ana = logged_in(app)
+    page = ana.get("/mas").text
+    assert "Familia" in page and ">beto<" in page and 'hx-post="/mas/invitaciones"' in page
+    assert "/mas/usuarios" not in page                       # no direct creation any more
+
+    code = _invite(ana)
+    assert "Invitación pendiente" in ana.get("/mas").text
+
+    guest = client_for(app)
+    login_page = guest.get("/login").text
+    assert 'href="/registro"' in login_page and "¿Tienes un código de invitación?" in login_page
+    step2 = guest.post("/registro/codigo", data={"codigo": code.lower().replace("-", " ")}, headers=ORIGIN)
+    assert step2.status_code == 200 and "Te invita <b>ana</b>" in step2.text
+    assert f'name="codigo" value="{code}"' in step2.text
+    hint = guest.get("/registro/disponible", params={"username": "Beto", "codigo": code})
+    assert "Ya existe el usuario «beto»" in hint.text
+
+    response = _register(guest, code, username=" Carla ")
+    assert response.status_code == 303 and response.headers["location"] == "/mas?bienvenida=1"
+    welcome = guest.get("/mas?bienvenida=1").text
+    assert "Bienvenido/a, Carla" in welcome and "Cargar categorías por defecto" in welcome
+    assert any(area == "user_created" for _, area in app.state.changes)
+
+    db = factory()
+    try:
+        carla = db.query(User).filter(User.username == "Carla").one()
+        assert db.query(Category).filter(Category.user_id == carla.id).count() == 0      # starts empty
+        entry = db.query(AuditLog).filter(AuditLog.table_affected == "users").one()
+        assert entry.user_id == carla.id and "invitación de «ana»" in entry.new_value
+        issued = db.query(AuditLog).filter(AuditLog.table_affected == "invitations").one()
+        assert issued.user_id == family["ana"]
+        for row in db.query(AuditLog):
+            assert code not in f"{row.old_value} {row.new_value}"
+            assert code.replace("-", "") not in f"{row.old_value} {row.new_value}"
+    finally:
+        db.close()
+    # The app's own logs (profin.log) never carry the code. (The test client's
+    # httpx logger prints request URLs; the real server runs without access log.)
+    app_logs = " | ".join(r.getMessage() for r in caplog.records if r.name.startswith("app."))
+    assert "invitación" in app_logs
+    assert code not in app_logs and code.replace("-", "") not in app_logs
+    # Single use: the same code does not work again.
+    again = client_for(app).post("/registro/codigo", data={"codigo": code}, headers=ORIGIN)
+    assert again.status_code == 400 and "no válido o caducado" in again.text
+    assert "Invitación pendiente" not in ana.get("/mas").text
+
+
+def test_registration_validates_without_spending_the_invitation(app, family, factory):
+    from app.db.models import User
+
+    code = _invite(logged_in(app))
+    guest = client_for(app)
+    for username, password, confirm, message in (
+        ("ANA", "clave de carla", None, "Ya existe el usuario «ana»"),
+        ("demo", "clave de carla", None, "reservado"),
+        ("carla", "corta", None, "al menos 8"),
+        ("carla", "barcelona", None, "demasiado común"),
+        ("carla", "clave de carla", "otra", "no coinciden"),
+    ):
+        response = _register(guest, code, username, password, confirm)
+        assert response.status_code == 200 and message in response.text, message
+        assert "clave de carla" not in response.text                     # passwords never echoed
+    assert _register(guest, code).status_code == 303                       # the code was still valid
+    db = factory()
+    try:
+        assert db.query(User).count() == 3
+    finally:
+        db.close()
+
+
+def test_wrong_codes_are_generic_and_throttled(app, family):
+    code = _invite(logged_in(app))          # before the guessing: the IP is throttled for the login too
+    guest = client_for(app)
+    statuses = []
+    for i in range(12):
+        response = guest.post("/registro/codigo", data={"codigo": f"ZZZZ-ZZZ{i % 8 + 2}"}, headers=ORIGIN)
+        statuses.append(response.status_code)
+        if response.status_code == 400:
+            assert "Código no válido o caducado" in response.text
+    assert statuses[:4] == [400] * 4 and 429 in statuses
+    # Even a valid code waits now (the throttle comes first), and so do the hint and the login.
+    assert login(client_for(app), "ana", "clave-ana").status_code == 429
+    assert guest.post("/registro/codigo", data={"codigo": code}, headers=ORIGIN).status_code == 429
+    assert guest.get("/registro/disponible", params={"username": "x", "codigo": code}).status_code == 429
+
+
+def test_name_hint_needs_a_valid_code(app, family):
+    guest = client_for(app)
+    response = guest.get("/registro/disponible", params={"username": "ana", "codigo": "AAAA-AAAA"})
+    assert response.status_code == 403 and "ana" not in response.text
+
+
+def test_two_people_with_the_same_code_create_one_account(app, family, factory, monkeypatch):
+    from app.db.models import User
+    from app.web.routers import auth as auth_router
+
+    code = _invite(logged_in(app))
+    first, second = client_for(app), client_for(app)
+    assert first.post("/registro/codigo", data={"codigo": code}, headers=ORIGIN).status_code == 200
+    assert second.post("/registro/codigo", data={"codigo": code}, headers=ORIGIN).status_code == 200
+    assert _register(first, code, "carla").status_code == 303
+    late = _register(second, code, "dani", "clave de dani")
+    assert late.status_code == 400 and "no válido o caducado" in late.text
+
+    # A database refusal after consume() gives the invitation back.
+    code = _invite(logged_in(app))
+    real = auth_router.create_user
+
+    def racing(db, username, password):
+        real(db, "Eva", "clave de eva larga")                 # someone took the name meanwhile
+        return real(db, username, password)
+
+    monkeypatch.setattr(auth_router, "create_user", racing)
+    response = _register(client_for(app), code, "Eva", "clave de otra eva")
+    assert response.status_code == 200 and "existe el usuario «Eva»" in response.text
+    assert app.state.invites.peek(code) is not None
+    db = factory()
+    try:
+        assert db.query(User).filter(User.username == "dani").count() == 0
+    finally:
+        db.close()
+
+
+def test_invitations_need_a_family_member_and_csrf(app, family, factory):
+    from app.config import DEMO_USERNAME
+
+    anonymous = client_for(app)
+    assert anonymous.post("/mas/invitaciones", headers=ORIGIN, follow_redirects=False).headers["location"] == "/login"
+    ana = logged_in(app)
+    assert ana.post("/mas/invitaciones", headers=ORIGIN).status_code == 403                  # no CSRF
+    db = factory()
+    create_user(db, DEMO_USERNAME, "123456", enforce_policy=False)
+    db.close()
+    visitor = logged_in(app, DEMO_USERNAME, "123456")
+    page = visitor.get("/mas").text
+    assert "/mas/invitaciones" not in page and ">beto<" not in page and ">ana<" not in page
+    assert visitor.post("/mas/invitaciones", headers=_hx(visitor)).status_code == 403
+    assert visitor.post("/mas/invitaciones/x/anular", headers=_hx(visitor)).status_code == 403
+    assert "demostración" in ana.get("/mas").text
+
+
+def test_three_invitations_at_most_and_only_my_own_can_be_cancelled(app, family):
+    ana, beto = logged_in(app), logged_in(app, "beto", "clave-beto")
+    for _ in range(3):
+        _invite(ana)
+    limited = ana.post("/mas/invitaciones", headers=_hx(ana))
+    assert limited.status_code == 200 and "Ya tienes 3 invitaciones activas" in limited.text
+    ids = [inv.id for inv in app.state.invites.active_by(family["ana"])]
+    assert beto.post(f"/mas/invitaciones/{ids[0]}/anular", headers=_hx(beto)).status_code == 404
+    response = ana.post(f"/mas/invitaciones/{ids[0]}/anular", headers=_hx(ana))
+    assert response.status_code == 204 and "Invitaci" in response.headers["hx-trigger"]
+    assert len(app.state.invites.active_by(family["ana"])) == 2
+    _invite(ana)                                                             # room again
+
+
+def test_deleting_an_account_cancels_its_invitations(app, family):
+    ana = logged_in(app)
+    code = _invite(ana)
+    response = ana.post("/mas/cuenta/borrar", data={"confirm_name": "ana", "password": "clave-ana"},
+                        headers=_hx(ana))
+    assert response.status_code == 204
+    assert app.state.invites.peek(code) is None
+
+
+def test_logout_goes_back_to_the_login(app, family):
+    client = logged_in(app)
+    response = client.post("/logout", data={"csrf_token": csrf_of(client)}, headers=ORIGIN, follow_redirects=False)
+    assert response.headers["location"] == "/login"
+
+
+def test_invite_store_single_use_expiry_and_threads():
+    import threading
+
+    from app.web.invites import ALPHABET, InviteStore, normalize_code
+
+    now = [1000.0]
+    store = InviteStore(clock=lambda: now[0])
+    code, invite = store.issue(1, "ana")
+    assert len(normalize_code(code)) == 8 and set(normalize_code(code)) <= set(ALPHABET)
+    assert code.replace("-", "") not in repr(store.__dict__)              # only the hash is kept
+    assert store.peek(code.lower()) is invite and store.peek(code.replace("-", " ")) is invite
+    now[0] += 15 * 60
+    assert store.peek(code) is None and store.consume(code) is None       # expired
+
+    code, invite = store.issue(1, "ana")
+    results = []
+    barrier = threading.Barrier(8)
+
+    def grab():
+        barrier.wait()
+        results.append(store.consume(code))
+
+    threads = [threading.Thread(target=grab) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sum(r is not None for r in results) == 1
+    store.restore(invite)
+    assert store.peek(code) is invite
+    assert store.revoke_by(1) == 1 and store.peek(code) is None
+    store.issue(2, "beto")
+    assert store.revoke_all() == 1
+
+
+def test_switching_data_folder_or_certificates_drops_invitations(monkeypatch):
+    from app.web import server as server_module
+
+    web = server_module.WebServer()
+    web.invites.issue(1, "ana")
+    web.sessions.create(1, "ana", "192.168.1.2", "iPhone")
+    monkeypatch.setattr(server_module, "ensure_tls", lambda regenerate=False: None)
+    web.regenerate_certificates()
+    assert web.invites.active_by(1) == [] and web.sessions.active() == []
+
+
+# ---------------------------------------------------------------------------
+# Ajustes › Mi cuenta (W10): password, name, delete — own account only
+# ---------------------------------------------------------------------------
+
+ACCOUNT_FORMS = ("/mas/cuenta/contrasena", "/mas/cuenta/nombre", "/mas/cuenta/borrar")
+
+
+def _sid(client: TestClient) -> str:
+    return client.cookies.get(SESSION_COOKIE)
+
+
+def test_account_routes_need_a_session_csrf_and_a_family_member(app, family, factory):
+    from app.config import DEMO_USERNAME
+
+    anonymous = client_for(app)
+    for path in ACCOUNT_FORMS:
+        assert anonymous.get(path, follow_redirects=False).headers["location"] == "/login"
+        assert anonymous.post(path, data={"password": "x"}, headers=ORIGIN,
+                              follow_redirects=False).headers["location"] == "/login"
+
+    ana = logged_in(app)
+    assert "Mi cuenta" in ana.get("/mas").text
+    for path in ACCOUNT_FORMS:
+        assert ana.get(path).status_code == 200
+        assert ana.post(path, data={"password": "clave-ana"}, headers=ORIGIN).status_code == 403       # no CSRF
+        assert ana.post(path, data={"password": "clave-ana"},
+                        headers={"X-CSRF-Token": csrf_of(ana)}).status_code == 403                   # no origin
+
+    db = factory()
+    create_user(db, DEMO_USERNAME, "123456", enforce_policy=False)
+    db.close()
+    visitor = logged_in(app, DEMO_USERNAME, "123456")
+    assert "/mas/cuenta/" not in visitor.get("/mas").text
+    for path in ACCOUNT_FORMS:
+        assert visitor.get(path).status_code == 403
+        assert visitor.post(path, data={"password": "123456", "confirm_name": DEMO_USERNAME},
+                            headers=_hx(visitor)).status_code == 403
+    assert app.state.backups == []
+
+
+def test_password_change_rotates_this_session_and_closes_the_others(app, family, factory):
+    phone, tablet = logged_in(app), logged_in(app)
+    old_sid, tablet_sid = _sid(phone), _sid(tablet)
+    old_csrf = csrf_of(phone)
+
+    response = phone.post("/mas/cuenta/contrasena", data={
+        "current": "clave-ana", "password": "huerto de limones", "confirm": "huerto de limones",
+    }, headers={**ORIGIN, "X-CSRF-Token": old_csrf, "HX-Request": "true"})
+
+    assert response.status_code == 204
+    trigger = response.headers["hx-trigger"]
+    assert "closeSheet" in trigger and "1 dispositivo" in trigger and "csrfToken" in trigger
+    sessions = app.state.sessions
+    assert sessions.get(old_sid) is None and sessions.get(tablet_sid) is None
+    new_sid = _sid(phone)
+    assert new_sid and new_sid != old_sid and sessions.get(new_sid).csrf != old_csrf
+    assert phone.get("/mas", follow_redirects=False).status_code == 200            # this device stays in
+    assert tablet.get("/mas", follow_redirects=False).headers["location"] == "/login"
+    assert login(client_for(app), "ana", "clave-ana").status_code == 401
+    assert login(client_for(app), "ana", "huerto de limones").status_code == 303
+    assert (family["ana"], "account") in app.state.changes
+    db = factory()
+    try:
+        entry = db.query(AuditLog).filter(AuditLog.table_affected == "users").one()
+        assert entry.user_id == family["ana"] and "contraseña cambiada" in entry.new_value
+        assert "huerto" not in entry.new_value
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("data, field_message", [
+    ({"current": "mal", "password": "huerto de limones", "confirm": "huerto de limones"}, "no es correcta"),
+    ({"current": "clave-ana", "password": "corta", "confirm": "corta"}, "al menos 8"),
+    ({"current": "clave-ana", "password": "barcelona", "confirm": "barcelona"}, "demasiado común"),
+    ({"current": "clave-ana", "password": "huerto de limones", "confirm": "huerto"}, "no coinciden"),
+])
+def test_password_change_errors_stay_in_the_sheet(app, family, data, field_message):
+    client = logged_in(app)
+    sid = _sid(client)
+    response = client.post("/mas/cuenta/contrasena", data=data, headers=_hx(client))
+    assert response.status_code == 200 and field_message in response.text
+    assert 'class="field invalid"' in response.text
+    assert app.state.sessions.get(sid) is not None
+    assert login(client_for(app), "ana", "clave-ana").status_code == 303
+
+
+def test_wrong_passwords_in_mi_cuenta_hit_the_login_throttle(app, family):
+    client = logged_in(app)
+    headers = _hx(client)
+    statuses = [
+        client.post("/mas/cuenta/contrasena", data={"current": f"mal-{i}", "password": "huerto de limones",
+                                                    "confirm": "huerto de limones"}, headers=headers).status_code
+        for i in range(6)
+    ]
+    assert statuses[:4] == [200] * 4 and 429 in statuses[4:]
+    blocked = client.post("/mas/cuenta/nombre", data={"username": "Ana María", "password": "clave-ana"},
+                          headers=headers)
+    assert blocked.status_code == 429 and "Demasiados intentos" in blocked.text
+    # The same keys as the login: that user name waits there too.
+    assert login(client_for(app), "ana", "clave-ana").status_code == 429
+
+
+def test_rename_shows_the_new_name_in_every_open_session(app, family, factory):
+    phone, tablet = logged_in(app), logged_in(app)
+    taken = phone.get("/mas/cuenta/nombre/disponible", params={"username": "BETO"})
+    assert "Ya existe el usuario «beto»" in taken.text
+    assert "Es tu nombre actual" in phone.get("/mas/cuenta/nombre/disponible", params={"username": "ana"}).text
+    assert "está libre" in phone.get("/mas/cuenta/nombre/disponible", params={"username": "Ana María"}).text
+
+    wrong = phone.post("/mas/cuenta/nombre", data={"username": "Ana María", "password": "mal"}, headers=_hx(phone))
+    assert wrong.status_code == 200 and "no es correcta" in wrong.text
+
+    response = phone.post("/mas/cuenta/nombre", data={"username": " Ana María ", "password": "clave-ana"},
+                          headers=_hx(phone))
+    assert response.status_code == 204 and "refreshPage" in response.headers["hx-trigger"]
+    assert "<b>Ana María</b>" in tablet.get("/mas").text
+    assert login(client_for(app), "Ana María", "clave-ana").status_code == 303
+    assert (family["ana"], "account") in app.state.changes
+    db = factory()
+    try:
+        entry = db.query(AuditLog).filter(AuditLog.table_affected == "users").one()
+        assert entry.old_value == "«ana»" and entry.new_value.startswith("«Ana María»")
+    finally:
+        db.close()
+
+
+def test_delete_my_account_backs_up_first_and_signs_out_everywhere(app, family, factory):
+    from app.db.models import User
+
+    phone, tablet = logged_in(app), logged_in(app)
+    sheet = phone.get("/mas/cuenta/borrar").text
+    assert ">2</span> movimientos" in sheet and "Se borrarán tu usuario" in sheet
+    assert 'data-delete-submit disabled' in sheet
+
+    wrong = phone.post("/mas/cuenta/borrar", data={"confirm_name": "Ana", "password": "clave-ana"},
+                       headers=_hx(phone))
+    assert wrong.status_code == 200 and "no coincide" in wrong.text and app.state.backups == []
+
+    response = phone.post("/mas/cuenta/borrar", data={"confirm_name": "ana", "password": "clave-ana"},
+                          headers=_hx(phone))
+    assert response.status_code == 204
+    assert response.headers["hx-redirect"] == "/login?borrada=1"
+    assert app.state.backups == ["ana"]
+    assert not [s for s in app.state.sessions.active() if s.user_id == family["ana"]]
+    assert tablet.get("/mas", follow_redirects=False).headers["location"] == "/login"
+    assert (family["ana"], "account_deleted") in app.state.changes
+    assert "Cuenta borrada · copia guardada en el PC" in client_for(app).get("/login?borrada=1").text
+
+    db = factory()
+    try:
+        assert db.get(User, family["ana"]) is None
+        assert db.query(Transaction).filter(Transaction.user_id == family["ana"]).count() == 0
+        assert db.query(Transaction).filter(Transaction.user_id == family["beto"]).count() == 2
+        entry = db.query(AuditLog).filter(AuditLog.table_affected == "users").one()
+        assert entry.user_id is None and entry.record_id == family["ana"]
+        assert "profin_predelete_ana.zip" in entry.new_value
+    finally:
+        db.close()
+    assert login(client_for(app), "beto", "clave-beto").status_code == 303
+
+
+def test_delete_is_refused_while_family_rules_depend_on_my_categories(app, family, factory):
+    from app.db.models import User
+
+    _add_web_rule(factory, family["ana"], family["ana_cat"], "REGLA DE TODOS", global_=True)
+    client = logged_in(app)
+    sheet = client.get("/mas/cuenta/borrar").text
+    assert "1 reglas globales" in sheet and "data-delete-form" not in sheet
+    response = client.post("/mas/cuenta/borrar", data={"confirm_name": "ana", "password": "clave-ana"},
+                           headers=_hx(client))
+    assert response.status_code == 200 and "reglas globales" in response.text
+    assert app.state.backups == []
+    db = factory()
+    try:
+        assert db.get(User, family["ana"]) is not None
+    finally:
+        db.close()
+
+
+def test_delete_without_a_backup_deletes_nothing(app, family, factory):
+    from app.db.models import User
+
+    def broken(_name):
+        raise OSError("sin espacio")
+
+    app.state.backup_before_delete = broken
+    client = logged_in(app)
+    response = client.post("/mas/cuenta/borrar", data={"confirm_name": "ana", "password": "clave-ana"},
+                           headers=_hx(client))
+    assert response.status_code == 200 and "no se ha borrado nada" in response.text
+    app.state.backup_before_delete = None
+    response = client.post("/mas/cuenta/borrar", data={"confirm_name": "ana", "password": "clave-ana"},
+                           headers=_hx(client))
+    assert response.status_code == 503
+    db = factory()
+    try:
+        assert db.get(User, family["ana"]) is not None
+    finally:
+        db.close()
+
+
+def test_session_store_rotate_and_rename():
+    store = SessionStore()
+    a = store.create(1, "ana", "192.168.1.2", "iPhone")
+    b = store.create(1, "ana", "192.168.1.3", "iPad")
+    other = store.create(2, "beto", "192.168.1.4", "iPhone")
+    assert store.rename_user(1, "Ana María") == 2 and store.get(b.sid).username == "Ana María"
+    fresh = store.rotate(a.sid)
+    assert store.get(a.sid) is None and fresh.user_id == 1 and fresh.csrf != a.csrf
+    assert store.revoke_user(1, keep=fresh.sid) == 1
+    assert store.get(fresh.sid) is not None and store.get(other.sid) is not None
+    assert store.rotate("no-existe") is None

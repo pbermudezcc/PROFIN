@@ -1,0 +1,32 @@
+{# Name + new password + repeat, with the live name hint and the password
+   checklist (app.js, form[data-pw-check]). Expects: username, errors,
+   min_password, max_password, max_username, hint_url and hint_include. #}
+<label class="field{% if errors.username %} invalid{% endif %}"><span>Nombre de usuario</span>
+  <input class="input" name="username" value="{{ username }}" maxlength="{{ max_username }}" required
+         autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next"
+         placeholder="p. ej. Lucía" {% if not username or errors.username %}autofocus{% endif %}
+         hx-get="{{ hint_url }}" hx-trigger="input changed delay:400ms" hx-target="#user-name-hint"
+         hx-swap="innerHTML" hx-sync="this:replace" {% if hint_include %}hx-include="{{ hint_include }}"{% endif %}
+         aria-describedby="user-name-hint">
+  <div id="user-name-hint" class="hint-slot" data-field-hint aria-live="polite">{% if errors.username %}<small class="error">{{ errors.username }}</small>{% else %}<small class="help">Con este nombre entrarás en el PC y en la web.</small>{% endif %}</div>
+</label>
+
+<label class="field{% if errors.password %} invalid{% endif %}"><span>Contraseña</span>
+  <div class="pw">
+    <input class="input" type="password" name="password" maxlength="256" required autocomplete="new-password"
+           enterkeyhint="next" data-pw {% if username and not errors.username %}autofocus{% endif %}>
+    <button type="button" data-toggle-password aria-label="Mostrar contraseña">{{ ui.icon("eye", "sm") }}</button>
+  </div>
+  {% if errors.password %}<small class="error">{{ errors.password }}</small>{% endif %}
+</label>
+
+<label class="field{% if errors.confirm %} invalid{% endif %}"><span>Repite la contraseña</span>
+  <div class="pw">
+    <input class="input" type="password" name="confirm" maxlength="256" required autocomplete="new-password"
+           enterkeyhint="done" data-pw-confirm>
+    <button type="button" data-toggle-password aria-label="Mostrar contraseña">{{ ui.icon("eye", "sm") }}</button>
+  </div>
+  {% if errors.confirm %}<small class="error">{{ errors.confirm }}</small>{% endif %}
+</label>
+
+{% include "partials/_pw_rules.html" %}

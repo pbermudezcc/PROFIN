@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Unirme con una invitación{% endblock %}
+{% block body_attrs %}hx-boost="false"{% endblock %}
+{% block shell %}
+<div class="login-wrap">
+  <div class="login fade-in">
+    <img class="logo" src="{{ asset('icons/icon-192.png') }}" alt="">
+    <h1>Únete a FAMILYFIN</h1>
+    {% if step == "account" %}
+    <p class="sub">Paso 2 de 2 · elige tu usuario y tu contraseña</p>
+    <form class="card stack form-grid" method="post" action="/registro" data-pw-check
+          data-min="{{ min_password }}" data-max="{{ max_password }}" novalidate autocomplete="on">
+      <div class="invited-by">{{ ui.icon("check", "sm") }}<span>Te invita <b>{{ inviter }}</b></span></div>
+      {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+      <input type="hidden" name="codigo" value="{{ code }}">
+      {% with hint_url="/registro/disponible", hint_include="[name=codigo]" %}
+      {% include "partials/_account_fields.html" %}
+      {% endwith %}
+      <button class="btn block" type="submit" data-busy-label="Creando tu usuario…">{{ ui.icon("check", "sm") }} Crear mi usuario y entrar</button>
+      <p class="note">Tendrás tus propias cuentas, categorías y movimientos; nadie de la familia verá tus datos.</p>
+    </form>
+    {% else %}
+    <p class="sub">Paso 1 de 2 · escribe el código que te han dado</p>
+    <form class="card stack" method="post" action="/registro/codigo" autocomplete="off">
+      {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+      <label class="field">
+        <span>Código de invitación</span>
+        <input class="input invite-input" name="codigo" value="{{ code }}" maxlength="12" required autofocus
+               autocomplete="one-time-code" autocapitalize="characters" autocorrect="off" spellcheck="false"
+               placeholder="XXXX-XXXX" enterkeyhint="go" data-invite-code aria-describedby="code-help">
+        <small class="help" id="code-help">Lo genera alguien de la familia en Ajustes › Familia. Sirve una sola vez y caduca a los 15 minutos.</small>
+      </label>
+      <button class="btn block" type="submit" data-busy-label="Comprobando…">Continuar</button>
+    </form>
+    {% endif %}
+    <p class="secure"><a href="/login">{{ ui.icon("left", "xs") }} Ya tengo usuario · Entrar</a></p>
+    <p class="secure">{{ ui.icon("lock", "xs") }} Conexión cifrada · solo en tu red de casa</p>
+  </div>
+</div>
+{% endblock %}

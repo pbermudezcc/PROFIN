@@ -14,7 +14,7 @@
   <meta name="format-detection" content="telephone=no">
   <meta name="referrer" content="same-origin">
   <meta name="csrf-token" content="{{ csrf }}">
-  <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true, "historyCacheSize": 0, "refreshOnHistoryMiss": true, "scrollIntoViewOnBoost": false}'>
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true, "historyCacheSize": 0, "refreshOnHistoryMiss": true, "scrollIntoViewOnBoost": false, "responseHandling": [{"code": "204", "swap": false}, {"code": "[23]..", "swap": true}, {"code": "429", "swap": true}, {"code": "[45]..", "swap": false, "error": true}, {"code": "...", "swap": false}]}'>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ asset('icons/icon-192.png') }}">
   <link rel="apple-touch-icon" href="{{ asset('icons/apple-touch-icon.png') }}">

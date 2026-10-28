@@ -149,3 +149,38 @@ Entry format:
 - Root cause: (1) `dialog.sheet` is a flex column with `overflow: hidden`, but the scrolling `.sheet-b` sat inside `#sheet-body`, a plain block with no height limit; it grew to the content, was clipped by the dialog, and `.sheet-b` never had a bounded height to scroll in. (2) iOS does not shrink the layout viewport when the keyboard opens, so a bottom-anchored sheet stays behind the keyboard.
 - Fix: `#sheet-body` and `.sheet-b` are `flex: 1 1 auto; min-height: 0`; app.js sets `--kb`/`--vvh` on the sheet from `visualViewport` and the CSS lifts it above the keyboard and caps its height to the visible area (app/web/static/css/app.css, app/web/static/js/app.js).
 - Prevention: every wrapper between a height-capped flex container and its scrolling child needs `min-height: 0`. Check sheets on a phone with a long list and with the keyboard open, not only on desktop.
+
+## 2026-10-28 — Passwords over 72 bytes showed bcrypt's English error ("Crear cuenta")
+- Area: auth
+- Symptom: found while adding user creation to the web: with bcrypt 5.0.0 installed, a password longer than 72 UTF-8 bytes made `create_user` raise `ValueError: password cannot be longer than 72 bytes`, which the desktop «Crear cuenta» dialog showed as is (English, technical).
+- Root cause: bcrypt only uses 72 bytes; bcrypt >= 5 refuses longer input instead of truncating it, and nothing checked the length before hashing.
+- Fix: `create_user` raises a Spanish ValueError above 72 bytes; `validate_new_user` (shared by the desktop dialog and the web sheet) reports it on the password field (app/auth/auth_service.py).
+- Prevention: `tests/test_auth.py::TestCreateUser::test_create_user_password_over_bcrypt_limit_raises_in_spanish` and the 72/73-byte validation tests. On a bcrypt upgrade, check the changelog for input-length behaviour.
+
+## 2026-10-28 — Several CaixaBank statements at once: overlap must be checked across files
+- Area: ingestion
+- Symptom (avoided by design, found while planning the multi-file import): real exports overlap heavily. The 10 statements of COMUN hold 693 rows but only 623 distinct movements (a weekly export inside a two-month one, a 2-year history overlapping the next week). Running the single-file flow once per file would have previewed the overlap as "new", because the duplicate check only looked at the DB and inside one file.
+- Root cause: duplicate detection was scoped to "DB + this file"; nothing modelled "this import holds several files".
+- Fix: `prepare_import` takes a list of paths, validates each file on its own, merges the accepted ones chronologically with a `source_file` column and runs `check_duplicates` once; the detector counts exact keys per source file (rule D-5), so a row another file already holds the same number of times is skipped, while a genuine repeat inside one file keeps the D-1/D-3 behaviour. Zero-amount rows exported twice are skipped instead of being asked twice.
+- Prevention: `tests/test_import_pipeline.py` (overlap, same file twice, other IBAN, all invalid, atomic commit, IBAN learning) and `tests/test_web.py::test_import_several_overlapping_statements_at_once`. When a batch concept is added anywhere, check the cross-item invariants, not only each item against the DB.
+
+## 2026-10-28 — Deleting a user also deleted family-wide rules and its own audit trail
+- Area: auth / db
+- Symptom: found in the W10 review: `MainWindow._do_delete` deleted the user with the ORM cascade. Global rules (`user_id NULL`) that point at that user's categories were deleted with the categories (FK `CASCADE` on `auto_categorization_rules.category_id`), so every family member silently lost them; and the user's `audit_log` rows went too, leaving no trace of who was deleted.
+- Root cause: global rules store their creator's `category_id`, so they hang off one member's category tree; the deletion had no pre-checks and wrote no audit row of its own.
+- Fix: shared `account_service.delete_user` (desktop and web): exact name + password, refuses while `deletion_summary(...).global_rules > 0` («muévelas o bórralas desde el PC»), takes `SettingsManager.backup_before_delete` first (nothing is deleted if it fails), then deletes and writes an `audit_log` row with `user_id=None` (name, id, origin, backup file name) in the same commit.
+- Prevention: `tests/test_auth.py::TestDeleteUser` (blocked by a global rule, failed backup, surviving audit row, other members intact) and the web delete tests. Any delete of a parent row: check which *shared* rows cascade from it.
+
+## 2026-10-28 — Web sessions survived the deletion of their account
+- Area: web / auth
+- Symptom: after deleting an account in the PC app, a phone that was signed in with it kept a valid web session until it expired (30 min idle / 12 h).
+- Root cause: web sessions live in memory in `WebServer.sessions`; the desktop delete never told the web server.
+- Fix: the desktop delete calls `get_web_server().sessions.revoke_user(id)` and `invites.revoke_by(id)`; the web delete revokes every session and invitation of the user; a password change revokes the user's other sessions and rotates the current one (`SessionStore.rotate`, new id and CSRF token). Data-folder switch and certificate regeneration also drop pending invitations.
+- Prevention: `tests/test_web.py::test_password_change_rotates_this_session_and_closes_the_others`, `test_delete_my_account_backs_up_first_and_signs_out_everywhere`, `test_switching_data_folder_or_certificates_drops_invitations`. Anything that changes who a user is (password, name, existence) must update the in-memory session store too.
+
+## 2026-10-28 — Login response time revealed which user names exist; near-twin and «demo» names were accepted
+- Area: auth
+- Symptom: (1) `verify_login` returned at once for an unknown name but spent a bcrypt check (~0.25 s) for a known one, so timing told anyone on the LAN which names exist. (2) «Ana» and «ana», or «Lucía» and «Lucia», could coexist; a new member named «demo» would silently be treated as the isolated demo account (no family global rules). (3) The only password rule (6 characters) lived in the desktop dialog.
+- Root cause: no constant-time path for unknown users; uniqueness relied on the case-sensitive `UNIQUE` index; the rules were in a widget, not in the service.
+- Fix: `verify_login` checks a fixed dummy bcrypt hash when the user does not exist; `app/auth/account_rules.py` holds the shared rules (NFC names, 2–32 chars, case- and accent-insensitive uniqueness, «DEMO» reserved; passwords 8–64 chars / 72 bytes, not the name, not in `common_passwords.txt`) and `create_user` applies them (`enforce_policy=False` only for fixed tooling accounts).
+- Prevention: `tests/test_auth.py::TestVerifyLogin::test_unknown_user_costs_one_bcrypt_check_like_a_known_one`, `TestValidateNewUser`. New login-like endpoints must spend the same work whether or not the account exists.

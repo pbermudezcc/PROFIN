@@ -338,11 +338,129 @@
     var total = parseInt(form.getAttribute("data-clean"), 10) + Object.keys(chosen).length;
     $$("[data-import-total]", form).forEach(function (el) { el.textContent = total; });
   });
+  // ── «Nuevo usuario» sheet: live password checklist, Enter = next field,
+  // a corrected field stops showing the server's error. ─────────────
+  document.addEventListener("input", function (e) {
+    var form = e.target.closest && e.target.closest("form[data-pw-check]");
+    if (!form) return;
+    var field = e.target.closest(".field.invalid");
+    if (field && !e.target.hasAttribute("hx-get")) {
+      field.classList.remove("invalid");
+      var err = field.querySelector(".error"); if (err) err.remove();
+    }
+    var pw = form.querySelector("[data-pw]"), again = form.querySelector("[data-pw-confirm]");
+    if (!pw || !again) return;                                     // name-only forms
+    var min = parseInt(form.getAttribute("data-min"), 10) || 8;
+    var max = parseInt(form.getAttribute("data-max"), 10) || 64;
+    function rule(name, ok) {
+      var li = form.querySelector('[data-rule="' + name + '"]');
+      if (li) li.classList.toggle("ok", ok);
+    }
+    rule("length", pw.value.length >= min && pw.value.length <= max);
+    rule("match", pw.value.length > 0 && pw.value === again.value);
+  });
+  // «Borrar mi cuenta»: the button wakes up only when the exact name and a
+  // password are typed.
+  document.addEventListener("input", function (e) {
+    var form = e.target.closest && e.target.closest("form[data-delete-form]");
+    if (!form) return;
+    var name = form.querySelector('[name="confirm_name"]'), pw = form.querySelector('[name="password"]');
+    var ok = name.value.trim() === form.getAttribute("data-username") && pw.value.length > 0;
+    form.querySelector("[data-delete-submit]").disabled = !ok;
+  });
+  // ── Invitations: countdown, copy, share; code typing on /registro ──
+  var inviteTimer;
+  function initInvite(root) {
+    var box = root.querySelector ? root.querySelector("[data-invite]") : null;
+    if (!box) return;
+    clearInterval(inviteTimer);
+    var expires = parseInt(box.getAttribute("data-expires"), 10);
+    var out = box.querySelector("[data-countdown]");
+    function tick() {
+      if (!document.body.contains(box)) { clearInterval(inviteTimer); return; }   // sheet closed
+      var left = Math.max(0, Math.round((expires - Date.now()) / 1000));
+      if (out) out.textContent = Math.floor(left / 60) + ":" + ("0" + (left % 60)).slice(-2);
+      if (!left) {
+        clearInterval(inviteTimer);
+        box.classList.add("expired");
+        var gone = box.querySelector(".invite-expired"); if (gone) gone.hidden = false;
+        $$("[data-copy], [data-share]", box.parentElement).forEach(function (b) { b.disabled = true; });
+      }
+    }
+    tick();
+    inviteTimer = setInterval(tick, 1000);
+    if (navigator.share) {
+      $$("[data-share]", box.parentElement).forEach(function (b) { b.hidden = false; });
+      $$("[data-share-fallback]", box.parentElement).forEach(function (b) { b.hidden = true; });
+    }
+  }
+  document.addEventListener("htmx:afterSwap", function (e) { if (e.detail.target) initInvite(e.detail.target); });
+  document.addEventListener("click", function (e) {
+    var copy = e.target.closest && e.target.closest("[data-copy]");
+    if (copy) {
+      var text = copy.getAttribute("data-copy");
+      var done = function () { toast("Código copiado"); };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, function () { toast("No se pudo copiar", "err"); });
+      } else {
+        var range = document.createRange(), el = $("[data-invite-text]");
+        if (el) { range.selectNodeContents(el); var sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+        toast("Mantén pulsado el código para copiarlo");
+      }
+      return;
+    }
+    var share = e.target.closest && e.target.closest("[data-share]");
+    if (share && navigator.share) {
+      var code = share.getAttribute("data-share");
+      navigator.share({
+        title: "Invitación a FAMILYFIN",
+        text: "Tu código para entrar en FAMILYFIN: " + code + " (un solo uso, caduca en 15 minutos). " +
+              "Ábrelo en " + location.origin + "/registro",
+      }).catch(function () {});
+    }
+  });
+  document.addEventListener("input", function (e) {
+    if (!e.target.matches || !e.target.matches("[data-invite-code]")) return;
+    var raw = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    var pretty = raw.length > 4 ? raw.slice(0, 4) + "-" + raw.slice(4) : raw;
+    if (pretty !== e.target.value) e.target.value = pretty;
+  });
+
+  // A password change rotates the session: keep the page's CSRF token current.
+  document.addEventListener("csrfToken", function (e) {
+    var token = e.detail.value;
+    if (!token) return;
+    var meta = $('meta[name="csrf-token"]'); if (meta) meta.content = token;
+    $$('input[name="csrf_token"]').forEach(function (i) { i.value = token; });
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || !e.target.closest || !e.target.closest("form[data-pw-check]")) return;
+    if (e.target.hasAttribute("data-pw-confirm")) return;          // last field: submit
+    var inputs = $$('input:not([type="hidden"])', e.target.form);
+    var next = inputs[inputs.indexOf(e.target) + 1];
+    if (next) { e.preventDefault(); next.focus(); }
+  });
+  // The live name hint decides whether the name field looks invalid.
+  document.addEventListener("htmx:afterSwap", function (e) {
+    var slot = e.detail.target;
+    if (!slot || !slot.hasAttribute || !slot.hasAttribute("data-field-hint")) return;
+    var field = slot.closest(".field");
+    if (field) field.classList.toggle("invalid", !!slot.querySelector(".error"));
+  });
   document.addEventListener("submit", function (e) {
     var button = e.submitter;
     if (!button || !button.hasAttribute("data-busy-label") || e.defaultPrevented) return;
     // After the browser has collected the form data: disable to avoid a double import.
     setTimeout(function () { button.disabled = true; button.textContent = button.getAttribute("data-busy-label"); }, 0);
+  });
+  // Statement upload: the button says how many files were chosen.
+  document.addEventListener("change", function (e) {
+    var input = e.target;
+    if (!input.hasAttribute || !input.hasAttribute("data-statement-files")) return;
+    var label = input.form && input.form.querySelector("[data-upload-label]");
+    if (!label) return;
+    var n = input.files ? input.files.length : 0;
+    label.textContent = n > 1 ? "Subir y revisar " + n + " extractos" : "Subir y revisar";
   });
 
   // ── Topbar shadow + small title once the large title scrolls away ───

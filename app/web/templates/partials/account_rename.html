@@ -1,0 +1,39 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">Cambiar nombre de usuario</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  <p class="note sheet-lead">Ahora entras como <b>{{ user.username }}</b>. El nombre nuevo valdrá en el PC y en la web; tus datos no cambian.</p>
+  <form class="form-grid" hx-post="/mas/cuenta/nombre" hx-target="#sheet-body" hx-disabled-elt="find button[type=submit]"
+        data-pw-check novalidate autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+
+    <label class="field{% if errors.username %} invalid{% endif %}"><span>Nombre nuevo</span>
+      <input class="input" name="username" value="{{ username }}" maxlength="{{ max_username }}" required
+             autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next"
+             placeholder="{{ user.username }}" {% if not username or errors.username %}autofocus{% endif %}
+             hx-get="/mas/cuenta/nombre/disponible" hx-trigger="input changed delay:400ms" hx-target="#rename-hint"
+             hx-swap="innerHTML" hx-sync="this:replace" aria-describedby="rename-hint">
+      <div id="rename-hint" class="hint-slot" data-field-hint aria-live="polite">{% if errors.username %}<small class="error">{{ errors.username }}</small>{% else %}<small class="help">Letras, números, espacios, «.», «_» o «-»; de 2 a {{ max_username }} caracteres.</small>{% endif %}</div>
+    </label>
+
+    <label class="field{% if errors.password %} invalid{% endif %}"><span>Tu contraseña</span>
+      <div class="pw">
+        <input class="input" type="password" name="password" maxlength="256" required autocomplete="current-password"
+               enterkeyhint="done" data-pw-confirm {% if username and not errors.username %}autofocus{% endif %}>
+        <button type="button" data-toggle-password aria-label="Mostrar contraseña">{{ ui.icon("eye", "sm") }}</button>
+      </div>
+      {% if errors.password %}<small class="error">{{ errors.password }}</small>{% else %}<small class="help">Para confirmar que eres tú.</small>{% endif %}
+    </label>
+
+    <div class="sticky-actions">
+      <button class="btn ghost" type="button" data-close-sheet>Cancelar</button>
+      <button class="btn block busy-able" type="submit">
+        <span class="idle">{{ ui.icon("check", "sm") }} Cambiar nombre</span>
+        <span class="busy">{{ ui.icon("refresh", "sm") }} Guardando…</span>
+      </button>
+    </div>
+  </form>
+</div>

@@ -58,7 +58,7 @@ def db_session():
 @pytest.fixture
 def base_data(db_session):
     """Create user, account, and two categories (GASTO + INGRESO type nodes)."""
-    user = create_user(db_session, "pedro_test", "password123")
+    user = create_user(db_session, "pedro_test", "clave-de-prueba")
     account = Account(
         user_id      = user.id,
         account_name = "CaixaBank Principal",
@@ -421,7 +421,7 @@ class TestRulesEngine:
 
 def _second_user(db_session, with_super: bool, username: str = "maria_test"):
     """Another family member with an optional own 'GASTO > Supermercados'."""
-    user = create_user(db_session, username, "password123")
+    user = create_user(db_session, username, "clave-de-prueba", enforce_policy=False)  # may be the DEMO account
     account = Account(user_id=user.id, account_name="Cuenta María")
     db_session.add(account)
     db_session.flush()

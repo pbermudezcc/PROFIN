@@ -63,7 +63,7 @@ USER, PASSWORD = "demo", "demo-pass"
 def _seed(Session) -> None:
     random.seed(7)
     db = Session()
-    user = create_user(db, USER, PASSWORD)
+    user = create_user(db, USER, PASSWORD, enforce_policy=False)   # fixed preview account
     seed_default_categories(db, user.id)
     seed_default_rules(db, user.id)
     acc = Account(user_id=user.id, account_name="CaixaBank Principal", bank="CaixaBank", iban_last4="4821")

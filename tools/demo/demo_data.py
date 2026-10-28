@@ -504,7 +504,7 @@ def populate(session, username: str, password: str, statements_dir: Path, offlin
     for old in statements_dir.glob("CaixaBank_Movimientos_*.xlsx"):
         old.unlink()
     rng = random.Random(20251)
-    user = create_user(session, username, password)
+    user = create_user(session, username, password, enforce_policy=False)   # fixed demo account (reserved name)
     account = Account(user_id=user.id, account_name="CaixaBank Nómina", bank="CaixaBank", iban_last4=IBAN[-4:])
     session.add(account)
     session.commit()
@@ -537,7 +537,7 @@ def populate(session, username: str, password: str, statements_dir: Path, offlin
         path = statements_dir / f"CaixaBank_Movimientos_{year}-{month:02d}.xlsx"
         write_statement(path, rows, days[0], days[-1])
         statements += 1
-        preview = prepare_import(path, session, user.id, account.id)
+        preview = prepare_import([path], session, user.id, account.id)
         result = run_import(session, user.id, preview, account.id, {})
         imported += len(result.summary.imported_ids)
         skipped += len(preview.df) - len(result.summary.imported_ids)
