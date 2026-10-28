@@ -5,6 +5,55 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.8.1.md`  |  **Files:** 141  |  **Handler:** v1.0.0
+**Date:** 2026-10-28 23:23  |  **Type:** Release
+**Description:** Desde el móvil ya se puede invitar a alguien de la familia con un código de un solo uso y gestionar la propia cuenta: cambiar la contraseña, el nombre de usuario o borrarla con una copia de seguridad previa en el PC. Ahora se pueden importar varios extractos de CaixaBank a la vez, en la web y en el PC, sin duplicar movimientos aunque los periodos se solapen. Además, las cuentas son más seguras: reglas de contraseña comunes al PC y a la web y varias correcciones al borrar una cuenta.
+
+### Novedades
+
+- **Invitar a alguien de la familia.** En *Ajustes → Familia* aparece la lista de miembros y el botón «Invitar a alguien», que genera un código como `7KQM-4XTR`: sirve una sola vez, caduca a los 15 minutos y se puede copiar o compartir. La persona invitada pulsa «¿Tienes un código de invitación?» en la pantalla de acceso, elige su usuario y su contraseña y entra directamente. Nadie puede registrarse sin código, así que nadie más de tu wifi puede abrir una cuenta (`bb9809d`).
+- **Mi cuenta desde el móvil.** En *Ajustes → Mi cuenta* cada miembro puede cambiar su contraseña (se cierra la sesión en sus otros dispositivos), cambiar su nombre de usuario o borrar su cuenta. Antes de borrarla se guarda una copia completa en la carpeta de copias del PC; si la copia falla, no se borra nada. Nadie puede tocar la cuenta de otro miembro (`bb9809d`).
+- **Contraseñas y nombres más seguros, en el PC y en la web.** Las contraseñas nuevas deben tener entre 8 y 64 caracteres, no pueden ser tu nombre ni una contraseña muy común; mejor una frase fácil de recordar. Las contraseñas actuales siguen valiendo. No se admiten nombres casi iguales a otro («Ana» y «ana», «Lucía» y «Lucia») (`bb9809d`).
+- **Importar varios extractos de CaixaBank a la vez.** En la web y en el PC puedes elegir (o arrastrar) varios archivos de golpe. Se comprueban uno a uno, los movimientos repetidos entre extractos que se solapan se importan una sola vez, y los archivos que no sirven (otra cuenta, el mismo archivo dos veces, ilegibles) se avisan con el motivo sin frenar al resto (`9491ad3`).
+
+### Correcciones
+
+- **Borrar una cuenta ya no borra reglas de toda la familia.** Si alguna regla global usa las categorías de esa cuenta, se avisa para moverla o borrarla antes desde el PC. Además queda un registro de qué cuenta se borró y dónde está su copia (`bb9809d`).
+- **Las sesiones web de una cuenta borrada se cierran al momento**, también si se borra desde el PC; antes seguían abiertas hasta caducar (`bb9809d`).
+- **La pantalla de acceso ya no deja adivinar qué nombres de usuario existen** por lo que tarda en responder, y los intentos de contraseña desde *Mi cuenta* cuentan como los del acceso (`bb9809d`).
+- **Una contraseña muy larga mostraba un error técnico en inglés** al crear la cuenta en el PC; ahora explica el problema en español (`bb9809d`).
+- **Los paneles inferiores se pueden desplazar en el iPhone y no quedan tapados por el teclado** (`e76e9bd`).
+
+### Interno
+
+- Registro de la publicación de la versión 0.8.0 en el historial del asistente (`add3b57`).
+
+### A tener en cuenta
+
+- En el PC, *Eliminar cuenta* pide ahora también tu contraseña, y antes de borrar guarda una copia `profin_predelete_*.zip` en la carpeta de copias.
+- La web ya no permite crear usuarios directamente: cada alta es por invitación.
+
+### Áreas afectadas
+
+- **Importación de extractos**: `app/ingestion/duplicate_detector.py`, `app/ingestion/import_service.py`, `app/ingestion/importer.py`
+- **Configuración y copias de seguridad**: `app/settings/settings_manager.py`
+- **Usuarios y acceso**: `app/auth/account_rules.py`, `app/auth/account_service.py`, `app/auth/auth_service.py`, `app/auth/common_passwords.txt`
+- **Interfaz**: `app/gui/import_view.py`, `app/gui/login_window.py`, `app/gui/main_window.py`, `app/gui/settings_view.py`
+- **Tests**: `tests/test_auth.py`, `tests/test_backup_and_migrations.py`, `tests/test_category_manager.py`, `tests/test_duplicate_detector.py`, `tests/test_gui_smoke.py`, `tests/test_import_pipeline.py` y 6 más
+- **Herramientas de desarrollo y agentes**: `tools/demo/capture_screens.py`, `tools/demo/demo_data.py`, `tools/web_preview.py`
+- **Documentación**: `docs/agent/agent_log.md`, `docs/agent/lessons_learned.md`, `docs/manual/index.html`, `docs/web_parity_plan.md`
+
+<details><summary>Commits incluidos (4 desde v0.8.0)</summary>
+
+- `bb9809d` feat(cuenta): user management on the web — invitations, Mi cuenta, shared account rules
+- `9491ad3` feat(importar): import several CaixaBank statements at once
+- `e76e9bd` fix(web): bottom sheets scroll on the iPhone and stay above the keyboard
+- `add3b57` docs(agent_log): record v0.8.0 release
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.8.0.md`  |  **Files:** 136  |  **Handler:** v1.0.0
 **Date:** 2026-10-27 23:10  |  **Type:** Release
 **Description:** La cartera de inversiones se gestiona ya desde el iPad: se importa el «Estado de cuenta» de DEGIRO y se actualizan las cotizaciones desde la web, sin pasar por el PC. El valor de la cartera incluye ahora el efectivo sin invertir del bróker, así que cuadra con la «Cuenta completa» de DEGIRO. Además, las categorías y reglas se pueden exportar e importar entre usuarios, hay búsqueda completa en Movimientos y en Reglas, y la aplicación trae su manual de usuario.
