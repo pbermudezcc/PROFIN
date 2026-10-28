@@ -640,16 +640,23 @@ input[type="file"].input::file-selector-button { font: inherit; font-weight: 600
 @media (min-width: 768px) { .fab { bottom: var(--s-6); right: var(--s-6); } }
 
 /* ── Bottom sheet / dialogs ───────────────────────────────────────── */
-dialog.sheet { border: 0; padding: 0; margin: auto 0 0; width: 100%; max-width: 100%; max-height: 92dvh;
+/* --kb / --vvh are set by app.js from visualViewport: on iOS the on-screen keyboard
+   does not shrink the layout viewport, so the sheet is lifted above it by hand. */
+dialog.sheet { border: 0; padding: 0; margin: auto 0 var(--kb, 0px); width: 100%; max-width: 100%;
+               max-height: min(92dvh, calc(var(--vvh, 100dvh) - 12px));
                background: var(--surface); color: var(--text); border-radius: var(--r-xl) var(--r-xl) 0 0;
                box-shadow: var(--shadow-lg); overflow: hidden; }
 dialog.sheet[open] { animation: sheet-in .28s var(--ease); display: flex; flex-direction: column; }
+/* The wrapper between the dialog and .sheet-b must be allowed to shrink, or .sheet-b
+   grows to its content, gets clipped by the dialog and never scrolls. */
+#sheet-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 dialog.sheet::backdrop, dialog.confirm::backdrop { background: var(--backdrop); animation: fade-in .2s; }
 .sheet .grab { width: 38px; height: 5px; border-radius: 99px; background: var(--border-strong); margin: 8px auto 0; flex: none; }
 .sheet-h { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
            padding: var(--s-3) var(--s-5) var(--s-2); flex: none; }
 .sheet-h h3 { font-size: var(--fs-lg); font-weight: 650; }
-.sheet .sheet-b { padding: var(--s-2) var(--s-5) calc(var(--s-6) + var(--safe-b)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheet .sheet-b { padding: var(--s-2) var(--s-5) calc(var(--s-6) + var(--safe-b)); overflow-y: auto; -webkit-overflow-scrolling: touch;
+                  flex: 1 1 auto; min-height: 0; overscroll-behavior: contain; }
 @media (min-width: 768px) {
   dialog.sheet { margin: auto; width: min(580px, 92vw); border-radius: var(--r-xl); max-height: 86vh; }
   dialog.sheet[open] { animation: pop-in .22s var(--ease); }

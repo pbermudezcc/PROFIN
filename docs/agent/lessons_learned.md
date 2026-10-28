@@ -142,3 +142,10 @@ Entry format:
 - Root cause: the preview overrides `get_db` (request sessions) with its demo DB, but the new background price refresh opens sessions through `app.state.session_factory`, which defaults to `database.SessionLocal` — the real `%LOCALAPPDATA%\FAMILYFIN\data\profin.db`. Verified nothing was written (the fake provider had no data for real symbols).
 - Fix: `create_app(session_factory=…)`; the preview and `tests/test_web.py` pass their own factory.
 - Prevention: anything in the web layer that opens a session outside a request must go through `app.state.session_factory`, and every harness that overrides `get_db` must set it too. Same for `market_provider` (tests use an offline one by default: never the network).
+
+## 2026-10-28 — Web: bottom sheets did not scroll on the iPhone; keyboard hid "Crear categoría"
+- Area: web / css / js
+- Symptom: on the iPhone a transaction's sheet in Movimientos could not be scrolled down to the category list; in "Nueva categoría" the submit button could not be reached once the fields were filled.
+- Root cause: (1) `dialog.sheet` is a flex column with `overflow: hidden`, but the scrolling `.sheet-b` sat inside `#sheet-body`, a plain block with no height limit; it grew to the content, was clipped by the dialog, and `.sheet-b` never had a bounded height to scroll in. (2) iOS does not shrink the layout viewport when the keyboard opens, so a bottom-anchored sheet stays behind the keyboard.
+- Fix: `#sheet-body` and `.sheet-b` are `flex: 1 1 auto; min-height: 0`; app.js sets `--kb`/`--vvh` on the sheet from `visualViewport` and the CSS lifts it above the keyboard and caps its height to the visible area (app/web/static/css/app.css, app/web/static/js/app.js).
+- Prevention: every wrapper between a height-capped flex container and its scrolling child needs `min-height: 0`. Check sheets on a phone with a long list and with the keyboard open, not only on desktop.

@@ -52,6 +52,20 @@
     }
   }, true);
   document.addEventListener("closeSheet", closeSheet);
+  // iOS keeps the layout viewport full height when the keyboard opens, so a
+  // bottom sheet would sit behind it: track the visible area instead.
+  if (window.visualViewport) {
+    var fitSheet = function () {
+      var d = sheet(), vv = window.visualViewport;
+      if (!d) return;
+      var kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      d.style.setProperty("--kb", kb + "px");
+      d.style.setProperty("--vvh", Math.round(vv.height) + "px");
+    };
+    window.visualViewport.addEventListener("resize", fitSheet);
+    window.visualViewport.addEventListener("scroll", fitSheet);
+    fitSheet();
+  }
   document.addEventListener("refreshPage", function () {
     // Only the page content: the toast and the sheet live outside #main.
     if (window.htmx) htmx.ajax("GET", window.location.pathname + window.location.search,
