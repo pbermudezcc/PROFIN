@@ -18,7 +18,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class PendingImport:
     user_id: int
     sid: str
     account_id: int
-    filename: str
+    filenames: List[str]
     directory: Path
     preview: Any                       # app.ingestion.importer.ImportPreview
     created: float = field(default_factory=time.monotonic)
@@ -41,6 +41,10 @@ class PendingImport:
     @property
     def expired(self) -> bool:
         return time.monotonic() - self.created > TTL
+
+    @property
+    def label(self) -> str:
+        return self.filenames[0] if len(self.filenames) == 1 else f"{len(self.filenames)} extractos"
 
 
 class PendingImports:
@@ -50,13 +54,15 @@ class PendingImports:
 
     @staticmethod
     def new_directory() -> Path:
-        """Private temp folder for one upload (user-only permissions)."""
+        """Private temp folder for one upload (user-only permissions); the
+        statements of a multi-file upload each get a numbered subfolder, so
+        identically named exports never overwrite each other."""
         return Path(tempfile.mkdtemp(prefix=PREFIX))
 
-    def add(self, user_id: int, sid: str, account_id: int, filename: str,
+    def add(self, user_id: int, sid: str, account_id: int, filenames: List[str],
             directory: Path, preview: Any) -> str:
         token = secrets.token_urlsafe(18)
-        item = PendingImport(token, user_id, sid, account_id, filename, directory, preview)
+        item = PendingImport(token, user_id, sid, account_id, list(filenames), directory, preview)
         with self._lock:
             self._sweep_locked()
             # Keep only the newest few per user.

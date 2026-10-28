@@ -272,7 +272,7 @@ def capture_web(port: int = 8799) -> None:
     if pending:
         with pending[0].open("rb") as fh:
             r = requests.post(f"{base}/importar", verify=False, allow_redirects=False, headers={"Origin": base},
-                              files={"fichero": (pending[0].name, fh)}, data={CSRF_FIELD: web_session.csrf})
+                              files={"ficheros": (pending[0].name, fh)}, data={CSRF_FIELD: web_session.csrf})
         if r.status_code == 303:
             preview = r.headers["location"]
             print(f"  Extracto pendiente subido para la previsualización ({preview})")

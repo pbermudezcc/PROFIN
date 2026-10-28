@@ -4,7 +4,8 @@ app/gui/import_view.py
 FAMILYFIN — Import View (Fase 4b)
 
 Flow:
-  Step 1 — File selection  : Browse for .xlsx file
+  Step 1 — File selection  : Browse for (or drop) one or several .xls/.xlsx
+                             statements of the account
   Step 2 — Preview         : Table showing new vs duplicate rows
                              + duplicate resolution dialogs
   Step 3 — Confirm         : Commit to DB, show import summary
@@ -13,12 +14,14 @@ Design decisions:
   - Uses prepare_import() (no DB writes) for preview
   - Uses commit_import() for final DB writes
   - Preview table columns: Fecha | Emisor | Concepto | Importe | Tipo | Saldo
+    (+ Extracto when several files are imported together)
   - Duplicates flagged in orange; user resolves via inline checkbox
   - Auto-categorization runs after commit
 """
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Optional, Dict, List
 
 from PySide6.QtCore    import Qt, QThread, Signal, QObject
@@ -45,9 +48,9 @@ class _ParseWorker(QObject):
     finished = Signal(object)   # ImportPreview or Exception
     error    = Signal(str)
 
-    def __init__(self, file_path: str, user_id: int, account_id: int) -> None:
+    def __init__(self, file_paths: List[Path], user_id: int, account_id: int) -> None:
         super().__init__()
-        self._file_path  = file_path
+        self._file_paths = file_paths
         self._user_id    = user_id
         self._account_id = account_id
 
@@ -60,7 +63,7 @@ class _ParseWorker(QObject):
         session = get_session()
         try:
             preview = prepare_import(
-                file_path  = self._file_path,
+                file_paths = self._file_paths,
                 session    = session,
                 user_id    = self._user_id,
                 account_id = self._account_id,
@@ -83,6 +86,10 @@ class ImportView(QWidget):
     STEP_PREVIEW = 1
     STEP_SUMMARY = 2
 
+    COL_FILE   = 6
+    COL_IMPORT = 7
+    EXTENSIONS = (".xls", ".xlsx")
+
     def __init__(self, user: User, session: Session,
                  theme: str = "light") -> None:
         super().__init__()
@@ -97,6 +104,7 @@ class ImportView(QWidget):
         self._build_ui()
         self._apply_theme()
         self._ensure_account()
+        self.setAcceptDrops(True)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -147,7 +155,7 @@ class ImportView(QWidget):
         layout.setContentsMargins(24, 0, 24, 0)
         layout.setSpacing(0)
 
-        steps = ["1  Seleccionar fichero",
+        steps = ["1  Seleccionar extractos",
                  "2  Previsualizar",
                  "3  Resultado"]
         self._step_labels: List[QLabel] = []
@@ -193,12 +201,12 @@ class ImportView(QWidget):
         )
         dz_layout.addWidget(lbl_icon)
 
-        lbl_drop = QLabel("Selecciona el fichero de CaixaBank (.xls / .xlsx)")
+        lbl_drop = QLabel("Selecciona o arrastra uno o varios extractos de CaixaBank")
         lbl_drop.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_drop.setObjectName("dropZoneText")
         dz_layout.addWidget(lbl_drop)
 
-        lbl_hint = QLabel("Formato: export CaixaBank — 24 columnas sin cabecera")
+        lbl_hint = QLabel("Excel .xls / .xlsx — si se solapan, cada movimiento se guarda una vez")
         lbl_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_hint.setObjectName("dropZoneHint")
         dz_layout.addWidget(lbl_hint)
@@ -206,7 +214,7 @@ class ImportView(QWidget):
         dz_layout.addSpacing(8)
 
         self._btn_browse = QPushButton(
-            "  Buscar fichero..."
+            "  Buscar extractos..."
         )
         self._btn_browse.setIcon(
             qta.icon("mdi.folder-open-outline", color="#FFFFFF")
@@ -239,7 +247,7 @@ class ImportView(QWidget):
                          alignment=Qt.AlignmentFlag.AlignCenter)
 
         # Parse button
-        self._btn_parse = QPushButton("  Analizar fichero")
+        self._btn_parse = QPushButton("  Analizar")
         self._btn_parse.setIcon(
             qta.icon("mdi.magnify", color="#FFFFFF")
         )
@@ -252,7 +260,7 @@ class ImportView(QWidget):
         layout.addWidget(self._btn_parse,
                          alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self._selected_path: Optional[str] = None
+        self._selected_paths: List[Path] = []
         return w
 
     def _make_step_preview(self) -> QWidget:
@@ -290,10 +298,10 @@ class ImportView(QWidget):
 
         # Transaction table
         self._tbl_preview = QTableWidget()
-        self._tbl_preview.setColumnCount(7)
+        self._tbl_preview.setColumnCount(8)
         self._tbl_preview.setHorizontalHeaderLabels([
             "Fecha", "Emisor", "Concepto",
-            "Importe", "Tipo", "Saldo", "Importar"
+            "Importe", "Tipo", "Saldo", "Extracto", "Importar"
         ])
         self._tbl_preview.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
@@ -312,8 +320,9 @@ class ImportView(QWidget):
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        self._tbl_preview.setColumnWidth(6, 80)
+        hdr.setSectionResizeMode(self.COL_FILE, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(self.COL_IMPORT, QHeaderView.ResizeMode.Fixed)
+        self._tbl_preview.setColumnWidth(self.COL_IMPORT, 80)
 
         layout.addWidget(self._tbl_preview)
 
@@ -417,19 +426,41 @@ class ImportView(QWidget):
     # ------------------------------------------------------------------
 
     def _on_browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar fichero CaixaBank",
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Seleccionar extractos de CaixaBank",
             os.path.expanduser("~"),
             "Ficheros CaixaBank (*.xls *.xlsx);;Todos los ficheros (*)"
         )
-        if path:
-            self._selected_path = path
-            fname = os.path.basename(path)
-            self._lbl_selected.setText(f"📄  {fname}")
-            self._btn_parse.setEnabled(True)
+        if paths:
+            self._select([Path(p) for p in paths])
+
+    def _select(self, paths: List[Path]) -> None:
+        self._selected_paths = paths
+        if len(paths) == 1:
+            self._lbl_selected.setText(f"📄  {paths[0].name}")
+        else:
+            self._lbl_selected.setText(f"📄  {len(paths)} extractos seleccionados")
+        self._lbl_selected.setToolTip("\n".join(p.name for p in paths))
+        self._btn_parse.setEnabled(True)
+
+    def _dropped_statements(self, event) -> List[Path]:
+        if not event.mimeData().hasUrls():
+            return []
+        paths = [Path(u.toLocalFile()) for u in event.mimeData().urls() if u.isLocalFile()]
+        return [p for p in paths if p.suffix.lower() in self.EXTENSIONS]
+
+    def dragEnterEvent(self, event) -> None:
+        if self._stack.currentIndex() == self.STEP_SELECT and self._dropped_statements(event):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        paths = self._dropped_statements(event)
+        if paths and self._btn_browse.isEnabled():
+            self._select(paths)
+            event.acceptProposedAction()
 
     def _on_parse(self) -> None:
-        if not self._selected_path:
+        if not self._selected_paths:
             return
         if self._account_id is None:
             QMessageBox.warning(
@@ -445,9 +476,8 @@ class ImportView(QWidget):
 
         # Run in background thread
         self._thread = QThread()
-        from pathlib import Path
         self._worker = _ParseWorker(
-            Path(self._selected_path), self._user.id, self._account_id
+            list(self._selected_paths), self._user.id, self._account_id
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -464,6 +494,13 @@ class ImportView(QWidget):
         self._preview = preview
         self._populate_preview_table(preview)
         self._go_to_step(self.STEP_PREVIEW)
+        if preview.rejected:
+            QMessageBox.warning(
+                self, "Extractos no incluidos",
+                "Estos ficheros no se importarán:\n\n" + "\n".join(
+                    f"• {r.name}: {r.reason}" for r in preview.rejected
+                ),
+            )
 
     def _on_parse_error(self, error_msg: str) -> None:
         self._progress.setVisible(False)
@@ -497,8 +534,12 @@ class ImportView(QWidget):
         n_skip     = len(dup_result.auto_skip)
         n_review   = len(dup_result.needs_review)
         n_clean    = len(dup_result.clean)
+        many       = len(preview.files) > 1
 
-        self._lbl_total.setText(f"  {n_total} filas")
+        self._lbl_total.setText(
+            f"  {n_total} filas en {len(preview.files)} extractos" if many
+            else f"  {n_total} filas"
+        )
         self._lbl_new.setText(f"  {n_clean} nuevas")
         self._lbl_dups.setText(f"  {n_review} posibles duplicados")
         self._lbl_skip.setText(f"  {n_skip} omitidas (exactas)")
@@ -507,6 +548,7 @@ class ImportView(QWidget):
         visible_indices = sorted(dup_result.clean + dup_result.needs_review)
 
         self._tbl_preview.setRowCount(len(visible_indices))
+        self._tbl_preview.setColumnHidden(self.COL_FILE, not many)
         self._decisions = {}
 
         type_labels = {
@@ -563,10 +605,13 @@ class ImportView(QWidget):
                 Qt.AlignmentFlag.AlignVCenter
             )
 
+            # -- Extracto (source file of the row)
+            item_file = QTableWidgetItem(str(row.get("source_file", "") or ""))
+
             # -- Apply row styling
             for col, item in enumerate([
                 item_date, item_issuer, item_concept,
-                item_amount, item_type, item_balance
+                item_amount, item_type, item_balance, item_file
             ]):
                 item.setFlags(
                     Qt.ItemFlag.ItemIsEnabled |
@@ -580,7 +625,7 @@ class ImportView(QWidget):
                     )
                 self._tbl_preview.setItem(tbl_row, col, item)
 
-            # -- Checkbox col 6: clean=checked, needs_review=unchecked
+            # -- Checkbox column: clean=checked, needs_review=unchecked
             chk = QCheckBox()
             chk.setChecked(not is_review)
             chk.setStyleSheet("margin-left: 24px;")
@@ -591,7 +636,7 @@ class ImportView(QWidget):
                     idx, state == Qt.CheckState.Checked.value
                 )
             )
-            self._tbl_preview.setCellWidget(tbl_row, 6, chk)
+            self._tbl_preview.setCellWidget(tbl_row, self.COL_IMPORT, chk)
 
         self._tbl_preview.resizeRowsToContents()
         import logging
@@ -643,6 +688,7 @@ class ImportView(QWidget):
                 imported    = result.rows_imported,
                 skipped     = result.rows_skipped,
                 auto_cat    = auto_cat,
+                files       = len(result.batch_ids),
             )
 
         except Exception as exc:
@@ -650,7 +696,7 @@ class ImportView(QWidget):
 
     def _show_summary(self, success: bool,
                        imported: int = 0, skipped: int = 0,
-                       auto_cat: int = 0,
+                       auto_cat: int = 0, files: int = 1,
                        error: str = "") -> None:
         t = self._t
         if success:
@@ -663,6 +709,7 @@ class ImportView(QWidget):
                 f"color: {t['income']}; font-size: 20px; font-weight: 700;"
             )
             self._lbl_summary_detail.setText(
+                (f"<b>{files}</b> extractos  ·  " if files > 1 else "") +
                 f"<b>{imported}</b> transacciones importadas  ·  "
                 f"<b>{skipped}</b> omitidas  ·  "
                 f"<b>{auto_cat}</b> auto-categorizadas"

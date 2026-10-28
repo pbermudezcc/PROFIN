@@ -46,7 +46,7 @@ def db_session():
 @pytest.fixture
 def user_and_account(db_session):
     """Create a user + account and return (user_id, account_id)."""
-    user = create_user(db_session, "pedro_test", "password123")
+    user = create_user(db_session, "pedro_test", "clave-de-prueba")
     account = Account(
         user_id=user.id,
         account_name="CaixaBank Principal",

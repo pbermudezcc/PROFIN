@@ -5,12 +5,14 @@ FAMILYFIN — CaixaBank statement import for one logged-in user.
 
 Qt-free steps shared by the desktop ImportView and the web upload flow:
   1. ensure_default_account → the account statements go to.
-  2. prepare_import (importer.py) → parse + validate + duplicate check.
+  2. prepare_import (importer.py) → parse + validate + duplicate check of
+     one or several statements of the account.
   3. run_import → write the approved rows, then auto-categorize them.
 """
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Dict, List
 
@@ -23,6 +25,7 @@ from app.ingestion.importer import ImportPreview, ImportSummary, commit_import
 logger = logging.getLogger(__name__)
 
 DEFAULT_ACCOUNT_NAME = "CaixaBank Principal"
+PLACEHOLDER_IBAN_LAST4 = "0000"
 
 
 def ensure_default_account(session: Session, user_id: int) -> Account:
@@ -33,7 +36,7 @@ def ensure_default_account(session: Session, user_id: int) -> Account:
     )
     if account is not None:
         return account
-    account = Account(user_id=user_id, account_name=DEFAULT_ACCOUNT_NAME, iban_last4="0000")
+    account = Account(user_id=user_id, account_name=DEFAULT_ACCOUNT_NAME, iban_last4=PLACEHOLDER_IBAN_LAST4)
     session.add(account)
     session.commit()
     session.refresh(account)
@@ -60,10 +63,14 @@ def run_import(
 ) -> ImportResult:
     """Write the rows (clean ones always; possible duplicates only when
     decisions[row] is True; exact duplicates never) and categorize the new
-    transactions with the user's rules."""
+    transactions with the user's rules. An account still without its IBAN
+    learns it from the statements."""
     account = session.get(Account, account_id)
     if account is None or account.user_id != user_id:
         raise LookupError("Cuenta no encontrada.")
+    digits = re.sub(r"\D", "", preview.iban)
+    if account.iban_last4 in (None, "", PLACEHOLDER_IBAN_LAST4) and len(digits) >= 4:
+        account.iban_last4 = digits[-4:]       # committed with the import
     summary = commit_import(preview, session, user_id, account_id, decisions)
     auto_categorized = 0
     if summary.imported_ids:

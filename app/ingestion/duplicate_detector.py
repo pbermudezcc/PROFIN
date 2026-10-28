@@ -21,6 +21,10 @@ Duplicate detection priority rules (from spec):
 
   D-4  Never silently guess on ambiguous cases — always defer to user.
 
+  D-5  One import may hold several overlapping exports (column
+       `source_file`). A row another file of the same import already holds
+       as many times is that same movement → auto-skip.
+
 Output:
   DuplicateCheckResult.auto_skip    : rows to skip (D-1 certain duplicates)
   DuplicateCheckResult.needs_review : rows needing user confirmation (D-3)
@@ -30,7 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -114,9 +118,7 @@ def check_duplicates(
 
     # -- Build lookup set from existing transactions ----------------------
     # Key for D-1 exact match: (date, concepto_comun, amount, running_balance)
-    # Key for D-2/D-3 partial: (date, concepto_comun, amount)
     existing_exact: Set[Tuple] = set()
-    existing_partial: Set[Tuple] = set()
 
     existing_txns = (
         session.query(
@@ -133,31 +135,46 @@ def check_duplicates(
     )
 
     for txn in existing_txns:
-        exact_key   = (txn.transaction_date, txn.concepto_comun,
-                       txn.amount, txn.running_balance)
-        partial_key = (txn.transaction_date, txn.concepto_comun, txn.amount)
-        existing_exact.add(exact_key)
-        existing_partial.add(partial_key)
+        existing_exact.add((txn.transaction_date, txn.concepto_comun,
+                            txn.amount, txn.running_balance))
 
     # -- Check each incoming row -----------------------------------------
-    # Track duplicates WITHIN the incoming batch itself (intra-batch)
-    # to catch duplicate rows inside the same file.
-    intra_batch_exact: Set[Tuple]   = set()
-    intra_batch_partial: Set[Tuple] = set()
+    # Track the rows already seen in THIS import, per source file. A batch can
+    # hold several overlapping CaixaBank exports of the same account: a row
+    # that another file of the batch already holds the same number of times
+    # is the same movement exported twice, not a new one. Inside one file, an
+    # exact repeat follows the D-1 / D-3 rules as before.
+    seen: Dict[Tuple, Dict[object, int]] = {}
+    has_source = "source_file" in incoming.columns
 
     for idx, row in incoming.iterrows():
         txn_date    = row["transaction_date"]
         conc_comun  = row.get("concepto_comun")
         amount      = row["amount"]
         balance     = row["running_balance"]
+        source      = row["source_file"] if has_source else None
 
         exact_key   = (txn_date, conc_comun, amount, balance)
-        partial_key = (txn_date, conc_comun, amount)
+        counts      = seen.setdefault(exact_key, {})
+        in_this     = counts.get(source, 0)
+        other       = max(
+            ((n, src) for src, n in counts.items() if src != source),
+            default=(0, None), key=lambda item: item[0],
+        )
+        counts[source] = in_this + 1
+
+        # Same movement already present in another file of this import
+        if in_this < other[0]:
+            result.auto_skip.append(idx)
+            result.skip_reasons[idx] = (
+                f"Duplicado exacto en el extracto «{other[1]}»: "
+                f"{txn_date} | {conc_comun} | {amount:+.2f} € | "
+                f"Saldo {balance:.2f} €"
+            )
+            continue
 
         # D-3: exact match on a zero-amount row → ambiguous, ask the user
-        if amount == 0 and (
-            exact_key in existing_exact or exact_key in intra_batch_exact
-        ):
+        if amount == 0 and (exact_key in existing_exact or in_this):
             result.needs_review.append(idx)
             where = "en BD" if exact_key in existing_exact else "dentro del fichero"
             result.review_reasons[idx] = (
@@ -177,8 +194,8 @@ def check_duplicates(
             )
             continue
 
-        # D-1 intra-batch: exact match within this same file → auto-skip
-        if exact_key in intra_batch_exact:
+        # D-1 intra-file: exact match within this same file → auto-skip
+        if in_this:
             result.auto_skip.append(idx)
             result.skip_reasons[idx] = (
                 f"Duplicado exacto dentro del fichero: "
@@ -188,17 +205,7 @@ def check_duplicates(
             continue
 
         # D-2: Partial match (same date + concepto + amount, diff balance)
-        # → This is a genuine repeated transaction. Import as clean, no flag.
-        # (We do NOT add a needs_review here per spec rule D-2.)
-
-        # D-2: Partial match (same date + concepto + amount, diff balance)
-        # → This is a genuine repeated transaction and should be imported
-        # as a normal row (clean). No user flagging for intra-batch partial
-        # matches per spec. We therefore fall through to the 'clean' branch.
-
-        # Clean row
+        # → a genuine repeated transaction: imported as a normal (clean) row.
         result.clean.append(idx)
-        intra_batch_exact.add(exact_key)
-        intra_batch_partial.add(partial_key)
 
     return result

@@ -16,8 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app.auth.auth_service import create_user
 from app.db.models import Account, AuditLog, Base, Transaction
 from app.ingestion.duplicate_detector import DuplicateCheckResult
-from app.ingestion.importer import ImportPreview, commit_import
-from app.ingestion.validator import ValidationResult
+from app.ingestion.importer import ImportPreview, StatementFile, commit_import
 
 
 @pytest.fixture
@@ -44,18 +43,18 @@ def _preview(rows: list[dict], duplicates: DuplicateCheckResult) -> ImportPrevie
         "raw_details":      "TARJETA   1234",
         "currency":         "EUR",
         "iban_raw":         "ES00",
+        "source_file":      "movimientos.xls",
     }
     df = pd.DataFrame([{**defaults, **row} for row in rows])
-    return ImportPreview(
-        df=df,
-        validation_result=ValidationResult(row_count=len(df), iban="ES00"),
-        duplicate_result=duplicates,
-        file_path=Path("C:/banco/movimientos.xls"),
+    statement = StatementFile(
+        name="movimientos.xls", path=Path("C:/banco/movimientos.xls"), iban="ES00",
+        rows=len(df), first=date(2026, 9, 1), last=date(2026, 9, 1),
     )
+    return ImportPreview(df=df, files=[statement], duplicate_result=duplicates)
 
 
 def test_commit_import_persists_raw_details_and_audit_record_id(db_session):
-    user = create_user(db_session, "ana", "secreto1")
+    user = create_user(db_session, "ana", "clave-secreta-1")
     account = Account(user_id=user.id, account_name="Cuenta")
     db_session.add(account)
     db_session.commit()
@@ -71,7 +70,7 @@ def test_commit_import_persists_raw_details_and_audit_record_id(db_session):
 
 
 def test_commit_import_skips_unresolved_review_rows(db_session):
-    user = create_user(db_session, "ana", "secreto1")
+    user = create_user(db_session, "ana", "clave-secreta-1")
     account = Account(user_id=user.id, account_name="Cuenta")
     db_session.add(account)
     db_session.commit()

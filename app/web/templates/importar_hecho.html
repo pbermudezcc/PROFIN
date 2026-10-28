@@ -2,25 +2,41 @@
 {% block title %}Importación completada{% endblock %}
 {% block topbar %}{{ ui.topnav("Completada", "Importar extracto", "/importar") }}{% endblock %}
 {% block content %}
+{% set many = batches|length > 1 %}
 <div class="card done section">
   <div class="art">{{ ui.icon("check") }}</div>
-  <h1 class="display">{{ batch.rows_imported }} movimientos importados</h1>
-  <p class="muted">{{ batch.filename }}{% if first %} · {{ first|fdate }} – {{ last|fdate }}{% endif %}</p>
+  <h1 class="display">{{ imported }} movimientos importados</h1>
+  <p class="muted">{{ "%d extractos"|format(batches|length) if many else batches[0].filename }}{% if first %} · {{ first|fdate }} – {{ last|fdate }}{% endif %}</p>
 </div>
 
 <div class="kpis section">
-  {{ ui.kpi("Importados", batch.rows_imported, "nuevos en tu cuenta", "income") }}
+  {{ ui.kpi("Importados", imported, "nuevos en tu cuenta", "income") }}
   {{ ui.kpi("Categorizados", auto, "por tus reglas", "") }}
-  {{ ui.kpi("Omitidos", batch.rows_skipped, "duplicados", "") }}
+  {{ ui.kpi("Omitidos", skipped, "duplicados", "") }}
 </div>
 
+{% if many %}
+<div class="section-h"><h2>Extractos</h2></div>
+<div class="list">
+  {% for b in batches %}
+  <div class="row">
+    <div class="ic {{ 'income' if b.rows_imported else 'accent' }}">{{ ui.icon("file", "sm") }}</div>
+    <div class="body">
+      <div class="t">{{ b.filename }}</div>
+      <div class="d faint">{{ b.rows_imported }} importados · {{ b.rows_skipped }} omitidos</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="wrap-gap section">
-  {% if batch.rows_imported %}
+  {% if imported %}
   <a class="btn" href="/movimientos?desde={{ first }}&hasta={{ last }}">{{ ui.icon("list", "sm") }} Ver los movimientos</a>
   {% endif %}
-  {% if batch.rows_imported > auto %}
+  {% if imported > auto %}
   <a class="btn secondary" href="/movimientos?categoria=sin">{{ ui.icon("tag", "sm") }} Categorizar los pendientes</a>
   {% endif %}
-  <a class="btn secondary" href="/importar">{{ ui.icon("upload", "sm") }} Importar otro</a>
+  <a class="btn secondary" href="/importar">{{ ui.icon("upload", "sm") }} Importar más</a>
 </div>
 {% endblock %}

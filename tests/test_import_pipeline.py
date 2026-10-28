@@ -90,7 +90,7 @@ def session():
 
 @pytest.fixture
 def family(session):
-    user = create_user(session, "maria", "secreto1")
+    user = create_user(session, "maria", "clave-secreta-1")
     account = Account(user_id=user.id, account_name="CaixaBank Principal")
     session.add(account)
     session.commit()
@@ -99,9 +99,10 @@ def family(session):
     return user.id, account.id
 
 
-def _import(path, session, user_id, account_id, decisions=None):
+def _import(paths, session, user_id, account_id, decisions=None):
     """Mirror ImportView: clean rows are imported, review rows only if approved."""
-    preview = prepare_import(path, session, user_id, account_id)
+    paths = paths if isinstance(paths, list) else [paths]
+    preview = prepare_import(paths, session, user_id, account_id)
     chosen = {idx: True for idx in preview.duplicate_result.clean}
     chosen.update(decisions or {})
     summary = commit_import(preview, session, user_id, account_id, chosen)
@@ -117,8 +118,8 @@ def test_first_import_persists_categorizes_and_audits(tmp_path, session, family)
 
     preview, summary = _import(path, session, user_id, account_id)
 
-    assert preview.validation_result.iban == IBAN
-    assert [w.rule for w in preview.validation_result.warnings] == ["V-08"]
+    assert preview.iban == IBAN
+    assert [w.rule for w in preview.warnings] == ["V-08"]
     assert summary.rows_imported == 5 and summary.rows_skipped == 0
     assert summary.status == ImportStatus.completed
 
@@ -180,5 +181,121 @@ def test_file_with_two_accounts_is_rejected_before_any_write(tmp_path, session, 
     _write_export(path, [EXPORT_ROWS[0], _row("02/09/2026", gasto=1.0, saldo_pos=1.0,
                                              issuer="X", iban="ES99 0000")])
     with pytest.raises(ValidationError):
-        prepare_import(path, session, user_id, account_id)
+        prepare_import([path], session, user_id, account_id)
     assert session.query(Transaction).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Several statements in one import
+# ---------------------------------------------------------------------------
+
+def test_overlapping_statements_in_one_import_store_each_movement_once(tmp_path, session, family):
+    user_id, account_id = family
+    september, overlap = tmp_path / "septiembre.xlsx", tmp_path / "semana.xlsx"
+    _write_export(september, EXPORT_ROWS[:4])
+    _write_export(overlap, EXPORT_ROWS[2:])           # rows 2-3 also in september
+
+    preview, summary = _import([overlap, september], session, user_id, account_id)
+
+    assert [f.name for f in preview.files] == ["septiembre.xlsx", "semana.xlsx"]   # chronological
+    stats = preview.file_stats()
+    assert (stats["septiembre.xlsx"].clean, stats["septiembre.xlsx"].auto_skip) == (4, 0)
+    assert (stats["semana.xlsx"].clean, stats["semana.xlsx"].auto_skip) == (1, 2)
+    assert "septiembre.xlsx" in preview.duplicate_result.skip_reasons[5]
+    assert summary.rows_imported == 5 and summary.rows_skipped == 2
+    assert len(summary.batch_ids) == 2
+
+    batches = {b.filename: b for b in session.query(ImportBatch).all()}
+    assert (batches["septiembre.xlsx"].rows_imported, batches["septiembre.xlsx"].rows_skipped) == (4, 0)
+    assert (batches["semana.xlsx"].rows_imported, batches["semana.xlsx"].rows_skipped) == (1, 2)
+    ajuste = session.query(Transaction).filter_by(issuer_name="AJUSTE").one()
+    assert ajuste.source_file == "semana.xlsx" and ajuste.import_batch_id == batches["semana.xlsx"].id
+    assert session.query(Transaction).count() == 5
+
+
+def test_zero_amount_row_in_two_overlapping_statements_is_not_asked_twice(tmp_path, session, family):
+    user_id, account_id = family
+    first, second = tmp_path / "a.xlsx", tmp_path / "b.xlsx"
+    _write_export(first, EXPORT_ROWS[3:])
+    _write_export(second, [*EXPORT_ROWS[3:], _row("06/09/2026", gasto=1.0, saldo_neg=-58.65, issuer="X")])
+
+    preview = prepare_import([first, second], session, user_id, account_id)
+
+    dup = preview.duplicate_result
+    assert dup.needs_review == [] and sorted(dup.auto_skip) == [2, 3]
+    assert sorted(dup.clean) == [0, 1, 4]
+
+
+def test_the_same_statement_twice_is_reported_and_imported_once(tmp_path, session, family):
+    user_id, account_id = family
+    path = tmp_path / "movimientos.xlsx"
+    _write_export(path, EXPORT_ROWS)
+    copy = tmp_path / "copia" / "movimientos.xlsx"
+    copy.parent.mkdir()
+    copy.write_bytes(path.read_bytes())
+
+    preview, summary = _import([path, copy], session, user_id, account_id)
+
+    assert [r.name for r in preview.rejected] == ["movimientos (2).xlsx"]
+    assert "mismo fichero" in preview.rejected[0].reason
+    assert summary.rows_imported == 5 and len(summary.batch_ids) == 1
+
+
+def test_statement_of_another_account_is_left_out(tmp_path, session, family):
+    user_id, account_id = family
+    ours, other = tmp_path / "nuestra.xlsx", tmp_path / "otra.xlsx"
+    _write_export(ours, EXPORT_ROWS[:3])
+    _write_export(other, [_row("02/09/2026", gasto=1.0, saldo_pos=1.0, issuer="X", iban="ES99 9999 1234")])
+
+    preview, summary = _import([ours, other, tmp_path / "falta.xlsx"], session, user_id, account_id)
+
+    reasons = {r.name: r.reason for r in preview.rejected}
+    assert set(reasons) == {"otra.xlsx", "falta.xlsx"}
+    assert "otra cuenta (··1234)" in reasons["otra.xlsx"]
+    assert summary.rows_imported == 3
+
+
+def test_no_usable_statement_raises_with_every_reason(tmp_path, session, family):
+    user_id, account_id = family
+    bad = tmp_path / "roto.xlsx"
+    bad.write_bytes(b"PK\x03\x04 not really a workbook")
+    with pytest.raises(ValidationError) as exc:
+        prepare_import([bad, tmp_path / "falta.xlsx"], session, user_id, account_id)
+    assert "roto.xlsx" in str(exc.value) and "falta.xlsx" in str(exc.value)
+
+
+def test_a_failed_commit_writes_nothing_from_any_statement(tmp_path, session, family, monkeypatch):
+    user_id, account_id = family
+    first, second = tmp_path / "a.xlsx", tmp_path / "b.xlsx"
+    _write_export(first, EXPORT_ROWS[:2])
+    _write_export(second, EXPORT_ROWS[2:4])
+    preview = prepare_import([first, second], session, user_id, account_id)
+
+    def boom():
+        raise RuntimeError("disco lleno")
+    monkeypatch.setattr(session, "commit", boom)
+    with pytest.raises(RuntimeError):
+        commit_import(preview, session, user_id, account_id, {})
+    monkeypatch.undo()
+
+    assert session.query(Transaction).count() == 0
+    assert session.query(ImportBatch).count() == 0
+
+
+def test_run_import_learns_the_account_iban(tmp_path, session, family):
+    from app.ingestion.import_service import ensure_default_account, run_import
+
+    user_id, _ = family
+    session.query(Account).delete()
+    session.commit()
+    account = ensure_default_account(session, user_id)
+    assert account.iban_last4 == "0000"
+    path = tmp_path / "movimientos.xlsx"
+    _write_export(path, [_row("01/09/2026", gasto=5.0, saldo_pos=95.0, issuer="BAR",
+                              iban="ES12 2100 0000 0000 0000 7363")])
+
+    preview = prepare_import([path], session, user_id, account.id)
+    run_import(session, user_id, preview, account.id, {})
+
+    session.expire_all()
+    assert session.get(Account, account.id).iban_last4 == "7363"
