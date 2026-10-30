@@ -27,7 +27,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlalchemy import case, extract, func, or_
 from sqlalchemy.orm import Session
 
-from app.db.models import Category, Transaction, TransactionType
+from app.db.models import Category, Transaction, TransactionType, TRANSACTIONS_NEWEST_FIRST
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ def dashboard_summary(
             session.query(Transaction.running_balance)
             .filter(Transaction.user_id == user_id,
                     Transaction.running_balance.isnot(None))
-            .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+            .order_by(*TRANSACTIONS_NEWEST_FIRST)
             .limit(1)
             .scalar()
         ) or 0.0
@@ -252,7 +252,7 @@ def dashboard_summary(
             for txn in (
                 session.query(Transaction)
                 .filter(Transaction.user_id == user_id)
-                .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+                .order_by(*TRANSACTIONS_NEWEST_FIRST)
                 .limit(recent_limit)
                 .all()
             )

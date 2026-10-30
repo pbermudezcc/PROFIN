@@ -330,6 +330,11 @@ class Transaction(Base):
 
     # --- Import tracking ---
     source_file: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    # Position in the bank's chronological order (higher = later). The date
+    # alone cannot order movements of the same day, and CaixaBank exports
+    # list them newest first, so the import id is the reverse of time within
+    # a statement. Set by the importer; filled for older rows by migration 7.
+    bank_order: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     is_duplicate_flagged: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
@@ -355,6 +360,15 @@ class Transaction(Base):
             f"<Transaction id={self.id} date={self.transaction_date} "
             f"amount={self.amount} type={self.type}>"
         )
+
+
+# Newest movement first: by date, then by the bank's order within the day.
+# Every list and every "latest balance" uses it.
+TRANSACTIONS_NEWEST_FIRST = (
+    Transaction.transaction_date.desc(),
+    Transaction.bank_order.desc(),
+    Transaction.id.desc(),
+)
 
 
 # ---------------------------------------------------------------------------

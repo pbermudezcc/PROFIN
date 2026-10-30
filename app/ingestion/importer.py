@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import pandas as pd
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -255,6 +256,19 @@ def prepare_import(
 # Public API — Stage 2: Commit (DB writes)
 # ---------------------------------------------------------------------------
 
+def _chronological_indices(df: pd.DataFrame) -> List[int]:
+    """Row indices of `df` oldest first: statements in their (chronological)
+    order and, inside each, the bank's order of time. CaixaBank lists a
+    statement newest first; one already listed oldest first is kept as is."""
+    order: List[int] = []
+    for _, group in df.groupby("source_file", sort=False):
+        indices = list(group.index)
+        dates = list(group["transaction_date"])
+        ascending = len(dates) > 1 and dates[0] < dates[-1]
+        order.extend(indices if ascending else reversed(indices))
+    return order
+
+
 def commit_import(
     preview:           ImportPreview,
     session:           Session,
@@ -321,9 +335,16 @@ def commit_import(
                 skip_indices.add(idx)
 
         import_indices = [
-            i for i in range(len(df))
+            i for i in _chronological_indices(df)
             if i not in skip_indices
         ]
+        # Same-day movements are ordered by bank_order (higher = later),
+        # numbered after this user's latest one.
+        last_order = (
+            session.query(func.max(Transaction.bank_order))
+            .filter(Transaction.user_id == user_id)
+            .scalar()
+        ) or 0
 
         # -- Insert transactions -----------------------------------------
         for idx in import_indices:
@@ -340,6 +361,8 @@ def commit_import(
                     is_flagged = idx in dup_result.needs_review,
                     resolved   = idx in dup_result.needs_review,
                 )
+                last_order += 1
+                txn.bank_order = last_order
                 session.add(txn)
                 session.flush()   # get txn.id immediately
                 imported_ids.append(txn.id)

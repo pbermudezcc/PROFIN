@@ -45,6 +45,7 @@ from app.db.models import (
     CategoryLevel,
     MatchType,
     Transaction,
+    TRANSACTIONS_NEWEST_FIRST,
 )
 
 logger = logging.getLogger(__name__)
@@ -336,7 +337,7 @@ def preview_pattern(session: Session, user_id: int, pattern: Optional[str],
     query = (
         session.query(Transaction)
         .filter(Transaction.user_id == user_id)
-        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+        .order_by(*TRANSACTIONS_NEWEST_FIRST)
     )
     if kind == MatchType.contains:
         like = f"%{pattern.lower()}%"

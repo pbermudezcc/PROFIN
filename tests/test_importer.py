@@ -81,5 +81,7 @@ def test_commit_import_skips_unresolved_review_rows(db_session):
 
     assert summary.rows_imported == 2
     assert summary.rows_skipped == 1
-    flagged = db_session.get(Transaction, summary.imported_ids[1])
+    # Rows go in oldest first (bank order), so pick the review row by its amount.
+    (flagged,) = [db_session.get(Transaction, i) for i in summary.imported_ids
+                  if db_session.get(Transaction, i).amount == 0.0]
     assert flagged.is_duplicate_flagged is True

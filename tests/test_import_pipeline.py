@@ -201,6 +201,37 @@ def test_clean_rows_missing_from_the_decisions_are_imported(tmp_path, session, f
     assert summary.rows_imported == 5
 
 
+def test_same_day_movements_follow_the_bank_order(tmp_path, session, family):
+    # CaixaBank lists a statement newest first; on a day with several
+    # movements the latest balance is the one of the day's LAST movement.
+    from app.analytics.dashboard_summary import dashboard_summary
+    from app.analytics.transaction_search import filtered_transactions_page
+
+    user_id, account_id = family
+    path = tmp_path / "octubre.xlsx"
+    _write_export(path, [
+        _row("24/10/2026", gasto=20.0, saldo_pos=930.0, issuer="TERCERO"),
+        _row("24/10/2026", gasto=30.0, saldo_pos=950.0, issuer="SEGUNDO"),
+        _row("24/10/2026", ingreso=80.0, saldo_pos=980.0, issuer="PRIMERO"),
+        _row("23/10/2026", gasto=100.0, saldo_pos=900.0, issuer="DIA ANTERIOR"),
+    ])
+
+    _import(path, session, user_id, account_id)
+
+    summary = dashboard_summary(session, user_id, date(2026, 10, 1), date(2026, 10, 31))
+    assert summary.balance == 930.0
+    assert [r.issuer_name for r in summary.recent] == ["TERCERO", "SEGUNDO", "PRIMERO", "DIA ANTERIOR"]
+    page, _ = filtered_transactions_page(
+        session, user_id, session.query(Transaction).filter(Transaction.user_id == user_id), "", 0, 10)
+    assert [t.issuer_name for t in page] == ["TERCERO", "SEGUNDO", "PRIMERO", "DIA ANTERIOR"]
+
+    # A later statement continues the numbering: its movements come after.
+    later = tmp_path / "noviembre.xlsx"
+    _write_export(later, [_row("24/10/2026", gasto=10.0, saldo_pos=920.0, issuer="CUARTO")])
+    _import(later, session, user_id, account_id)
+    assert dashboard_summary(session, user_id, date(2026, 10, 1), date(2026, 10, 31)).balance == 920.0
+
+
 def test_file_with_two_accounts_is_rejected_before_any_write(tmp_path, session, family):
     user_id, account_id = family
     path = tmp_path / "mezcla.xlsx"

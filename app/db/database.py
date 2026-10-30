@@ -621,6 +621,40 @@ def _migration_6_broker_cash(db_path: Path) -> None:
     logger.info("Migración 6: efectivo en los brókers")
 
 
+def _migration_7_bank_order(db_path: Path) -> None:
+    """Add transactions.bank_order and fill it for the existing rows.
+
+    Movements of the same day were ordered by import id, but CaixaBank lists
+    a statement newest first and the importer kept that order, so within a
+    day the id ran against time: lists showed same-day movements reversed and
+    «Saldo en cuenta» took the balance after the day's EARLIEST movement.
+    Existing rows get their position from the import order: statements in
+    the order they were imported, and inside each one id descending (= the
+    bank's chronological order). The importer sets it for new rows.
+    Idempotent: only rows still NULL are filled.
+    """
+    with closing(sqlite3.connect(db_path)) as connection:
+        if not _column_exists(connection, "transactions", "bank_order"):
+            connection.execute("ALTER TABLE transactions ADD COLUMN bank_order INTEGER")
+        connection.execute(
+            """
+            UPDATE transactions
+               SET bank_order = (
+                   SELECT ranked.position FROM (
+                       SELECT id, ROW_NUMBER() OVER (
+                                  PARTITION BY user_id
+                                  ORDER BY COALESCE(import_batch_id, 0), id DESC
+                              ) AS position
+                         FROM transactions
+                   ) AS ranked
+                    WHERE ranked.id = transactions.id)
+             WHERE bank_order IS NULL
+            """
+        )
+        connection.commit()
+    logger.info("Migración 7: orden del banco dentro de cada día")
+
+
 SCHEMA_MIGRATIONS = (
     (1, _migration_1_category_source),
     (2, _migration_2_indexes_and_cents),
@@ -628,6 +662,7 @@ SCHEMA_MIGRATIONS = (
     (4, _migration_4_investments),
     (5, _migration_5_broker_ref),
     (6, _migration_6_broker_cash),
+    (7, _migration_7_bank_order),
 )
 SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1][0]
 

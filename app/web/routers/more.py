@@ -19,6 +19,7 @@ from app.db.models import (
     ImportBatch,
     Transaction,
     User,
+    TRANSACTIONS_NEWEST_FIRST,
 )
 from app.web.deps import DB, USER, WebUser
 from app.web.render import render
@@ -73,7 +74,7 @@ def accounts(request: Request, user: WebUser = USER, db: Session = DB) -> Respon
             db.query(Transaction.running_balance)
             .filter(Transaction.user_id == user.id, Transaction.account_id == account.id,
                     Transaction.running_balance.isnot(None))
-            .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+            .order_by(*TRANSACTIONS_NEWEST_FIRST)
             .limit(1).scalar()
         )
     return render(request, "mas_cuentas.html", {"accounts": rows, "stats": stats, "balances": balances},

@@ -311,6 +311,51 @@ def test_migration_6_adds_broker_cash_to_a_v5_database(tmp_path):
     assert 1 in indexes.values()                                      # unique per user/broker/currency
 
 
+def test_migration_7_orders_same_day_movements_like_the_bank(tmp_path):
+    from app.analytics.dashboard_summary import dashboard_summary
+    from app.db.models import ImportBatch, ImportStatus
+
+    db = tmp_path / "profin.db"
+    _make_legacy_db(db)
+    migrate_schema(db)
+    engine = create_engine(f"sqlite:///{db}")
+    day = date(2026, 10, 24)
+    with Session(engine) as s:
+        user = s.query(User).one()
+        account = s.query(Account).one()
+        s.query(Transaction).delete()
+        first, second = (ImportBatch(user_id=user.id, filename=f"semana{i}.xls", import_timestamp=datetime(2026, 10, 25),
+                                     rows_imported=2, rows_skipped=0, status=ImportStatus.completed) for i in (1, 2))
+        s.add_all([first, second])
+        s.flush()
+        # Each statement was stored as CaixaBank lists it: newest first.
+        for batch, rows in ((first, [("09:00 tarde", 70.0), ("08:00 mañana", 100.0)]),
+                            (second, [("11:00 noche", 55.0), ("10:00 mediodía", 60.0)])):
+            for issuer, balance in rows:
+                s.add(Transaction(user_id=user.id, account_id=account.id, import_batch_id=batch.id,
+                                  transaction_date=day, amount=-5.0, running_balance=balance,
+                                  type=TransactionType.expense, issuer_name=issuer))
+                s.flush()
+        s.commit()
+    engine.dispose()
+    with closing(sqlite3.connect(db)) as conn:       # a v6 file (v0.8.x)
+        conn.execute("ALTER TABLE transactions DROP COLUMN bank_order")
+        conn.execute("PRAGMA user_version = 6")
+        conn.commit()
+
+    assert migrate_schema(db) == 6
+    assert _user_version(db) == SCHEMA_VERSION
+    with closing(sqlite3.connect(db)) as conn:
+        by_order = [r[0] for r in conn.execute("SELECT issuer_name FROM transactions ORDER BY bank_order")]
+    assert by_order == ["08:00 mañana", "09:00 tarde", "10:00 mediodía", "11:00 noche"]
+    engine = create_engine(f"sqlite:///{db}")
+    with Session(engine) as s:
+        summary = dashboard_summary(s, s.query(User).one().id, day, day)
+        assert summary.balance == 55.0                       # after the day's LAST movement
+        assert [r.issuer_name for r in summary.recent][:2] == ["11:00 noche", "10:00 mediodía"]
+    engine.dispose()
+
+
 def test_migration_is_noop_when_up_to_date(tmp_path):
     db = tmp_path / "profin.db"
     _make_legacy_db(db)

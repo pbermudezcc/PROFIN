@@ -37,6 +37,7 @@ from app.db.models import (
     Category,
     Transaction,
     TransactionType,
+    TRANSACTIONS_NEWEST_FIRST,
 )
 
 UNCATEGORIZED = -1
@@ -187,7 +188,7 @@ def matching_transaction_ids(session: Session, user_id: int, query, text: str) -
             Transaction.source_file,
             *CONCEPT_COLUMNS,
         )
-        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+        .order_by(*TRANSACTIONS_NEWEST_FIRST)
         .all()
     )
     if not terms:
@@ -238,7 +239,7 @@ def filtered_transactions_page(
     if not search_terms(text):
         total = query.count()
         txns = (
-            query.order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+            query.order_by(*TRANSACTIONS_NEWEST_FIRST)
             .offset(offset).limit(limit).all()
         )
         return txns, total

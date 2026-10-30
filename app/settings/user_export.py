@@ -36,6 +36,7 @@ from app.categorization import library_io
 from app.db.models import (
     CATEGORY_SOURCE_MANUAL,
     CATEGORY_SOURCE_RULE,
+    TRANSACTIONS_NEWEST_FIRST,
     Account,
     AutoCategorizationRule,
     BrokerCash,
@@ -178,7 +179,7 @@ def export_user_data(session: Session, user_id: int, when: Optional[datetime] = 
     movements = (
         session.query(Transaction)
         .filter(Transaction.user_id == user_id)
-        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+        .order_by(*TRANSACTIONS_NEWEST_FIRST)
         .all()
     )
     movement_rows = [

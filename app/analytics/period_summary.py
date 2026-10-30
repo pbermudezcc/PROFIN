@@ -23,7 +23,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.db.models import Category, Transaction, TransactionType
+from app.db.models import Category, Transaction, TransactionType, TRANSACTIONS_NEWEST_FIRST
 
 UNCATEGORIZED_LABEL = "Sin categorizar"
 
@@ -184,7 +184,7 @@ def summarize_period(
             Transaction.amount,
         )
         .filter(*where)
-        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+        .order_by(*TRANSACTIONS_NEWEST_FIRST)
         .limit(latest_limit)
         .all()
     )
