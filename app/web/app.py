@@ -30,6 +30,7 @@ from app.web.deps import CsrfFailed, LoginRequired
 from app.web.invites import InviteStore
 from app.web.price_refresh import PriceRefreshJob
 from app.web.security import HardeningMiddleware, LoginLimiter, SessionStore
+from app.web.routers.account import PendingExports
 from app.web.routers.investment_import import PendingStatements
 from app.web.routers.library import PendingLibraries
 from app.web.uploads import PendingImports, sweep_orphans
@@ -123,6 +124,8 @@ def create_app(
     # (WebServer passes SettingsManager.backup_before_delete). None → the
     # web refuses to delete accounts: never delete without a copy.
     app.state.backup_before_delete = backup_before_delete
+    # «Descargar mis datos» zips waiting for their one-use link (memory only).
+    app.state.user_exports = PendingExports()
     sweep_orphans()
     app.state.templates = build_templates()
 

@@ -359,7 +359,7 @@ def test_templates_have_no_inline_script_or_style(app):
     client = logged_in(app, "beto", "clave-beto")
     for path in ("/", "/gastos", "/movimientos", "/inversiones", "/inversiones/operaciones/nueva", "/mas",
                  "/mas/categorias", "/mas/reglas", "/mas/reglas/nueva", "/mas/categorias/nueva", "/importar",
-                 "/mas/cuenta/contrasena", "/mas/cuenta/nombre", "/mas/cuenta/borrar"):
+                 "/mas/cuenta/contrasena", "/mas/cuenta/nombre", "/mas/cuenta/borrar", "/mas/cuenta/datos"):
         html = client.get(path).text
         assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html), path
         assert " style=" not in html and "<style" not in html, path
@@ -1811,7 +1811,7 @@ def test_switching_data_folder_or_certificates_drops_invitations(monkeypatch):
 # Ajustes › Mi cuenta (W10): password, name, delete — own account only
 # ---------------------------------------------------------------------------
 
-ACCOUNT_FORMS = ("/mas/cuenta/contrasena", "/mas/cuenta/nombre", "/mas/cuenta/borrar")
+ACCOUNT_FORMS = ("/mas/cuenta/contrasena", "/mas/cuenta/nombre", "/mas/cuenta/borrar", "/mas/cuenta/datos")
 
 
 def _sid(client: TestClient) -> str:
@@ -1907,6 +1907,62 @@ def test_wrong_passwords_in_mi_cuenta_hit_the_login_throttle(app, family):
     assert blocked.status_code == 429 and "Demasiados intentos" in blocked.text
     # The same keys as the login: that user name waits there too.
     assert login(client_for(app), "ana", "clave-ana").status_code == 429
+
+
+def test_my_data_download_needs_the_password_and_holds_only_my_rows(app, family, factory):
+    import io
+    import zipfile
+
+    client = logged_in(app)
+    wrong = client.post("/mas/cuenta/datos", data={"password": "mal"}, headers=_hx(client))
+    assert wrong.status_code == 200 and "no es correcta" in wrong.text and "/mas/cuenta/datos/" not in wrong.text
+
+    ready = client.post("/mas/cuenta/datos", data={"password": "clave-ana"}, headers=_hx(client))
+    assert ready.status_code == 200 and "Tus datos están listos" in ready.text
+    link = re.search(r'href="(/mas/cuenta/datos/[^"]+)"', ready.text).group(1)
+
+    other = logged_in(app)                              # another session of ana: not its link
+    assert other.get(link).status_code == 404
+    download = client.get(link)
+    assert download.status_code == 200 and download.headers["content-type"] == "application/zip"
+    assert download.headers["cache-control"] == "no-store"
+    assert 'attachment; filename="familyfin-datos-ana-' in download.headers["content-disposition"]
+    assert client.get(link).status_code == 404          # one use only
+
+    archive = zipfile.ZipFile(io.BytesIO(download.content))
+    everything = b"".join(archive.read(n) for n in archive.namelist())
+    xlsx = next(n for n in archive.namelist() if n.endswith(".xlsx"))
+    from openpyxl import load_workbook
+    cells = " ".join(str(c) for ws in load_workbook(io.BytesIO(archive.read(xlsx)))
+                     for r in ws.iter_rows(values_only=True) for c in r if c)
+    assert "MERCADO ANA" in cells and "MERCADO BETO" not in cells and "Acme" not in cells
+    assert b"MERCADO BETO" not in everything
+
+    db = factory()
+    try:
+        entry = db.query(AuditLog).filter(AuditLog.table_affected == "users").one()
+        assert entry.user_id == family["ana"] and "descargó sus datos: 2 movimientos" in entry.new_value
+    finally:
+        db.close()
+
+
+def test_my_data_download_hits_the_login_throttle(app, family):
+    client = logged_in(app)
+    statuses = [client.post("/mas/cuenta/datos", data={"password": f"mal-{i}"}, headers=_hx(client)).status_code
+                for i in range(6)]
+    assert statuses[:4] == [200] * 4 and 429 in statuses[4:]
+    blocked = client.post("/mas/cuenta/datos", data={"password": "clave-ana"}, headers=_hx(client))
+    assert blocked.status_code == 429 and "/mas/cuenta/datos/" not in blocked.text
+
+
+def test_my_data_link_expires(app, family, monkeypatch):
+    from app.web.routers import account as account_router
+
+    client = logged_in(app)
+    ready = client.post("/mas/cuenta/datos", data={"password": "clave-ana"}, headers=_hx(client))
+    link = re.search(r'href="(/mas/cuenta/datos/[^"]+)"', ready.text).group(1)
+    monkeypatch.setattr(account_router, "EXPORT_TTL", -1)
+    assert client.get(link).status_code == 404
 
 
 def test_rename_shows_the_new_name_in_every_open_session(app, family, factory):

@@ -449,6 +449,7 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
         <ul class="ticks">
           <li><strong>Saldo en cuenta</strong>: el último saldo que figura en el extracto.</li>
           <li><strong>Ingresos y gastos</strong> del periodo.</li>
+          <li><strong>Inversión</strong>: lo que has enviado desde la cuenta a tus inversiones en el periodo (lo que vuelve del bróker lo descuenta). Cuenta los movimientos con una categoría del tipo <em>INVERSION</em>, como «Aporte Broker»; esos movimientos no suman como gasto ni como ingreso en esta pantalla.</li>
           <li><strong>Tasa de ahorro</strong>: (ingresos − gastos) ÷ ingresos.</li>
           <li><strong>Sin categoría</strong>: los movimientos pendientes de clasificar. Al tocarlo te lleva a ellos.</li>
           <li><strong>Cartera</strong>: valor actual de tus inversiones y su plusvalía.</li>
@@ -656,9 +657,11 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
         <ul class="ticks">
           <li><strong>Cambiar contraseña</strong>: pide la actual. Al guardarla se cierra tu sesión en los demás dispositivos. La nueva debe tener entre 8 y 64 caracteres, no puede ser tu nombre ni una contraseña muy común; mejor una frase fácil de recordar.</li>
           <li><strong>Cambiar nombre de usuario</strong>: con tu contraseña. El nombre nuevo vale en el PC y en la web; no se admiten nombres casi iguales a otro («Ana» y «ana») ni «DEMO».</li>
+          <li><strong>Descargar mis datos</strong>: con tu contraseña, un <code>.zip</code> con tus movimientos, cuentas, categorías, reglas, operaciones de inversión y efectivo en un Excel, y tus categorías y reglas en un archivo que FAMILYFIN puede volver a cargar. Solo tus datos, nunca los de otros miembros ni las reglas globales. El enlace sirve una vez durante 2 minutos. Es una exportación, no una copia de seguridad.</li>
           <li><strong>Borrar mi cuenta</strong>: escribe tu nombre y tu contraseña. Antes de borrar se guarda una copia completa en la carpeta de copias del PC (nunca se descarga en el móvil); si la copia falla, no se borra nada. Si alguna regla global de la familia usa tus categorías, primero hay que moverla o borrarla desde el PC.</li>
         </ul>
         <p><strong>Familia</strong>: la lista de miembros y las invitaciones. <em>Invitar a alguien</em> genera un código como <code>7KQM-4XTR</code> que sirve una sola vez y caduca a los 15 minutos; puedes copiarlo o compartirlo y anular las invitaciones pendientes (como mucho 3 a la vez). La persona invitada lo escribe en la pantalla de acceso, elige su usuario y su contraseña y entra directamente. Los códigos equivocados cuentan como intentos fallidos y bloquean un rato los nuevos intentos.</p>
+        <p>En el PC, el botón <strong>⋮</strong> junto a tu nombre (barra lateral) ofrece lo mismo: cambiar contraseña (cierra tus sesiones en la web), cambiar nombre, exportar tus datos y eliminar la cuenta.</p>
         <p>En la aplicación del PC, <strong>Configuración</strong> añade lo que afecta a la instalación:</p>
         <ul class="ticks">
           <li><strong>Datos</strong>: la carpeta de la base de datos, que puede estar en una carpeta sincronizada (OneDrive, iCloud).</li>

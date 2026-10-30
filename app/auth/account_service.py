@@ -8,6 +8,7 @@ desktop and the web «Mi cuenta»):
   rename_user(session, user_id, password, new_name) -> (old, new)
   deletion_summary(session, user_id) -> DeletionSummary
   delete_user(session, user_id, password, confirm_name, backup, source) -> Path
+  verify_password(session, user_id, password)  (re-authentication only)
 
 Every operation asks for the current password. There is no admin role:
 callers must pass the id of the signed-in user, never one taken from a form.
@@ -58,6 +59,12 @@ def _user(session: Session, user_id: int) -> User:
 def _check_password(user: User, password: Optional[str], field: str = "password") -> None:
     if not password_matches(user, password):
         raise WrongPassword(field, WRONG_PASSWORD)
+
+
+def verify_password(session: Session, user_id: int, password: str) -> None:
+    """Re-authentication before a sensitive read (e.g. «Descargar mis datos»).
+    Raises WrongPassword (field "password")."""
+    _check_password(_user(session, user_id), password)
 
 
 # ---------------------------------------------------------------------------

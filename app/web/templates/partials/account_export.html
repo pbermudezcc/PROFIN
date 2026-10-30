@@ -1,0 +1,45 @@
+{% import "_ui.html" as ui %}
+<div class="sheet-h">
+  <h3 id="sheet-title">Descargar mis datos</h3>
+  <button class="icon-btn" type="button" data-close-sheet aria-label="Cerrar">{{ ui.icon("close", "sm") }}</button>
+</div>
+<div class="sheet-b">
+  {% if token %}
+  <div class="alert ok" role="status">{{ ui.icon("check", "sm") }}<span>Tus datos están listos.</span></div>
+  <ul class="danger-list section">
+    <li><span class="num">{{ export.counts.movimientos }}</span> movimientos en <span class="num">{{ export.counts.cuentas }}</span> cuentas</li>
+    <li><span class="num">{{ export.counts.operaciones }}</span> operaciones de inversión</li>
+    <li><span class="num">{{ export.counts.categorias }}</span> categorías y <span class="num">{{ export.counts.reglas }}</span> reglas personales</li>
+  </ul>
+  <a class="btn block section" href="/mas/cuenta/datos/{{ token }}" hx-boost="false" download="{{ export.filename }}">
+    {{ ui.icon("download", "sm") }} Descargar {{ export.filename }}</a>
+  <p class="note">El enlace vale una sola vez durante {{ ttl // 60 }} minutos. Guarda el archivo en un sitio seguro: incluye tus movimientos bancarios.</p>
+  <div class="sticky-actions"><button class="btn block ghost" type="button" data-close-sheet>Cerrar</button></div>
+  {% else %}
+  <p class="note sheet-lead">Un archivo .zip con <b>tus</b> movimientos, cuentas, categorías, reglas y operaciones de inversión en Excel, y tus categorías y reglas en un archivo que FAMILYFIN puede volver a cargar.</p>
+  <p class="note">No incluye los datos de los demás miembros ni las reglas globales. Es una exportación, no una copia de seguridad: las copias de toda la familia se hacen en el PC.</p>
+  <form class="form-grid section" hx-post="/mas/cuenta/datos" hx-target="#sheet-body" hx-disabled-elt="find button[type=submit]"
+        novalidate autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    {% if error %}<div class="alert err" role="alert">{{ ui.icon("alert", "sm") }}<span>{{ error }}</span></div>{% endif %}
+    <input type="text" name="account_name" value="{{ user.username }}" autocomplete="username" hidden>
+
+    <label class="field{% if errors.password %} invalid{% endif %}"><span>Tu contraseña</span>
+      <div class="pw">
+        <input class="input" type="password" name="password" maxlength="256" required autocomplete="current-password"
+               enterkeyhint="done" autofocus>
+        <button type="button" data-toggle-password aria-label="Mostrar contraseña">{{ ui.icon("eye", "sm") }}</button>
+      </div>
+      {% if errors.password %}<small class="error">{{ errors.password }}</small>{% else %}<small class="help">Para confirmar que eres tú.</small>{% endif %}
+    </label>
+
+    <div class="sticky-actions">
+      <button class="btn ghost" type="button" data-close-sheet>Cancelar</button>
+      <button class="btn block busy-able" type="submit">
+        <span class="idle">{{ ui.icon("download", "sm") }} Preparar descarga</span>
+        <span class="busy">{{ ui.icon("refresh", "sm") }} Preparando…</span>
+      </button>
+    </div>
+  </form>
+  {% endif %}
+</div>

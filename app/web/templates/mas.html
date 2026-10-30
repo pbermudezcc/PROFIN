@@ -39,6 +39,11 @@
     <div class="body"><div class="t">Cambiar nombre de usuario</div><div class="d">el nombre con el que entras</div></div>
     {{ ui.icon("right", "sm chev") }}
   </button>
+  <button class="row" type="button" hx-get="/mas/cuenta/datos" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
+    <div class="ic accent">{{ ui.icon("download", "sm") }}</div>
+    <div class="body"><div class="t">Descargar mis datos</div><div class="d">solo los tuyos, en Excel</div></div>
+    {{ ui.icon("right", "sm chev") }}
+  </button>
   <button class="row danger" type="button" hx-get="/mas/cuenta/borrar" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
     <div class="ic danger">{{ ui.icon("trash", "sm") }}</div>
     <div class="body"><div class="t">Borrar mi cuenta</div><div class="d">con copia de seguridad previa en el PC</div></div>

@@ -893,6 +893,8 @@ class MainWindow(QWidget):
         if not is_demo_name(self._user.username):
             _account_button("Cambiar nombre de usuario", "mdi.account-edit-outline",
                             self._on_rename_account)
+            _account_button("Exportar mis datos…", "mdi.download-outline",
+                            self._on_export_my_data)
 
         # Delete account button
         btn_delete = QPushButton(
@@ -1012,6 +1014,33 @@ class MainWindow(QWidget):
         logging.getLogger(__name__).info("PC: '%s' se renombró a '%s'", old, new)
         QMessageBox.information(self, "Nombre cambiado",
                                 f"Ahora tu usuario es «{new}». Úsalo para entrar en el PC y en la web.")
+
+    def _on_export_my_data(self) -> None:
+        """Only this user's data (Excel + categories library), never the
+        family backup: the same zip as «Descargar mis datos» on the web."""
+        from pathlib import Path
+        from PySide6.QtWidgets import QFileDialog
+        from app.settings.user_export import export_filename, export_user_data
+
+        default = Path.home() / "Documents" / export_filename(self._user.username)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar mis datos", str(default), "Archivo ZIP (*.zip)")
+        if not path:
+            return
+        try:
+            self._session.expire_all()
+            export = export_user_data(self._session, self._user.id)
+            Path(path).write_bytes(export.data)
+        except Exception:
+            logging.getLogger(__name__).exception("No se pudieron exportar los datos")
+            QMessageBox.warning(self, "Exportar mis datos",
+                                "No se pudieron exportar tus datos. No se ha guardado nada.")
+            return
+        self._audit_account(f"exportó sus datos: {export.describe()}")
+        QMessageBox.information(
+            self, "Datos exportados",
+            f"Se han guardado tus datos ({export.describe()}) en:\n{path}\n\n"
+            "Es una exportación para guardar o abrir con Excel, no una copia de seguridad.")
 
     def _confirm_delete_account(self) -> None:
         """

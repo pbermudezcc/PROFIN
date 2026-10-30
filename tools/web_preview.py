@@ -7,6 +7,7 @@ Never touches the family's data: it builds its own SQLite file under
 dist/web_preview/ (gitignored) and serves plain HTTP on 127.0.0.1 only.
 
     python tools/web_preview.py            # http://localhost:8765  (demo / demo-pass)
+                                           # or familia / familia-pass (sees Mi cuenta, Familia)
     python tools/web_preview.py --reset    # rebuild the demo database
 
 Dev-only helpers (this process only, never in the real app):
@@ -45,7 +46,8 @@ from app.auth.auth_service import create_user  # noqa: E402
 from app.categorization.category_manager import seed_default_categories, seed_default_rules  # noqa: E402
 from app.categorization.rules_engine import apply_rules_and_commit  # noqa: E402
 from app.db.models import (  # noqa: E402
-    Account, AssetType, Base, InvestmentKind, InvestmentTransaction, Security, Transaction, TransactionType,
+    CATEGORY_SOURCE_MANUAL, Account, AssetType, Base, Category, InvestmentKind, InvestmentTransaction, Security,
+    Transaction, TransactionType,
 )
 from app.investments.prices import set_manual_price  # noqa: E402
 from app.web import app as web_app_module  # noqa: E402
@@ -58,12 +60,21 @@ DB = HERE / "preview.db"
 STATEMENT = HERE / "extracto_demo.xlsx"
 DEGIRO_STATEMENT = HERE / "degiro_demo.xlsx"
 USER, PASSWORD = "demo", "demo-pass"
+# «demo» is the isolated DEMO account (no Mi cuenta / Familia); this one is
+# an ordinary family member with the same kind of data.
+MEMBER, MEMBER_PASSWORD = "familia", "familia-pass"
 
 
 def _seed(Session) -> None:
     random.seed(7)
     db = Session()
-    user = create_user(db, USER, PASSWORD, enforce_policy=False)   # fixed preview account
+    for name, password in ((USER, PASSWORD), (MEMBER, MEMBER_PASSWORD)):
+        _seed_user(db, name, password)
+    db.close()
+
+
+def _seed_user(db, name: str, password: str) -> None:
+    user = create_user(db, name, password, enforce_policy=False)   # fixed preview account
     seed_default_categories(db, user.id)
     seed_default_rules(db, user.id)
     acc = Account(user_id=user.id, account_name="CaixaBank Principal", bank="CaixaBank", iban_last4="4821")
@@ -77,6 +88,8 @@ def _seed(Session) -> None:
     while day <= date.today():
         if day.day == 28:
             rows.append((day, "PAGE GROUP SPAIN RECURSOS HUMANOS", 2850.0))
+        if day.day == 5:
+            rows.append((day, "TRANSFERENCIA A DEGIRO", -300.0))
         for _ in range(random.choice([0, 1, 1, 2])):
             name, lo, hi = random.choice(merchants)
             rows.append((day, name, round(random.uniform(hi, lo), 2)))
@@ -88,23 +101,32 @@ def _seed(Session) -> None:
                            type=TransactionType.income if amount > 0 else TransactionType.expense))
     db.commit()
     apply_rules_and_commit(db, [t.id for t in db.query(Transaction).filter(Transaction.user_id == user.id)], user.id)
+    # Broker transfers filed under INVERSION › Aporte Broker (the «Inversión» tile).
+    broker = db.query(Category).filter_by(user_id=user.id, name="Aporte Broker").one()
+    for txn in db.query(Transaction).filter_by(user_id=user.id, issuer_name="TRANSFERENCIA A DEGIRO"):
+        txn.category_id, txn.category_source = broker.id, CATEGORY_SOURCE_MANUAL
+    db.commit()
 
     # A small portfolio with manual (offline) prices, for the Inversiones pages.
     start = date.today() - timedelta(days=180)
     for symbol, name, kind, qty, price in [("DEMO.MC", "Demo Energía SA", AssetType.stock, 40, 12.5),
                                            ("WRLD.DE", "Demo World ETF", AssetType.etf, 25, 80.0)]:
-        sec = Security(symbol=symbol, name=name, asset_type=kind, currency="EUR")
-        db.add(sec)
-        db.flush()
+        sec = db.query(Security).filter_by(symbol=symbol).first()     # shared catalogue
+        known = sec is not None
+        if not known:
+            sec = Security(symbol=symbol, name=name, asset_type=kind, currency="EUR")
+            db.add(sec)
+            db.flush()
         db.add(InvestmentTransaction(user_id=user.id, security_id=sec.id, broker="DEGIRO",
                                      kind=InvestmentKind.buy, trade_date=start, quantity=qty, price=price,
                                      currency="EUR", amount_eur=round(qty * price + 2, 2), fees_eur=2))
         db.commit()
+        if known:
+            continue
         close = price
         for i in range(0, 181, 3):
             close = round(close * random.uniform(0.985, 1.02), 2)
             set_manual_price(db, sec.id, start + timedelta(days=i), close)
-    db.close()
 
 
 def _statement() -> None:
@@ -199,7 +221,8 @@ def main() -> None:
     parser.add_argument("--yahoo", action="store_true", help="real Yahoo Finance lookups for broker imports")
     args = parser.parse_args()
     app = build_app(args.reset, args.yahoo)
-    print(f"FAMILYFIN web preview (DEMO data): http://localhost:{args.port}  user {USER} / {PASSWORD}")
+    print(f"FAMILYFIN web preview (DEMO data): http://localhost:{args.port}  user {USER} / {PASSWORD}"
+          f" or {MEMBER} / {MEMBER_PASSWORD}")
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
 
 

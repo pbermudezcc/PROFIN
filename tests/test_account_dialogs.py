@@ -144,3 +144,18 @@ def test_pc_rename_updates_labels_web_sessions_and_audit(window, session, ana, m
     row = session.query(AuditLog).filter_by(table_affected="users").one()
     assert (row.old_value, row.new_value) == ("«ana»", "«Anita» [PC]")
     sessions.revoke_user(ana.id)
+
+
+def test_pc_export_saves_only_my_data(window, session, ana, tmp_path, monkeypatch):
+    import zipfile
+    from PySide6.QtWidgets import QFileDialog
+
+    target = tmp_path / "mis-datos.zip"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+
+    window._on_export_my_data()
+
+    names = zipfile.ZipFile(target).namelist()
+    assert "LEEME.txt" in names and any(n.endswith(".xlsx") for n in names)
+    row = session.query(AuditLog).filter_by(table_affected="users").one()
+    assert row.new_value.startswith("exportó sus datos: 0 movimientos")

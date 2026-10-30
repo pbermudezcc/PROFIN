@@ -1,5 +1,5 @@
-"""Mi cuenta (W10): a member changes their password, renames or deletes
-THEIR OWN account. There is no admin role: the user is always the one of
+"""Mi cuenta (W10): a member changes their password, renames, downloads
+their own data or deletes THEIR OWN account. There is no admin role: the user is always the one of
 the session, never an id from the URL or the form.
 
 Security on every route:
@@ -17,6 +17,10 @@ The rules live in app.auth.account_service (shared with the PC).
 from __future__ import annotations
 
 import logging
+import secrets
+import threading
+import time
+from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -36,8 +40,10 @@ from app.auth.account_service import (
     delete_user,
     deletion_summary,
     rename_user,
+    verify_password,
 )
 from app.db.models import AuditAction
+from app.settings.user_export import UserExport, export_user_data
 from app.web.deps import DB, USER, WebUser, client_ip, notify_change, require_family_member
 from app.web.render import audit, hx_trigger, is_htmx, render
 from app.web.security import SESSION_COOKIE, too_many_attempts
@@ -256,3 +262,107 @@ def delete_account(
         response.status_code = 303
         response.headers["Location"] = "/login?borrada=1"
     return response
+
+
+# ---------------------------------------------------------------------------
+# Descargar mis datos
+# ---------------------------------------------------------------------------
+# The password is checked by an htmx POST (errors stay in the sheet); the zip
+# is then kept in memory behind a one-use token for EXPORT_TTL seconds and
+# fetched by a plain GET link, which every browser (Safari on the iPad and
+# the iPhone included) saves as a file. The token is bound to the session.
+
+EXPORT_TTL = 120
+
+
+@dataclass
+class PendingExport:
+    token: str
+    user_id: int
+    sid: str
+    export: UserExport
+    created: float = field(default_factory=time.monotonic)
+
+    @property
+    def expired(self) -> bool:
+        return time.monotonic() - self.created > EXPORT_TTL
+
+
+class PendingExports:
+    """Prepared «Mis datos» zips waiting to be downloaded (memory only, one
+    per user: preparing a new one drops the previous)."""
+
+    def __init__(self) -> None:
+        self._items: Dict[str, PendingExport] = {}
+        self._lock = threading.Lock()
+
+    def add(self, user_id: int, sid: str, export: UserExport) -> str:
+        token = secrets.token_urlsafe(24)
+        with self._lock:
+            for old in [t for t, p in self._items.items() if p.expired or p.user_id == user_id]:
+                self._items.pop(old, None)
+            self._items[token] = PendingExport(token, user_id, sid, export)
+        return token
+
+    def take(self, token: str, user_id: int, sid: str) -> Optional[UserExport]:
+        """The zip, once; None when unknown, expired or not this session's."""
+        with self._lock:
+            item = self._items.get(token)
+            if item is None or item.user_id != user_id or item.sid != sid:
+                return None
+            self._items.pop(token, None)
+            return None if item.expired else item.export
+
+
+def _export_sheet(request: Request, user: WebUser, status_code: int = 200, **context) -> Response:
+    return _sheet(request, user, "partials/account_export.html", context, status_code=status_code)
+
+
+@router.get("/mas/cuenta/datos")
+def export_form(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
+    require_family_member(db, user)
+    return _export_sheet(request, user)
+
+
+@router.post("/mas/cuenta/datos")
+def export_prepare(
+    request: Request,
+    password: str = Form("", max_length=256),
+    user: WebUser = USER,
+    db: Session = DB,
+) -> Response:
+    require_family_member(db, user)
+    blocked = _throttled(request, user)
+    if blocked:
+        return _export_sheet(request, user, status_code=429, error=blocked)
+    try:
+        verify_password(db, user.id, password)
+    except AccountError as exc:
+        _count(request, user, exc)
+        return _export_sheet(request, user, errors=_errors(exc))
+    _count(request, user, None)
+
+    try:
+        export = export_user_data(db, user.id)
+    except Exception:
+        logger.exception("Web: no se pudo preparar la exportación de '%s'", user.username)
+        return _export_sheet(request, user, status_code=500,
+                             error="No se pudieron preparar tus datos. Inténtalo de nuevo.")
+    token = request.app.state.user_exports.add(user.id, user.session.sid, export)
+    audit(db, request, user, "users", user.id, AuditAction.update,
+          new=f"descargó sus datos: {export.describe()}")
+    logger.info("Web: '%s' preparó la descarga de sus datos (%d bytes)", user.username, len(export.data))
+    return _export_sheet(request, user, token=token, export=export, ttl=EXPORT_TTL)
+
+
+@router.get("/mas/cuenta/datos/{token}")
+def export_download(token: str, request: Request, user: WebUser = USER, db: Session = DB) -> Response:
+    require_family_member(db, user)
+    export = request.app.state.user_exports.take(token, user.id, user.session.sid)
+    if export is None:
+        raise HTTPException(status_code=404, detail="La descarga ha caducado. Vuelve a prepararla en Ajustes › Mi cuenta.")
+    return Response(
+        export.data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{export.filename}"'},
+    )
