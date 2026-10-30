@@ -25,6 +25,30 @@
   </form>
 
   {% if cat and usage is not none %}
+  {# Saved on tap; the sheet stays open. #}
+  <form class="form-grid section" hx-post="/mas/categorias/{{ cat.id }}/tipo" hx-trigger="change" hx-target="#sheet-body">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <div class="field"><span>Tipo de gasto</span>
+      <div class="seg" role="radiogroup" aria-label="Tipo de gasto">
+        {% for value, label in natures %}
+        <label class="seg-opt"><input type="radio" name="nature" value="{{ value or '' }}" {% if cat.nature == value %}checked{% endif %}><span>{{ label }}</span></label>
+        {% endfor %}
+      </div>
+      <small class="help">Fijo: recibos que se repiten (hipoteca, luz, seguros, nómina) y cuentan en Previsión. Traspaso interno: dinero entre miembros de la familia (aportes); no cuenta como gasto ni ingreso.</small>
+    </div>
+    {% if cat.nature == "traspaso" and peers %}
+    <label class="field"><span>Con</span>
+      <select class="input" name="peer">
+        <option value="">Sin indicar</option>
+        {% for p in peers %}<option value="{{ p.id }}" {% if cat.transfer_peer_user_id == p.id %}selected{% endif %}>{{ p.username }}</option>{% endfor %}
+      </select>
+      <small class="help">El miembro que envía o recibe este dinero: así Previsión muestra cuánto aporta cada uno.</small>
+    </label>
+    {% else %}
+    <input type="hidden" name="peer" value="{{ cat.transfer_peer_user_id or '' }}">
+    {% endif %}
+  </form>
+
   <div class="section-h"><h2>Uso</h2></div>
   <dl class="kv card tight">
     <dt>Movimientos</dt><dd class="num">{{ usage.transactions }}{% if usage.manual %} <span class="faint">({{ usage.manual }} a mano)</span>{% endif %}</dd>

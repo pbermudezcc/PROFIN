@@ -15,6 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.categorization.admin_service import (
+    NATURE_LABELS,
     AdminError,
     NotFound,
     add_category,
@@ -31,6 +32,8 @@ from app.categorization.admin_service import (
     remove_rule,
     rename_category,
     rule_match_counts,
+    set_category_nature,
+    transfer_peers,
     visible_rules,
 )
 from app.categorization.rule_search import (
@@ -157,7 +160,30 @@ def category_edit_form(request: Request, category_id: int, user: WebUser = USER,
     usage = category_usage(db, user.id, cat.id) if cat.level != CategoryLevel.type else None
     return render(request, "partials/category_form.html", {
         "cat": cat, "name": cat.name, "usage": usage,
+        "natures": list(NATURE_LABELS.items()), "peers": transfer_peers(db, user.id),
     }, user=user)
+
+
+@router.post("/mas/categorias/{category_id}/tipo")
+def category_nature(request: Request, category_id: int, nature: str = Form(""), peer: str = Form(""),
+                    user: WebUser = USER, db: Session = DB) -> Response:
+    """Variable / Fijo / Traspaso (and who with): saved on tap, sheet stays open."""
+    try:
+        cat = own_category(db, user.id, category_id)
+        old = (cat.nature, cat.transfer_peer_user_id)
+        set_category_nature(db, user.id, category_id, nature or None, parse_int(peer))
+    except NotFound:
+        raise HTTPException(status_code=404)
+    except AdminError as exc:
+        return _error_toast(str(exc))
+    audit(db, request, user, "categories", category_id, AuditAction.update,
+          old=f"nature={old[0]} peer={old[1]}", new=f"nature={cat.nature} peer={cat.transfer_peer_user_id}")
+    notify_change(request, user, "transactions")
+    # Re-render the sheet (the «Con» picker appears for a traspaso) and
+    # refresh the list behind it.
+    response = category_edit_form(request, category_id, user=user, db=db)
+    hx_trigger(response, toast=f"«{cat.name}»: {NATURE_LABELS[cat.nature].lower()}", refreshPage=True)
+    return response
 
 
 @router.post("/mas/categorias/{category_id}/renombrar")
@@ -173,6 +199,7 @@ def category_rename(request: Request, category_id: int, name: str = Form("", max
         usage = category_usage(db, user.id, cat.id) if cat.level != CategoryLevel.type else None
         return render(request, "partials/category_form.html", {
             "cat": cat, "name": name, "usage": usage, "error": str(exc),
+            "natures": list(NATURE_LABELS.items()), "peers": transfer_peers(db, user.id),
         }, user=user)
     audit(db, request, user, "categories", category_id, AuditAction.update,
           old=f"«{old}»", new=f"«{cat.name}»")

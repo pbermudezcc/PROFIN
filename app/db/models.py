@@ -105,6 +105,32 @@ CATEGORY_SOURCE_MANUAL = "manual"   # set by a family member — rules never tou
 CATEGORY_SOURCE_RULE   = "rule"     # set by the auto-categorization rules engine
 
 
+# Category.nature values (plain strings, added by migration 9). NULL = variable.
+CATEGORY_NATURE_FIXED    = "fijo"      # recurring bill or income (hipoteca, luz, nómina…)
+CATEGORY_NATURE_TRANSFER = "traspaso"  # money moved between family members (aportes)
+CATEGORY_NATURES = (CATEGORY_NATURE_FIXED, CATEGORY_NATURE_TRANSFER)
+
+# Transaction.fixed_override values. NULL = follow the category's nature.
+FIXED_OVERRIDE_FIXED    = "fijo"
+FIXED_OVERRIDE_VARIABLE = "variable"
+FIXED_OVERRIDES = (FIXED_OVERRIDE_FIXED, FIXED_OVERRIDE_VARIABLE)
+
+
+def effective_nature(fixed_override: Optional[str], category_nature: Optional[str]) -> Optional[str]:
+    """The nature a movement counts with: CATEGORY_NATURE_* or None (variable).
+
+    A traspaso category always wins (an aporte is never a bill); otherwise the
+    movement's own override beats its category's default.
+    """
+    if category_nature == CATEGORY_NATURE_TRANSFER:
+        return CATEGORY_NATURE_TRANSFER
+    if fixed_override == FIXED_OVERRIDE_FIXED:
+        return CATEGORY_NATURE_FIXED
+    if fixed_override == FIXED_OVERRIDE_VARIABLE:
+        return None
+    return category_nature if category_nature in CATEGORY_NATURES else None
+
+
 # ---------------------------------------------------------------------------
 # users
 # ---------------------------------------------------------------------------
@@ -126,7 +152,8 @@ class User(Base):
         "Account", back_populates="user", cascade="all, delete-orphan"
     )
     categories: Mapped[List[Category]] = relationship(
-        "Category", back_populates="user", cascade="all, delete-orphan"
+        "Category", back_populates="user", cascade="all, delete-orphan",
+        foreign_keys="Category.user_id",
     )
     rules: Mapped[List[AutoCategorizationRule]] = relationship(
         "AutoCategorizationRule", back_populates="user", cascade="all, delete-orphan"
@@ -198,12 +225,22 @@ class Category(Base):
     transaction_type: Mapped[Optional[TransactionType]] = mapped_column(
         Enum(TransactionType), nullable=True
     )
+    # CATEGORY_NATURE_* or NULL (variable). Its movements are fixed unless
+    # they override it; traspaso is left out of the forecast. Migration 9.
+    nature: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # For a traspaso category: the family member the money goes to or comes
+    # from (e.g. COMUN's «Aporte Comun María» → MARIA). Migration 9.
+    transfer_peer_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
 
     # Relationships
-    user: Mapped[User] = relationship("User", back_populates="categories")
+    user: Mapped[User] = relationship(
+        "User", back_populates="categories", foreign_keys=[user_id]
+    )
     parent: Mapped[Optional[Category]] = relationship(
         "Category", remote_side="Category.id", back_populates="children"
     )
@@ -305,6 +342,11 @@ class Transaction(Base):
     # Who set category_id: CATEGORY_SOURCE_MANUAL | CATEGORY_SOURCE_RULE | None
     category_source: Mapped[Optional[str]] = mapped_column(
         String(16), nullable=True
+    )
+    # FIXED_OVERRIDE_* set by hand, or NULL = the category's nature decides.
+    # Added by migration 9.
+    fixed_override: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True
     )
 
     # --- Core date & amount fields ---

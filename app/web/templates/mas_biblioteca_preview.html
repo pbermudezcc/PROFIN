@@ -44,6 +44,7 @@
 {% endmacro %}
 
 {{ block("Categorías nuevas", plan.new_types + plan.new_categories) }}
+{{ block("Tipo de gasto (fijo / traspaso)", plan.nature_changes) }}
 {{ block("Reglas nuevas", new_rules) }}
 {% if mode == "replace" %}
 {{ block("Prioridad cambiada", priority_changes) }}

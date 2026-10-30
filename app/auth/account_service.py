@@ -194,6 +194,10 @@ def delete_user(
                        f"{summary.transactions} movimientos, {summary.investment_operations} operaciones"),
             new_value=f"cuenta borrada desde {source}; copia previa {backup_path.name}",
         ))
+        # Other members' traspaso categories that point at this user lose the
+        # link (explicit too: SQLite only applies ON DELETE with foreign_keys on).
+        session.query(Category).filter(Category.transfer_peer_user_id == uid).update(
+            {Category.transfer_peer_user_id: None}, synchronize_session=False)
         session.delete(user)
         session.commit()
     except Exception:

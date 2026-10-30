@@ -19,6 +19,22 @@
       <dt>Categoría</dt><dd>{{ row.category_name or "Sin categoría" }}{% if row.category_source == "manual" %} <span class="badge acc">manual</span>{% elif row.category_source == "rule" %} <span class="badge">regla</span>{% endif %}</dd>
     </dl>
 
+    {% if row.nature != "traspaso" %}
+    {# Saved on tap; the sheet stays open. #}
+    <form class="field" hx-post="/movimientos/{{ row.id }}/fijo" hx-trigger="change" hx-swap="none">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <span>Gasto fijo</span>
+      <div class="seg" role="radiogroup" aria-label="Gasto fijo">
+        {% for value, label in fixed_choices %}
+        <label class="seg-opt"><input type="radio" name="fijo" value="{{ value }}" {% if (row.fixed_override or '') == value %}checked{% endif %}><span>{{ label }}{% if not value %} · {{ "fijo" if row.category_nature == "fijo" else "variable" }}{% endif %}</span></label>
+        {% endfor %}
+      </div>
+      <small class="help">Los fijos (recibos que se repiten) cuentan en Previsión. «Según categoría» sigue lo que diga su categoría.</small>
+    </form>
+    {% else %}
+    <p class="note">Su categoría es un traspaso interno: no cuenta como gasto ni ingreso en Previsión.</p>
+    {% endif %}
+
     <div class="cat-head">
       <h4>Cambiar categoría <span class="faint">· {{ total_categories }} disponibles</span></h4>
       <label class="search">

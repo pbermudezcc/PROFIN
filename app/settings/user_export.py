@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.analytics.transaction_search import SEARCH_TYPE_LABELS
 from app.categorization import library_io
+from app.categorization.admin_service import NATURE_LABELS
 from app.categorization.rule_search import MOVEMENT_LABELS
 from app.db.models import (
     CATEGORY_SOURCE_MANUAL,
@@ -47,6 +48,7 @@ from app.db.models import (
     InvestmentTransaction,
     Transaction,
     User,
+    effective_nature,
 )
 from app.investments.ledger import KIND_LABELS
 
@@ -188,17 +190,22 @@ def export_user_data(session: Session, user_id: int, when: Optional[datetime] = 
          t.issuer_name, t.concept, t.concepto_comun, t.concepto_propio, t.raw_details,
          t.amount, t.running_balance, _label(t.type, SEARCH_TYPE_LABELS),
          *category_pair(t.category_id), SOURCE_LABELS.get(t.category_source, t.category_source or ""),
-         t.source_file]
+         t.source_file,
+         NATURE_LABELS[effective_nature(t.fixed_override, by_id[t.category_id].nature
+                                        if t.category_id in by_id else None)]]
         for t in movements
     ]
 
     account_rows = [[a.account_name, a.bank, a.iban_last4, a.created_at] for a in accounts]
 
+    peer_names = dict(session.query(User.id, User.username).filter(
+        User.id.in_({c.transfer_peer_user_id for c in categories if c.transfer_peer_user_id})))
     category_rows: List[list] = []
     for root in sorted((c for c in categories if c.parent_id is None), key=lambda c: c.name.lower()):
         category_rows.append([root.name, "", _label(root.transaction_type, SEARCH_TYPE_LABELS)])
         for child in sorted((c for c in categories if c.parent_id == root.id), key=lambda c: c.name.lower()):
-            category_rows.append([root.name, child.name, ""])
+            category_rows.append([root.name, child.name, "", NATURE_LABELS.get(child.nature, ""),
+                                  peer_names.get(child.transfer_peer_user_id, "")])
 
     rules = (
         session.query(AutoCategorizationRule)
@@ -246,10 +253,11 @@ def export_user_data(session: Session, user_id: int, when: Optional[datetime] = 
         ("Movimientos",
          ["Fecha", "Fecha valor", "Cuenta", "Emisor", "Concepto", "Concepto común", "Concepto propio",
           "Detalles", "Importe", "Saldo", "Tipo", "Tipo de categoría", "Categoría",
-          "Categorizado por", "Extracto"],
+          "Categorizado por", "Extracto", "Fijo / variable"],
          movement_rows, (9, 10), (1, 2)),
         ("Cuentas", ["Cuenta", "Banco", "IBAN (últimos 4)", "Creada"], account_rows, (), ()),
-        ("Categorías", ["Tipo", "Categoría", "Tipo de movimiento"], category_rows, (), ()),
+        ("Categorías", ["Tipo", "Categoría", "Tipo de movimiento", "Tipo de gasto", "Con"],
+         category_rows, (), ()),
         ("Reglas", ["Prioridad", "Patrón", "Coincidencia", "Movimiento", "Tipo", "Categoría", "Creada"],
          rule_rows, (), ()),
         ("Operaciones",

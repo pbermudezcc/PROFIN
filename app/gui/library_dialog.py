@@ -120,6 +120,7 @@ class LibraryImportDialog(QDialog):
         for title, items in (
             ("Tipos nuevos", plan.new_types),
             ("Categorías nuevas", plan.new_categories),
+            ("Tipo de gasto (fijo / traspaso)", plan.nature_changes),
             ("Reglas nuevas", [f"«{r.pattern}»{lio.movement_note(r.transaction_type)} "
                                f"({r.match_type}, prioridad {r.priority}) → "
                                f"{r.type} › {r.category}"

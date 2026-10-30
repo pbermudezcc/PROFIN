@@ -502,3 +502,51 @@ def test_migration_8_adds_the_rules_movement_type_as_any(tmp_path):
     with closing(sqlite3.connect(db)) as conn:
         rows = conn.execute("SELECT match_pattern, transaction_type FROM auto_categorization_rules").fetchall()
     assert rows == [("MERCADONA", None)]              # existing rules: any type, as before
+
+
+def test_migration_9_adds_fixed_nature_columns_empty(tmp_path):
+    from app.db.database import _migration_9_fixed_nature
+
+    db = tmp_path / "profin.db"
+    _make_legacy_db(db)
+    migrate_schema(db)
+    with closing(sqlite3.connect(db)) as conn:       # a v8 file
+        conn.executescript(                          # SQLite cannot drop a FK column
+            "CREATE TABLE categories_v8 AS SELECT id, user_id, parent_id, name, level, "
+            "transaction_type, created_at FROM categories; "
+            "DROP TABLE categories; ALTER TABLE categories_v8 RENAME TO categories;")
+        conn.execute("ALTER TABLE transactions DROP COLUMN fixed_override")
+        conn.execute("PRAGMA user_version = 8")
+        conn.commit()
+
+    assert migrate_schema(db) == 8
+    assert _user_version(db) == SCHEMA_VERSION
+    _migration_9_fixed_nature(db)                     # idempotent
+    with closing(sqlite3.connect(db)) as conn:
+        cats = conn.execute("SELECT nature, transfer_peer_user_id FROM categories").fetchall()
+        txns = conn.execute("SELECT fixed_override FROM transactions").fetchall()
+    assert set(cats) == {(None, None)}                # no backfill: everything variable
+    assert set(txns) == {(None,)}
+
+
+def test_deleting_a_member_clears_transfer_links_to_them(tmp_path):
+    from app.auth.account_service import delete_user
+    from app.auth.auth_service import hash_password
+    from app.db.models import CATEGORY_NATURE_TRANSFER
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'p.db'}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        comun = User(username="COMUN", password_hash=hash_password("clave-larga-1"))
+        maria = User(username="MARIA", password_hash=hash_password("clave-larga-2"))
+        s.add_all([comun, maria])
+        s.flush()
+        aporte = Category(user_id=comun.id, name="Aporte Comun María", level=CategoryLevel.category,
+                          nature=CATEGORY_NATURE_TRANSFER, transfer_peer_user_id=maria.id)
+        s.add(aporte)
+        s.commit()
+        delete_user(s, maria.id, "clave-larga-2", "MARIA", backup=lambda: tmp_path / "copia.zip")
+        s.expire_all()
+        assert s.get(Category, aporte.id).transfer_peer_user_id is None
+        assert s.get(Category, aporte.id).nature == CATEGORY_NATURE_TRANSFER
+    engine.dispose()

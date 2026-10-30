@@ -2119,3 +2119,58 @@ def test_rule_form_saves_the_movement_type_and_filters_by_it(app, family, factor
         assert db.get(AutoCategorizationRule, rule_id).transaction_type is None
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Fijo / traspaso marks
+# ---------------------------------------------------------------------------
+
+def test_category_nature_saves_on_tap_with_audit(app, family, factory):
+    client = logged_in(app)
+    headers = {**ORIGIN, "X-CSRF-Token": csrf_of(client), "HX-Request": "true"}
+    url = f"/mas/categorias/{family['ana_cat']}/tipo"
+
+    response = client.post(url, data={"nature": "traspaso"}, headers=headers)
+    assert response.status_code == 200
+    assert "beto" in response.text                  # the «Con» picker appears for a traspaso
+    response = client.post(url, data={"nature": "traspaso", "peer": family["beto"]}, headers=headers)
+    assert response.status_code == 200
+    db = factory()
+    try:
+        cat = db.get(Category, family["ana_cat"])
+        assert (cat.nature, cat.transfer_peer_user_id) == ("traspaso", family["beto"])
+        assert db.query(AuditLog).filter_by(table_affected="categories", record_id=cat.id).count() == 2
+    finally:
+        db.close()
+
+    assert client.post(f"/mas/categorias/{family['beto_cat']}/tipo", data={"nature": "fijo"},
+                       headers=headers).status_code == 404
+    bad = client.post(url, data={"nature": "mensual"}, headers=headers)
+    assert "toastError" in bad.headers.get("HX-Trigger", "")
+    assert "Traspaso" in client.get("/mas/categorias").text      # badge in the list
+
+
+def test_movement_fixed_override_saves_and_filters(app, family, factory):
+    client = logged_in(app)
+    headers = {**ORIGIN, "X-CSRF-Token": csrf_of(client), "HX-Request": "true"}
+    txn = family["ana_txn"]
+
+    sheet = client.get(f"/movimientos/{txn}").text
+    assert "Según categoría" in sheet
+    response = client.post(f"/movimientos/{txn}/fijo", data={"fijo": "fijo"}, headers=headers)
+    assert response.status_code == 200
+    assert "Fijo" in response.text                  # the row's badge, swapped out of band
+    assert f"tx-{txn}" in client.get("/movimientos?fijo=fijo").text
+    assert f"tx-{txn}" not in client.get("/movimientos?fijo=variable").text
+
+    assert client.post(f"/movimientos/{family['beto_txn']}/fijo", data={"fijo": "fijo"},
+                       headers=headers).status_code == 404
+    assert client.post(f"/movimientos/{txn}/fijo", data={"fijo": "fijo"},
+                       headers=ORIGIN).status_code == 403      # no CSRF token
+    db = factory()
+    try:
+        assert db.get(Transaction, txn).fixed_override == "fijo"
+        assert db.get(Transaction, family["beto_txn"]).fixed_override is None
+        assert db.query(AuditLog).filter_by(table_affected="transactions", record_id=txn).count() == 1
+    finally:
+        db.close()

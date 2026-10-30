@@ -22,6 +22,9 @@ Design rules
   transactions are never touched — rules are applied afterwards, on demand.
 * Global rules (user_id NULL) are only imported when allow_global=True
   (desktop); the web never changes them.
+* A category's Fijo / Traspaso mark travels with it ("natures", optional)
+  and is only set where the user has none yet. The «Con» member of a
+  traspaso is person-specific and never travels.
 
 Qt-free; shared by CategoriesView and the web router.
 """
@@ -41,6 +44,7 @@ from sqlalchemy.orm import Session
 from app.categorization.admin_service import MAX_NAME, MAX_PATTERN, AdminError
 from app.categorization.rules_engine import RULE_TRANSACTION_TYPES, rule_scope
 from app.db.models import (
+    CATEGORY_NATURES,
     AutoCategorizationRule,
     Category,
     CategoryLevel,
@@ -78,6 +82,9 @@ class LibType:
     name: str
     transaction_type: Optional[str]
     categories: Tuple[str, ...]
+    # ((category name, CATEGORY_NATURE_*), ...) for the non-variable ones;
+    # optional in the file (older files: everything variable).
+    natures: Tuple[Tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -156,11 +163,16 @@ def export_library(session: Session, user_id: int, include_global: bool = False,
             (c.name for c in root.children if c.level == CategoryLevel.category),
             key=lambda n: (_fold(n), n),
         )
-        types.append({
+        entry = {
             "name": root.name,
             "transaction_type": root.transaction_type.value if root.transaction_type else None,
             "categories": children,
-        })
+        }
+        natures = {c.name: c.nature for c in root.children
+                   if c.level == CategoryLevel.category and c.nature in CATEGORY_NATURES}
+        if natures:
+            entry["natures"] = natures
+        types.append(entry)
 
     query = session.query(AutoCategorizationRule)
     if include_global:
@@ -313,7 +325,16 @@ def parse_library(raw: bytes) -> LibraryFile:
         total += len(cats)
         if _fold(name) in seen_types:
             raise LibraryError(f"El tipo «{name}» aparece dos veces.")
-        lib_type = LibType(name, tx, tuple(cats))
+        natures_raw = entry.get("natures") or {}
+        if not isinstance(natures_raw, dict):
+            raise LibraryError(f"Los tipos de gasto de «{name}» están mal formados.")
+        known = {_fold(c): c for c in cats}
+        natures = []
+        for cat, nature in natures_raw.items():
+            if nature not in CATEGORY_NATURES or not isinstance(cat, str) or _fold(cat) not in known:
+                raise LibraryError(f"Tipo de gasto no válido en «{name}»: {cat} = {nature}.")
+            natures.append((known[_fold(cat)], nature))
+        lib_type = LibType(name, tx, tuple(cats), tuple(sorted(natures)))
         seen_types[_fold(name)] = lib_type
         types.append(lib_type)
     if total > MAX_CATEGORIES:
@@ -367,6 +388,7 @@ class ImportPlan:
     mode: str
     new_types: List[str] = field(default_factory=list)
     new_categories: List[str] = field(default_factory=list)          # "TIPO › Categoría"
+    nature_changes: List[str] = field(default_factory=list)          # "TIPO › Categoría: fijo"
     new_rules: List[LibRule] = field(default_factory=list)
     priority_changes: List[Tuple[LibRule, int]] = field(default_factory=list)   # (rule, old priority)
     deleted_rules: List[str] = field(default_factory=list)          # replace: personal rules gone
@@ -376,7 +398,7 @@ class ImportPlan:
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.new_types or self.new_categories or self.new_rules
+        return bool(self.new_types or self.new_categories or self.nature_changes or self.new_rules
                     or self.priority_changes or self.deleted_rules)
 
 
@@ -423,6 +445,9 @@ def _describe(rule: AutoCategorizationRule) -> str:
     return f"«{rule.match_pattern}»{movement_note(_txn_type_value(rule))} → {where}"
 
 
+_NATURE_TEXT = {"fijo": "fijo", "traspaso": "traspaso interno"}
+
+
 def plan_import(session: Session, user_id: int, lib: LibraryFile, mode: str = MODE_MERGE,
                 allow_global: bool = False) -> ImportPlan:
     """What apply_import would change, without writing anything."""
@@ -440,6 +465,10 @@ def plan_import(session: Session, user_id: int, lib: LibraryFile, mode: str = MO
         for cat in lib_type.categories:
             if (_fold(lib_type.name), _fold(cat)) not in state.categories:
                 plan.new_categories.append(f"{lib_type.name} › {cat}")
+        for cat, nature in lib_type.natures:
+            existing = state.categories.get((_fold(lib_type.name), _fold(cat)))
+            if existing is None or existing.nature is None:
+                plan.nature_changes.append(f"{lib_type.name} › {cat}: {_NATURE_TEXT[nature]}")
 
     file_personal: Dict[tuple, LibRule] = {}
     file_global: set = set()
@@ -481,6 +510,7 @@ def plan_import(session: Session, user_id: int, lib: LibraryFile, mode: str = MO
 class ImportResult:
     types_created: int = 0
     categories_created: int = 0
+    natures_set: int = 0
     rules_created: int = 0
     rules_updated: int = 0
     rules_deleted: int = 0
@@ -521,6 +551,11 @@ def apply_import(session: Session, user_id: int, lib: LibraryFile, mode: str = M
                 session.flush()
                 state.categories[key] = cat
                 result.categories_created += 1
+            for cat_name, nature in lib_type.natures:     # only where none is set yet
+                cat = state.categories.get((_fold(lib_type.name), _fold(cat_name)))
+                if cat is not None and cat.nature is None:
+                    cat.nature = nature
+                    result.natures_set += 1
 
         for rule in plan.new_rules:
             cat = state.categories[(_fold(rule.type), _fold(rule.category))]

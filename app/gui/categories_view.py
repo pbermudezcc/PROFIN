@@ -21,20 +21,24 @@ from PySide6.QtGui     import QFont, QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTreeView, QHeaderView,
-    QInputDialog, QMessageBox, QSizePolicy, QFileDialog,
+    QInputDialog, QMessageBox, QSizePolicy, QFileDialog, QComboBox,
 )
 import qtawesome as qta
 
 from sqlalchemy.orm import Session
 
 from app.config      import THEMES
-from app.db.models   import AutoCategorizationRule, Category, CategoryLevel, User
+from app.db.models   import (
+    CATEGORY_NATURE_FIXED, CATEGORY_NATURE_TRANSFER,
+    AutoCategorizationRule, Category, CategoryLevel, User,
+)
 from app.gui._style_utils import apply_card_shadow
 from app.categorization.category_manager import get_all_categories
 from app.categorization.rules_engine import shares_global_rules
 from app.categorization import library_io
 from app.categorization.admin_service import (
-    add_category, apply_all_rules, load_defaults, remove_category, rename_category,
+    NATURE_LABELS, add_category, apply_all_rules, load_defaults, remove_category,
+    rename_category, set_category_nature, transfer_peers,
 )
 from app.gui.library_dialog import LibraryImportDialog
 
@@ -199,6 +203,34 @@ class CategoriesView(QWidget):
         self._btn_delete.clicked.connect(self._on_delete)
         layout.addWidget(self._btn_delete)
 
+        layout.addSpacing(8)
+
+        # Fijo / variable / traspaso (saved on change, like the web sheet)
+        lbl_nature = QLabel("Tipo de gasto")
+        lbl_nature.setObjectName("selectedInfo")
+        layout.addWidget(lbl_nature)
+        self._cmb_nature = QComboBox()
+        self._cmb_nature.setFixedHeight(34)
+        for value, label in NATURE_LABELS.items():
+            self._cmb_nature.addItem(label, value)
+        self._cmb_nature.setToolTip(
+            "Fijo: recibos que se repiten (hipoteca, luz, seguros, nómina); cuentan en Previsiones.\n"
+            "Traspaso interno: dinero entre miembros de la familia (aportes); no es gasto ni ingreso.")
+        self._cmb_nature.setEnabled(False)
+        self._cmb_nature.currentIndexChanged.connect(self._on_nature_changed)
+        layout.addWidget(self._cmb_nature)
+
+        self._lbl_peer = QLabel("Con (miembro que envía o recibe)")
+        self._lbl_peer.setObjectName("selectedInfo")
+        self._lbl_peer.setWordWrap(True)
+        layout.addWidget(self._lbl_peer)
+        self._cmb_peer = QComboBox()
+        self._cmb_peer.setFixedHeight(34)
+        self._cmb_peer.currentIndexChanged.connect(self._on_nature_changed)
+        layout.addWidget(self._cmb_peer)
+        self._lbl_peer.setVisible(False)
+        self._cmb_peer.setVisible(False)
+
         layout.addStretch()
 
         return panel
@@ -244,19 +276,63 @@ class CategoriesView(QWidget):
             self._tree_model.appendRow(type_item)
 
             for cat in by_parent.get(type_node.id, []):
-                cat_item = QStandardItem(
-                    qta.icon("mdi.tag-outline",
-                             color=self._t["text_secondary"]),
-                    cat.name
-                )
+                cat_item = QStandardItem(cat.name)
                 cat_item.setData(cat.id, Qt.ItemDataRole.UserRole)
                 cat_item.setData("category", Qt.ItemDataRole.UserRole + 1)
+                self._show_nature(cat_item, cat.nature)
                 type_item.appendRow(cat_item)
 
         self._tree.collapseAll()
         self._btn_add_sub.setEnabled(False)
         self._btn_rename.setEnabled(False)
         self._btn_delete.setEnabled(False)
+        self._load_nature(None)
+
+    def _show_nature(self, item: QStandardItem, nature: Optional[str]) -> None:
+        """Icon + tooltip for a category's nature (the text stays its name)."""
+        icon, color = {
+            CATEGORY_NATURE_FIXED:    ("mdi.pin", self._t["accent"]),
+            CATEGORY_NATURE_TRANSFER: ("mdi.swap-horizontal", self._t["investment"]),
+        }.get(nature, ("mdi.tag-outline", self._t["text_secondary"]))
+        item.setIcon(qta.icon(icon, color=color))
+        item.setToolTip(NATURE_LABELS.get(nature, "Variable"))
+
+    def _load_nature(self, cat: Optional[Category]) -> None:
+        """Fill the Tipo de gasto / Con pickers without saving anything."""
+        self._loading_nature = True
+        try:
+            self._cmb_nature.setEnabled(cat is not None)
+            self._cmb_nature.setCurrentIndex(
+                max(0, self._cmb_nature.findData(cat.nature if cat else None)))
+            peers = transfer_peers(self._session, self._user.id)
+            self._cmb_peer.clear()
+            self._cmb_peer.addItem("Sin indicar", None)
+            for peer in peers:
+                self._cmb_peer.addItem(peer.username, peer.id)
+            show_peer = bool(cat is not None and cat.nature == CATEGORY_NATURE_TRANSFER and peers)
+            self._lbl_peer.setVisible(show_peer)
+            self._cmb_peer.setVisible(show_peer)
+            if show_peer:
+                self._cmb_peer.setCurrentIndex(max(0, self._cmb_peer.findData(cat.transfer_peer_user_id)))
+        finally:
+            self._loading_nature = False
+
+    def _on_nature_changed(self, _index: int) -> None:
+        if getattr(self, "_loading_nature", False):
+            return
+        item = self._tree_model.itemFromIndex(self._tree.currentIndex())
+        if item is None or item.data(Qt.ItemDataRole.UserRole + 1) != "category":
+            return
+        nature = self._cmb_nature.currentData()
+        peer = self._cmb_peer.currentData() if nature == CATEGORY_NATURE_TRANSFER else None
+        try:
+            cat = set_category_nature(self._session, self._user.id,
+                                      item.data(Qt.ItemDataRole.UserRole), nature, peer)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Error", str(exc))
+            return
+        self._show_nature(item, cat.nature)
+        self._load_nature(cat)
 
     # ------------------------------------------------------------------
     # Slots
@@ -281,6 +357,8 @@ class CategoriesView(QWidget):
         self._btn_add_sub.setEnabled(is_type)
         self._btn_rename.setEnabled(is_type or is_category)
         self._btn_delete.setEnabled(is_category)
+        self._load_nature(
+            self._session.get(Category, item.data(Qt.ItemDataRole.UserRole)) if is_category else None)
 
     def _on_add_sub(self) -> None:
         idx  = self._tree.currentIndex()

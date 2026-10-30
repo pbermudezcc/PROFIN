@@ -31,17 +31,31 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    CATEGORY_NATURE_FIXED,
+    CATEGORY_NATURE_TRANSFER,
     CATEGORY_SOURCE_MANUAL,
     CATEGORY_SOURCE_RULE,
+    FIXED_OVERRIDE_FIXED,
     Account,
     Category,
     Transaction,
     TransactionType,
     TRANSACTIONS_NEWEST_FIRST,
+    effective_nature,
 )
 
 UNCATEGORIZED = -1
 UNCATEGORIZED_LABEL = "Sin categorizar"
+
+# TransactionFilters.nature values (the movement's effective nature).
+NATURE_FILTER_FIXED    = "fijo"
+NATURE_FILTER_VARIABLE = "variable"
+NATURE_FILTER_TRANSFER = "traspaso"
+NATURE_FILTERS = [
+    (NATURE_FILTER_FIXED, "Fijos"),
+    (NATURE_FILTER_VARIABLE, "Variables"),
+    (NATURE_FILTER_TRANSFER, "Traspasos"),
+]
 
 
 @dataclass
@@ -57,6 +71,7 @@ class TransactionFilters:
     # Category name as the Gastos/Ingresos charts group them (same-named
     # categories share a slice); "Sin categorizar" = rows without one.
     category_label: Optional[str] = None
+    nature:         Optional[str] = None     # NATURE_FILTER_*
 
 
 @dataclass
@@ -73,6 +88,32 @@ class TransactionRow:
     category_name:    Optional[str]
     category_source:  Optional[str]
     account_name:     str
+    fixed_override:   Optional[str] = None   # the movement's own choice
+    nature:           Optional[str] = None   # effective: CATEGORY_NATURE_* or None
+    category_nature:  Optional[str] = None   # the category's default
+
+
+def nature_condition(session: Session, user_id: int, nature: str):
+    """SQL condition for movements whose effective nature is ``nature``
+    (same precedence as models.effective_nature)."""
+    def ids(value):
+        return [cid for (cid,) in session.query(Category.id).filter(
+            Category.user_id == user_id, Category.nature == value)]
+    # COALESCE everywhere: a NULL inside NOT (…) would drop the row from
+    # both sides (uncategorized movements are variable, not "unknown").
+    category = func.coalesce(Transaction.category_id, 0)
+    override = func.coalesce(Transaction.fixed_override, "")
+    transfer = category.in_(ids(CATEGORY_NATURE_TRANSFER))
+    not_transfer = ~transfer
+    fixed = not_transfer & (
+        (override == FIXED_OVERRIDE_FIXED)
+        | ((override == "") & category.in_(ids(CATEGORY_NATURE_FIXED)))
+    )
+    if nature == NATURE_FILTER_TRANSFER:
+        return transfer
+    if nature == NATURE_FILTER_FIXED:
+        return fixed
+    return not_transfer & ~fixed
 
 
 def _query(session: Session, user_id: int, filters: TransactionFilters):
@@ -92,6 +133,8 @@ def _query(session: Session, user_id: int, filters: TransactionFilters):
                     Category.user_id == user_id, Category.name == filters.category_label)
             ]
             query = query.filter(Transaction.category_id.in_(ids))
+    if filters.nature:
+        query = query.filter(nature_condition(session, user_id, filters.nature))
     if filters.account_id is not None:
         query = query.filter(Transaction.account_id == filters.account_id)
     if filters.date_from is not None:
@@ -264,9 +307,11 @@ def search_transactions(
     """(rows newest first, total matching) for one page."""
     query = _query(session, user_id, filters)
     txns, total = filtered_transactions_page(session, user_id, query, filters.text, offset, limit)
-    names: Dict[int, str] = dict(
-        session.query(Category.id, Category.name).filter(Category.user_id == user_id).all()
-    )
+    names: Dict[int, str] = {}
+    natures: Dict[int, Optional[str]] = {}
+    for cid, name, cat_nature in session.query(Category.id, Category.name, Category.nature).filter(
+            Category.user_id == user_id):
+        names[cid], natures[cid] = name, cat_nature
     accounts: Dict[int, str] = dict(
         session.query(Account.id, Account.account_name).filter(Account.user_id == user_id).all()
     )
@@ -284,6 +329,9 @@ def search_transactions(
             category_name=names.get(t.category_id),
             category_source=t.category_source,
             account_name=accounts.get(t.account_id, ""),
+            fixed_override=t.fixed_override,
+            nature=effective_nature(t.fixed_override, natures.get(t.category_id)),
+            category_nature=natures.get(t.category_id),
         )
         for t in txns
     ]
@@ -295,6 +343,8 @@ def get_transaction_row(session: Session, user_id: int, transaction_id: int) -> 
     if txn is None or txn.user_id != user_id:
         return None
     category = session.get(Category, txn.category_id) if txn.category_id else None
+    if category is not None and category.user_id != user_id:
+        category = None
     account = session.get(Account, txn.account_id)
     return TransactionRow(
         id=txn.id,
@@ -306,9 +356,12 @@ def get_transaction_row(session: Session, user_id: int, transaction_id: int) -> 
         running_balance=txn.running_balance,
         txn_type=TransactionType(txn.type),
         category_id=txn.category_id,
-        category_name=category.name if category and category.user_id == user_id else None,
+        category_name=category.name if category else None,
         category_source=txn.category_source,
         account_name=account.account_name if account else "",
+        fixed_override=txn.fixed_override,
+        nature=effective_nature(txn.fixed_override, category.nature if category else None),
+        category_nature=category.nature if category else None,
     )
 
 

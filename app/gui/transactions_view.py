@@ -31,15 +31,18 @@ from sqlalchemy.orm    import Session
 
 from app.config      import THEMES
 from app.db.models   import (
-    Transaction, TransactionType, Category, CategoryLevel, User
+    CATEGORY_NATURE_FIXED, CATEGORY_NATURE_TRANSFER, FIXED_OVERRIDE_FIXED, FIXED_OVERRIDE_VARIABLE,
+    Transaction, TransactionType, Category, CategoryLevel, User, effective_nature,
 )
 from app.categorization.category_manager import (
     assign_transaction_category, get_all_categories, similar_uncategorized_ids
 )
 from app.categorization.admin_service import (
-    add_rule_from_transaction, transaction_has_rule
+    add_rule_from_transaction, set_transaction_fixed, transaction_has_rule
 )
-from app.analytics.transaction_search import filtered_transactions_page
+from app.analytics.transaction_search import (
+    NATURE_FILTERS, filtered_transactions_page, nature_condition,
+)
 from app.gui._style_utils import apply_card_shadow
 
 
@@ -201,6 +204,16 @@ class TransactionsView(QWidget):
         self._cmb_cat.currentIndexChanged.connect(self._on_filter_changed)
         layout.addWidget(self._cmb_cat)
 
+        # Fijo / variable / traspaso (the movement's effective nature)
+        self._cmb_nature = QComboBox()
+        self._cmb_nature.setFixedHeight(34)
+        self._cmb_nature.setObjectName("filterCombo")
+        self._cmb_nature.addItem("Fijos y variables", None)
+        for value, label in NATURE_FILTERS:
+            self._cmb_nature.addItem(label, value)
+        self._cmb_nature.currentIndexChanged.connect(self._on_filter_changed)
+        layout.addWidget(self._cmb_nature)
+
         layout.addStretch()
 
         # Clear filters
@@ -344,6 +357,10 @@ class TransactionsView(QWidget):
         elif cat_filter is not None:
             query = query.filter(Transaction.category_id == cat_filter)
 
+        nature_filter = self._cmb_nature.currentData()
+        if nature_filter:
+            query = query.filter(nature_condition(self._session, self._user.id, nature_filter))
+
         try:
             transactions, self._total = filtered_transactions_page(
                 self._session, self._user.id, query, search_text,
@@ -370,6 +387,7 @@ class TransactionsView(QWidget):
 
         # Build category lookup
         cat_map = {c.id: c.name for c in self._categories}
+        nature_map = {c.id: c.nature for c in self._categories}
         type_labels = {
             TransactionType.income:     "Ingreso",
             TransactionType.expense:    "Gasto",
@@ -421,6 +439,8 @@ class TransactionsView(QWidget):
             item_cat = QStandardItem(cat_name)
             if txn.category_id is None:
                 item_cat.setForeground(QColor(t["warning"]))
+            self._show_nature(item_cat, effective_nature(
+                txn.fixed_override, nature_map.get(txn.category_id)))
 
             # Saldo
             item_balance = QStandardItem(
@@ -440,6 +460,16 @@ class TransactionsView(QWidget):
     # ------------------------------------------------------------------
     # Category assignment dialog (double-click on row)
     # ------------------------------------------------------------------
+
+    def _show_nature(self, item: QStandardItem, nature: Optional[str]) -> None:
+        """Pin = fijo, arrows = traspaso interno (same icons as Categorías)."""
+        icon = {
+            CATEGORY_NATURE_FIXED:    ("mdi.pin", self._t["accent"], "Gasto fijo"),
+            CATEGORY_NATURE_TRANSFER: ("mdi.swap-horizontal", self._t["investment"], "Traspaso interno"),
+        }.get(nature)
+        if icon is not None:
+            item.setIcon(qta.icon(icon[0], color=icon[1]))
+            item.setToolTip(icon[2])
 
     def _on_row_double_clicked(self, index) -> None:
         row = index.row()
@@ -510,6 +540,25 @@ class TransactionsView(QWidget):
         """)
         layout.addWidget(cmb)
 
+        # The movement's own Fijo / Variable choice (None = its category's).
+        lbl_fixed = QLabel("Gasto fijo:")
+        lbl_fixed.setStyleSheet(lbl_cat.styleSheet())
+        layout.addWidget(lbl_fixed)
+        cmb_fixed = QComboBox()
+        cmb_fixed.setFixedHeight(38)
+        cmb_fixed.setStyleSheet(cmb.styleSheet())
+        cat_nature = next((c.nature for c in self._categories if c.id == txn.category_id), None)
+        cmb_fixed.addItem(
+            f"Según categoría ({'fijo' if cat_nature == CATEGORY_NATURE_FIXED else 'variable'})", None)
+        cmb_fixed.addItem("Fijo", FIXED_OVERRIDE_FIXED)
+        cmb_fixed.addItem("Variable", FIXED_OVERRIDE_VARIABLE)
+        cmb_fixed.setCurrentIndex(max(0, cmb_fixed.findData(txn.fixed_override)))
+        cmb_fixed.setToolTip("Los fijos (recibos que se repiten) cuentan en Previsiones.")
+        if cat_nature == CATEGORY_NATURE_TRANSFER:
+            cmb_fixed.setEnabled(False)
+            cmb_fixed.setToolTip("Su categoría es un traspaso interno: no cuenta como gasto ni ingreso.")
+        layout.addWidget(cmb_fixed)
+
         # Offered only when there is something to apply it to; unticked by
         # default so a single change never spreads unless asked for.
         similar = similar_uncategorized_ids(self._session, txn_id)
@@ -572,8 +621,16 @@ class TransactionsView(QWidget):
         """)
 
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_fixed = cmb_fixed.currentData()
+            fixed_changed = new_fixed != txn.fixed_override
+            if fixed_changed:
+                set_transaction_fixed(self._session, self._user.id, txn_id, new_fixed)
             new_cat_id = cmb.currentData()
-            changed = assign_transaction_category(
+            only_fixed = (fixed_changed and new_cat_id == txn.category_id
+                          and not (chk_similar is not None and chk_similar.isChecked())
+                          and not (chk_rule is not None and chk_rule.isChecked()))
+            # Changing only Fijo must not lock a rule-set category as manual.
+            changed = 0 if only_fixed else assign_transaction_category(
                 self._session, txn_id, new_cat_id,
                 apply_to_similar=chk_similar is not None and chk_similar.isChecked(),
             )
@@ -583,8 +640,8 @@ class TransactionsView(QWidget):
                 )
                 if created is not None and created.categorized_ids:
                     changed += len(created.categorized_ids)
-            if changed > 1:
-                # Other rows on this page may have changed too.
+            if changed > 1 or fixed_changed:
+                # Other rows on this page may have changed too (or the icon).
                 self._load_data()
                 return
             # Update model cell directly (no full reload)

@@ -32,6 +32,12 @@
         {% endfor %}
       </select>
     </label>
+    <label class="field"><span>Fijo / variable</span>
+      <select class="input" name="fijo">
+        <option value="">Todos</option>
+        {% for value, label in natures %}<option value="{{ value }}" {% if params.get('fijo') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
     {% if accounts|length > 1 %}
     <label class="field"><span>Cuenta</span>
       <select class="input" name="cuenta">

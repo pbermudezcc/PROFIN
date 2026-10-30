@@ -34,7 +34,7 @@
       {% for c in children[t.id] %}
       <button class="row" type="button" hx-get="/mas/categorias/{{ c.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
         <div class="ic"><i class="sw" data-swatch="{{ c.name }}"></i></div>
-        <div class="body"><div class="t">{{ c.name }}</div></div>
+        <div class="body"><div class="t">{{ c.name }}{% if c.nature == "fijo" %} <span class="badge acc">Fijo</span>{% elif c.nature == "traspaso" %} <span class="badge">Traspaso</span>{% endif %}</div></div>
         <span class="faint num t-sm">{{ usage.get(c.id, 0) }}</span>
         {{ ui.icon("right", "sm chev") }}
       </button>

@@ -670,6 +670,27 @@ def _migration_8_rule_transaction_type(db_path: Path) -> None:
     logger.info("Migración 8: tipo de movimiento en las reglas")
 
 
+def _migration_9_fixed_nature(db_path: Path) -> None:
+    """Add categories.nature, categories.transfer_peer_user_id and
+    transactions.fixed_override (all NULL = variable / follow the category).
+
+    No backfill: the family marks their fixed and transfer categories from
+    Previsiones. Idempotent.
+    """
+    with closing(sqlite3.connect(db_path)) as connection:
+        if not _column_exists(connection, "categories", "nature"):
+            connection.execute("ALTER TABLE categories ADD COLUMN nature VARCHAR(10)")
+        if not _column_exists(connection, "categories", "transfer_peer_user_id"):
+            connection.execute(
+                "ALTER TABLE categories ADD COLUMN transfer_peer_user_id INTEGER "
+                "REFERENCES users (id) ON DELETE SET NULL"
+            )
+        if not _column_exists(connection, "transactions", "fixed_override"):
+            connection.execute("ALTER TABLE transactions ADD COLUMN fixed_override VARCHAR(10)")
+        connection.commit()
+    logger.info("Migración 9: gastos fijos y traspasos")
+
+
 SCHEMA_MIGRATIONS = (
     (1, _migration_1_category_source),
     (2, _migration_2_indexes_and_cents),
@@ -679,6 +700,7 @@ SCHEMA_MIGRATIONS = (
     (6, _migration_6_broker_cash),
     (7, _migration_7_bank_order),
     (8, _migration_8_rule_transaction_type),
+    (9, _migration_9_fixed_nature),
 )
 SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1][0]
 

@@ -3,7 +3,7 @@
   <div class="ic {{ 'income' if row.amount > 0 else ('investment' if row.txn_type.value == 'investment' else 'expense') }}">{{ ui.initials(row.description) }}</div>
   <div class="body">
     <div class="t">{{ row.description }}</div>
-    <div class="d">{{ ui.chip(row.category_name) }}{% if row.account_name %}<span class="faint hide-sm">{{ row.account_name }}</span>{% endif %}</div>
+    <div class="d">{{ ui.chip(row.category_name) }}{% if row.nature == "fijo" %}<span class="badge acc">Fijo</span>{% elif row.nature == "traspaso" %}<span class="badge">Traspaso</span>{% endif %}{% if row.account_name %}<span class="faint hide-sm">{{ row.account_name }}</span>{% endif %}</div>
   </div>
   <div class="end">{{ ui.amount(row.amount) }}</div>
 </button>

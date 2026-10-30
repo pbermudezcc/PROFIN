@@ -10,13 +10,20 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app.analytics.transaction_search import (
+    NATURE_FILTERS,
     UNCATEGORIZED,
     TransactionFilters,
     get_transaction_row,
     search_transactions,
     user_accounts,
 )
-from app.categorization.admin_service import add_rule_from_transaction, transaction_has_rule
+from app.categorization.admin_service import (
+    AdminError,
+    NotFound,
+    add_rule_from_transaction,
+    set_transaction_fixed,
+    transaction_has_rule,
+)
 from app.categorization.category_manager import assign_user_transaction_category, similar_uncategorized_ids
 from app.db.models import AuditAction, Category, CategoryLevel, TransactionType
 from app.web.deps import DB, USER, WebUser, notify_change
@@ -46,11 +53,12 @@ def _filters(params) -> TransactionFilters:
         min_amount=parse_float(params.get("min")),
         max_amount=parse_float(params.get("max")),
         category_label=(params.get("cat_nombre") or None),
+        nature=params.get("fijo") if params.get("fijo") in dict(NATURE_FILTERS) else None,
     )
 
 
 def _query_string(params, **overrides) -> str:
-    keys = ("q", "tipo", "categoria", "cuenta", "desde", "hasta", "min", "max", "cat_nombre")
+    keys = ("q", "tipo", "categoria", "cuenta", "desde", "hasta", "min", "max", "cat_nombre", "fijo")
     values = {k: params.get(k) for k in keys if params.get(k)}
     values.update({k: v for k, v in overrides.items() if v is not None})
     return urlencode(values)
@@ -97,8 +105,10 @@ def transactions_page(request: Request, user: WebUser = USER, db: Session = DB) 
         "groups": category_groups(db, user.id),
         "accounts": user_accounts(db, user.id),
         "types": [(t.value, label) for t, label in TYPE_LABELS.items()],
+        "natures": NATURE_FILTERS,
         "has_filters": bool(_query_string(params)),
-        "show_filters": any(params.get(k) for k in ("tipo", "categoria", "cuenta", "desde", "hasta", "min", "max")),
+        "show_filters": any(params.get(k) for k in ("tipo", "categoria", "cuenta", "desde", "hasta", "min", "max",
+                                                    "fijo")),
     })
     return render(request, "movimientos.html", ctx, user=user, active="movimientos")
 
@@ -130,6 +140,7 @@ def transaction_detail(
         "similar": len(similar_uncategorized_ids(db, transaction_id)),
         "can_rule": not transaction_has_rule(db, user.id, transaction_id),
         "type_labels": TYPE_LABELS,
+        "fixed_choices": FIXED_CHOICES,
     }, user=user)
 
 
@@ -182,6 +193,36 @@ def set_category(
     if created:
         toast += " · regla creada"
     hx_trigger(response, toast=toast, closeSheet=True)
+    return response
+
+
+FIXED_CHOICES = [("", "Según categoría"), ("fijo", "Fijo"), ("variable", "Variable")]
+
+
+@router.post("/movimientos/{transaction_id}/fijo")
+def set_fixed(request: Request, transaction_id: int, fijo: str = Form(""),
+              user: WebUser = USER, db: Session = DB) -> Response:
+    """The movement's own Fijo / Variable choice; saved on tap, sheet stays open."""
+    before = get_transaction_row(db, user.id, transaction_id)
+    if before is None:
+        raise HTTPException(status_code=404)
+    try:
+        set_transaction_fixed(db, user.id, transaction_id, fijo or None)
+    except NotFound:
+        raise HTTPException(status_code=404)
+    except AdminError as exc:
+        response = Response(status_code=204)
+        hx_trigger(response, toastError=str(exc))
+        return response
+    audit(db, request, user, "transactions", transaction_id, AuditAction.update,
+          old=f"fixed_override={before.fixed_override}", new=f"fixed_override={fijo or None} (manual)")
+    notify_change(request, user, "transactions")
+    row = get_transaction_row(db, user.id, transaction_id)
+    if not is_htmx(request):
+        return JSONResponse({"id": row.id, "fixed_override": row.fixed_override, "nature": row.nature})
+    response = render(request, "partials/tx_rows_oob.html", {"rows": [row], "type_labels": TYPE_LABELS}, user=user)
+    label = {"fijo": "fijo", "traspaso": "traspaso interno"}.get(row.nature, "variable")
+    hx_trigger(response, toast=f"Movimiento {label}")
     return response
 
 

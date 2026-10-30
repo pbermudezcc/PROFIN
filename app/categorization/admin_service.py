@@ -37,10 +37,15 @@ from app.categorization.rules_engine import (
     create_rule,
     delete_rule,
     rule_scope,
+    shares_global_rules,
     update_rule,
 )
 from app.db.models import (
+    CATEGORY_NATURE_FIXED,
+    CATEGORY_NATURE_TRANSFER,
+    CATEGORY_NATURES,
     CATEGORY_SOURCE_MANUAL,
+    FIXED_OVERRIDES,
     AutoCategorizationRule,
     Category,
     CategoryLevel,
@@ -48,6 +53,7 @@ from app.db.models import (
     Transaction,
     TransactionType,
     TRANSACTIONS_NEWEST_FIRST,
+    User,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,6 +118,95 @@ def rename_category(session: Session, user_id: int, category_id: int, name: str)
     name = _clean_name(name)
     _check_unique(session, user_id, cat.parent_id, name, exclude_id=cat.id)
     return update_category_name(session, cat.id, name)
+
+
+NATURE_LABELS = {None: "Variable", CATEGORY_NATURE_FIXED: "Fijo", CATEGORY_NATURE_TRANSFER: "Traspaso interno"}
+
+
+def transfer_peers(session: Session, user_id: int) -> List[User]:
+    """The other family members a traspaso category can point at. Empty for
+    the demo account, which never sees the family."""
+    if not shares_global_rules(session, user_id):
+        return []
+    return [
+        u for u in session.query(User).filter(User.id != user_id).order_by(func.lower(User.username))
+        if shares_global_rules(session, u.id)
+    ]
+
+
+def set_category_nature(session: Session, user_id: int, category_id: int, nature: Optional[str],
+                        peer_user_id: Optional[int] = None) -> Category:
+    """Mark a category as variable (None), fijo or traspaso; a traspaso can
+    name the family member on the other side. The link is dropped for any
+    other nature."""
+    cat = own_category(session, user_id, category_id)
+    if cat.level == CategoryLevel.type:
+        raise AdminError("Los tipos (GASTO, INGRESO…) no son fijos ni variables; elige una categoría.")
+    nature = nature or None
+    if nature is not None and nature not in CATEGORY_NATURES:
+        raise AdminError("Tipo de gasto no válido.")
+    if nature != CATEGORY_NATURE_TRANSFER or not peer_user_id:
+        peer_user_id = None
+    elif peer_user_id not in {u.id for u in transfer_peers(session, user_id)}:
+        raise AdminError("Elige un miembro de la familia.")
+    cat.nature = nature
+    cat.transfer_peer_user_id = peer_user_id
+    session.commit()
+    logger.info("Categoría id=%d → naturaleza %s (con usuario %s).", cat.id, nature, peer_user_id)
+    return cat
+
+
+def suggested_natures(session: Session, user_id: int) -> Dict[int, str]:
+    """{category_id: nature} for the user's still-variable categories whose
+    name looks like a recurring bill or an internal transfer (shown pre-ticked
+    in Previsiones; nothing is changed until the user confirms)."""
+    from app.analytics.transaction_search import fold_text   # accents/case
+    fixed_words = ("hipoteca", "luz", "agua", "gas", "ibi", "propietarios", "comunidad",
+                   "telefono", "internet", "seguro", "netflix", "spotify", "alquiler",
+                   "colegio", "guarderia", "gimnasio", "nomina", "prestamo", "basura")
+    transfer_words = ("aporte", "traspaso", "transferencia propia")
+    found: Dict[int, str] = {}
+    for cat in session.query(Category).filter(
+        Category.user_id == user_id, Category.level != CategoryLevel.type, Category.nature.is_(None),
+    ):
+        name = fold_text(cat.name)
+        if any(w in name for w in transfer_words):
+            found[cat.id] = CATEGORY_NATURE_TRANSFER
+        elif any(re.search(rf"\b{w}", name) for w in fixed_words):
+            found[cat.id] = CATEGORY_NATURE_FIXED
+    return found
+
+
+def set_natures(session: Session, user_id: int, natures: Dict[int, Optional[str]]) -> int:
+    """Apply several {category_id: nature} at once (the Previsiones checklist).
+    Returns how many categories changed."""
+    changed = 0
+    for category_id, nature in natures.items():
+        cat = own_category(session, user_id, category_id)
+        if cat.level == CategoryLevel.type or (nature is not None and nature not in CATEGORY_NATURES):
+            continue
+        if cat.nature != nature:
+            cat.nature = nature
+            if nature != CATEGORY_NATURE_TRANSFER:
+                cat.transfer_peer_user_id = None
+            changed += 1
+    session.commit()
+    return changed
+
+
+def set_transaction_fixed(session: Session, user_id: int, transaction_id: int,
+                          override: Optional[str]) -> Transaction:
+    """A movement's own Fijo/Variable choice (None = follow its category)."""
+    txn = session.get(Transaction, transaction_id)
+    if txn is None or txn.user_id != user_id:
+        raise NotFound("Movimiento no encontrado.")
+    override = override or None
+    if override is not None and override not in FIXED_OVERRIDES:
+        raise AdminError("Valor no válido.")
+    txn.fixed_override = override
+    session.commit()
+    logger.info("Transacción id=%d → fijo=%s (a mano).", txn.id, override)
+    return txn
 
 
 @dataclass
