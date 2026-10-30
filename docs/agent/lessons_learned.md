@@ -205,3 +205,10 @@ Entry format:
 - Root cause: the onboarding listener binds `port + 1`. The fixture took `port` from `free_port()` (an ephemeral port N); Windows allocates the next ephemeral ports roughly sequentially, so a client connection opened by the test itself often got N + 1.
 - Fix: the fixture picks a random port pair in 20000–40000 (below the ephemeral range 49152+) and checks both binds; assertions print `srv.error`. 0 failures in 80 runs.
 - Prevention: tests that need two related ports must not take them from the ephemeral range.
+
+## 2026-10-30 — Web: selecting the text of a field closed the sheet
+- Area: web / js
+- Symptom (reported by the user, Categorías › category › name): pressing in the name field and dragging to select the text closed the bottom sheet / pop-up when the mouse was released outside the panel.
+- Root cause: the backdrop handler in `app.js` closed the sheet on any `click` whose target was the `<dialog>`; when the press and the release land on different elements the browser fires `click` on their common ancestor, the `<dialog>` itself.
+- Fix: a capture-phase `pointerdown` listener records whether the press started on the `<dialog>`; the backdrop click closes the sheet only then. Affects every sheet (categories, rules, account, invitations…).
+- Prevention: checked with the browser's event sequence (pointerdown on the input + click on the dialog → stays open; both on the dialog → closes). Any "click outside closes" logic must look at where the press started, not only at the click target.

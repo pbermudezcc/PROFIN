@@ -111,13 +111,18 @@
       openSheet();
     }
   });
+  var pressedOnBackdrop = false;
+  document.addEventListener("pointerdown", function (e) { pressedOnBackdrop = e.target === sheet(); }, true);
   document.addEventListener("click", function (e) {
     var t = e.target;
     if (t.closest("[data-close-sheet]")) {
       if (t.closest("#detail")) clearPane(); else closeSheet();
       return;
     }
-    if (t === sheet()) { closeSheet(); return; }   // tap on the backdrop
+    // Tap on the backdrop — only when the press started there too: selecting
+    // text in a field and releasing outside the sheet makes the browser report
+    // the click on the <dialog> itself, which used to close the sheet.
+    if (t === sheet()) { if (pressedOnBackdrop) closeSheet(); return; }
 
     var toggle = t.closest("[data-toggle]");
     if (toggle) {
