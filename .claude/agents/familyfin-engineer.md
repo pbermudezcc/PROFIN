@@ -277,12 +277,9 @@ Verify still true before acting (history in `docs/agent/agent_log.md`):
   import time, also under pytest.
 - Build artifacts are still named `PROFIN.<B|R>.<version>` by design.
 - Nothing ever sets `Transaction.type = investment`: the importer derives
-  income/expense from the sign only, so transfers to a broker count as
-  expense and the "Inversión(es)" tile on the desktop dashboard and the web
-  Resumen always shows 0,00 € (seen 2026-10-18 on the demo; not fixed).
-- Desktop light theme: the sidebar user card shows the name/"Personal"
-  labels on white boxes, because the window-wide `QWidget { background-color }`
-  rule in `MainWindow._apply_theme` also paints those QLabels (not fixed).
+  income/expense from the sign only. Since 2026-10-30 the dashboard summary
+  (desktop + web Resumen) counts movements in investment-type categories as
+  «Inversión» instead; the Gastos/Ingresos views still use the stored type.
 
 ---
 

@@ -184,3 +184,24 @@ Entry format:
 - Root cause: no constant-time path for unknown users; uniqueness relied on the case-sensitive `UNIQUE` index; the rules were in a widget, not in the service.
 - Fix: `verify_login` checks a fixed dummy bcrypt hash when the user does not exist; `app/auth/account_rules.py` holds the shared rules (NFC names, 2–32 chars, case- and accent-insensitive uniqueness, «DEMO» reserved; passwords 8–64 chars / 72 bytes, not the name, not in `common_passwords.txt`) and `create_user` applies them (`enforce_policy=False` only for fixed tooling accounts).
 - Prevention: `tests/test_auth.py::TestVerifyLogin::test_unknown_user_costs_one_bcrypt_check_like_a_known_one`, `TestValidateNewUser`. New login-like endpoints must spend the same work whether or not the account exists.
+
+## 2026-10-30 — PC import: an unticked row was imported anyway
+- Area: ingestion / gui
+- Symptom: in the PC import preview every row has a tick box, but unticking a *clean* row did nothing: it was imported, while the confirmation («Se importarán N») already counted it out.
+- Root cause: `commit_import` read `user_decisions` only for `needs_review` rows; clean rows were always imported. The web only ever sends decisions for review rows, so the gap only showed on the PC.
+- Fix: a clean row whose decision is `False` is skipped (and counted as skipped); a clean row missing from the decisions is still imported, so the web flow is unchanged.
+- Prevention: `tests/test_import_pipeline.py::test_unticked_clean_row_is_not_imported` and `test_clean_rows_missing_from_the_decisions_are_imported`. When a UI offers a choice, check that every code path behind it reads it.
+
+## 2026-10-30 — Desktop light theme: labels painted boxes over cards and bars
+- Area: gui / theme
+- Symptom: in the light theme, page titles sat on white boxes over the grey header bars, KPI labels on grey boxes inside white cards (Gastos/Ingresos), and the sidebar name/«Personal» on white boxes. Dark theme hid it (colours close).
+- Root cause: window-wide `QWidget { background-color: … }` rules (MainWindow, Gastos/Ingresos, Configuración, login) also paint every QLabel; a QLabel then covers its parent's colour.
+- Fix: `QLabel { background: transparent; }` right after each of those rules; labels that need a fill keep it through their own `#id` rule or inline style (more specific).
+- Prevention: check new views in the light theme with a grab of the whole window (offscreen + `WA_DontShowOnScreen`, see the scratch scripts pattern in agent_log 2026-10-30). Never add a bare `QWidget {background}` rule without the QLabel line.
+
+## 2026-10-30 — Flaky onboarding tests: Windows hands out ephemeral ports in order
+- Area: tests / web
+- Symptom: `tests/test_web_tls.py` onboarding tests failed about 1 run in 60 (`start_onboarding()` returned None).
+- Root cause: the onboarding listener binds `port + 1`. The fixture took `port` from `free_port()` (an ephemeral port N); Windows allocates the next ephemeral ports roughly sequentially, so a client connection opened by the test itself often got N + 1.
+- Fix: the fixture picks a random port pair in 20000–40000 (below the ephemeral range 49152+) and checks both binds; assertions print `srv.error`. 0 failures in 80 runs.
+- Prevention: tests that need two related ports must not take them from the ephemeral range.
