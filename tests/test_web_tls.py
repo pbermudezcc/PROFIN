@@ -25,6 +25,27 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+def free_port_with_onboarding() -> int:
+    """A free port whose onboarding neighbour (bound on 0.0.0.0) is free too.
+
+    Taken below Windows' ephemeral range (49152+): free_port() returns an
+    ephemeral port N, and Windows hands out the next ones roughly in order,
+    so a client connection made by the test itself often took N + 1 — the
+    onboarding port — and the onboarding tests failed now and then."""
+    import random
+
+    for _ in range(100):
+        port = random.randrange(20000, 40000)
+        try:
+            with socket.socket() as a, socket.socket() as b:
+                a.bind(("127.0.0.1", port))
+                b.bind(("0.0.0.0", port + web_server.ONBOARDING_PORT_OFFSET))
+        except OSError:
+            continue
+        return port
+    pytest.skip("no free pair of ports for the onboarding server")
+
+
 def test_server_certificate_chains_to_ca_and_covers_lan_addresses(tmp_path):
     material = tls.ensure_tls(tmp_path, addresses=["192.168.1.20"])
     ca = x509.load_pem_x509_certificate(material.ca_cert_file.read_bytes())
@@ -74,7 +95,7 @@ def running_server(tmp_path, monkeypatch):
     material = tls.ensure_tls(tmp_path, addresses=[])
     monkeypatch.setattr(web_server, "ensure_tls", lambda *a, **k: material)
     srv = web_server.WebServer()
-    port = free_port()
+    port = free_port_with_onboarding()
     assert srv.start(port, host="127.0.0.1"), srv.error
     yield srv, port, material
     srv.stop()
@@ -132,7 +153,7 @@ def test_onboarding_listener_serves_only_the_ca(running_server, monkeypatch):
     srv, port, material = running_server
     material.addresses = ["127.0.0.1"]
     url = srv.start_onboarding(seconds=30)
-    assert url and srv.onboarding_active
+    assert url and srv.onboarding_active, srv.error
     onboarding_port = port + web_server.ONBOARDING_PORT_OFFSET
     try:
         def get(path):
@@ -160,7 +181,7 @@ def test_onboarding_closes_by_itself(running_server):
     import time
     srv, port, material = running_server
     material.addresses = ["127.0.0.1"]
-    assert srv.start_onboarding(seconds=1)
+    assert srv.start_onboarding(seconds=1), srv.error
     deadline = time.time() + 5
     while srv.onboarding_active and time.time() < deadline:
         time.sleep(0.1)
