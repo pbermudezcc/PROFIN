@@ -3,10 +3,18 @@ app/analytics/dashboard_summary.py
 ==================================
 FAMILYFIN — Aggregates behind the Dashboard (desktop) and Resumen (web).
 
-Every figure is scoped to one user and computed in SQLite. Expenses and
-investments are returned as positive magnitudes. Each section is computed
-independently: a failure in one (logged) leaves its defaults and never
-blanks the whole summary.
+Every figure is scoped to one user and computed in SQLite. Expenses are
+returned as a positive magnitude. Each section is computed independently: a
+failure in one (logged) leaves its defaults and never blanks the whole
+summary.
+
+Investments: the importer derives a movement's type from its sign only, so a
+transfer to a broker is stored as an expense. Here a movement counts as an
+investment when its category (or the type above it, e.g. «INVERSION») has
+the investment transaction type; such movements are left out of income,
+expense, the expense breakdown and the monthly bars, and `investment` is the
+net amount sent from the account (transfers out minus money back). The
+Gastos / Ingresos views keep using the stored type.
 """
 from __future__ import annotations
 
@@ -14,9 +22,9 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
-from sqlalchemy import extract, func
+from sqlalchemy import case, extract, func, or_
 from sqlalchemy.orm import Session
 
 from app.db.models import Category, Transaction, TransactionType
@@ -77,6 +85,31 @@ def range_bounds(range_key: str, today: Optional[date] = None) -> Tuple[date, da
     return date(2000, 1, 1), today
 
 
+def investment_category_ids(session: Session, user_id: int) -> Set[int]:
+    """Ids of the user's categories whose own transaction type, or the
+    nearest one above them, is investment."""
+    rows = {
+        cid: (parent_id, txn_type)
+        for cid, parent_id, txn_type in (
+            session.query(Category.id, Category.parent_id, Category.transaction_type)
+            .filter(Category.user_id == user_id)
+            .all()
+        )
+    }
+    found: Set[int] = set()
+    for cid in rows:
+        node, seen = cid, set()
+        while node in rows and node not in seen:
+            seen.add(node)
+            parent_id, txn_type = rows[node]
+            if txn_type is not None:
+                if txn_type == TransactionType.investment:
+                    found.add(cid)
+                break
+            node = parent_id
+    return found
+
+
 def dashboard_summary(
     session: Session,
     user_id: int,
@@ -85,6 +118,18 @@ def dashboard_summary(
     recent_limit: int = 5,
 ) -> DashboardSummary:
     summary = DashboardSummary(date_from=date_from, date_to=date_to)
+
+    try:
+        invest_ids = investment_category_ids(session, user_id)
+    except Exception:
+        logger.exception("Resumen: categorías de inversión")
+        invest_ids = set()
+    is_investment = Transaction.category_id.in_(invest_ids)
+    # NOT IN is NULL for uncategorized rows, which must stay in.
+    not_investment = or_(Transaction.category_id.is_(None),
+                         Transaction.category_id.notin_(invest_ids))
+    kind = case((is_investment, TransactionType.investment.value),
+                else_=Transaction.type).label("kind")
 
     try:
         # Saldo of the latest transaction that has one (running_balance is
@@ -99,21 +144,22 @@ def dashboard_summary(
         ) or 0.0
 
         totals = {
-            row.type: (row.total or 0.0)
+            _kind(row.kind): (row.total or 0.0)
             for row in (
-                session.query(Transaction.type, func.sum(Transaction.amount).label("total"))
+                session.query(kind, func.sum(Transaction.amount).label("total"))
                 .filter(
                     Transaction.user_id == user_id,
                     Transaction.transaction_date >= date_from,
                     Transaction.transaction_date <= date_to,
                 )
-                .group_by(Transaction.type)
+                .group_by(kind)
                 .all()
             )
         }
         summary.income = totals.get(TransactionType.income, 0.0)
         summary.expense = abs(totals.get(TransactionType.expense, 0.0))
-        summary.investment = abs(totals.get(TransactionType.investment, 0.0))
+        # Net amount sent to investments: money back from a broker lowers it.
+        summary.investment = -totals.get(TransactionType.investment, 0.0) or 0.0
 
         summary.uncategorized = (
             session.query(func.count(Transaction.id))
@@ -134,6 +180,7 @@ def dashboard_summary(
         period_expense = (
             Transaction.user_id == user_id,
             Transaction.type == TransactionType.expense,
+            not_investment,
             Transaction.transaction_date >= date_from,
             Transaction.transaction_date <= date_to,
         )
@@ -171,7 +218,7 @@ def dashboard_summary(
                 Transaction.type,
                 func.sum(Transaction.amount),
             )
-            .filter(Transaction.user_id == user_id)
+            .filter(Transaction.user_id == user_id, not_investment)
             .group_by("yr", "mo", Transaction.type)
             .all()
         ):
@@ -214,3 +261,13 @@ def dashboard_summary(
         logger.exception("Resumen: últimas transacciones")
 
     return summary
+
+
+def _kind(value) -> Optional[TransactionType]:
+    """The CASE column comes back as the enum or its stored string."""
+    if value is None or isinstance(value, TransactionType):
+        return value
+    try:
+        return TransactionType(value)
+    except ValueError:
+        return TransactionType[value] if value in TransactionType.__members__ else None
