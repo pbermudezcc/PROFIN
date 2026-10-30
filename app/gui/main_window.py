@@ -377,6 +377,7 @@ class MainWindow(QWidget):
 
         # Account settings button
         self._btn_account = QPushButton()
+        self._btn_account.setObjectName("sidebarAccountBtn")
         self._btn_account.setFixedSize(28, 28)
         self._btn_account.setFlat(True)
         self._btn_account.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -687,6 +688,8 @@ class MainWindow(QWidget):
                 font-family: "Segoe UI";
                 font-size: 13px;
             }}
+            /* Labels show their parent (cards, bars) unless they set a colour. */
+            QLabel {{ background: transparent; }}
                         QPushButton#wctrlMin:hover,
             QPushButton#wctrlMax:hover {{
                 background-color: {t["bg_hover"]};
@@ -763,6 +766,14 @@ class MainWindow(QWidget):
             QLabel#sidebarRole {{
                 color: {t["text_sidebar_muted"]};
                 font-size: 11px;
+            }}
+            QPushButton#sidebarAccountBtn {{
+                background: transparent;
+                border: none;
+                border-radius: 6px;
+            }}
+            QPushButton#sidebarAccountBtn:hover {{
+                background-color: {t["bg_sidebar_hover"]};
             }}
             QFrame#sidebarSep {{
                 color: {t["border"]};

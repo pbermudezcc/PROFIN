@@ -534,6 +534,8 @@ class LoginWindow(QWidget):
                 font-family: "Segoe UI";
                 font-size: 13px;
             }}
+            /* Labels show their parent (cards, bars) unless they set a colour. */
+            QLabel {{ background: transparent; }}
             QFrame#loginCard {{
                 background-color: {t["bg_secondary"]};
                 border-radius: 16px;

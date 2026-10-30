@@ -1009,6 +1009,8 @@ class ExpensesView(QWidget):
                 font-family: "Segoe UI";
                 font-size: 13px;
             }}
+            /* Labels show their parent (cards, bars) unless they set a colour. */
+            QLabel {{ background: transparent; }}
             QFrame#dashTopBar {{
                 background-color: {t["bg_secondary"]};
                 border-bottom: 1px solid {t["border"]};

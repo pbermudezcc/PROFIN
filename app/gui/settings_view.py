@@ -486,6 +486,8 @@ class SettingsView(QWidget):
                 color: {t["text_primary"]};
                 font-family: "Segoe UI";
             }}
+            /* Labels show their parent (cards, bars) unless they set a colour. */
+            QLabel {{ background: transparent; }}
             QFrame#dashTopBar {{
                 background-color: {t["bg_secondary"]};
                 border-bottom: 1px solid {t["border"]};
