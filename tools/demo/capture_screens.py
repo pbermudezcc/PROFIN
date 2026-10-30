@@ -146,7 +146,9 @@ WEB_PAGES = [
     ("w_inv_distribucion", "/inversiones/distribucion", WIDE, 1000, "light", None),
     ("w_inv_fiscal", "/inversiones/fiscal?anio=2025", WIDE, 1100, "light", None),
     ("w_inv_evolucion_dark", "/inversiones/evolucion", WIDE, 1000, "dark", None),
-    ("w_mas", "/mas", WIDE, 900, "light", None),
+    ("w_mas", "/mas", WIDE, 1250, "light", None),
+    ("w_cuenta_datos", "/mas", WIDE, 900, "light", '[hx-get="/mas/cuenta/datos"]'),
+    ("w_invitacion", "/mas", WIDE, 900, "light", '[hx-post="/mas/invitaciones"]'),
     ("w_cuentas", "/mas/cuentas", WIDE, 820, "light", None),
     ("m_login", "/login", PHONE, 844, "light", None),
     ("m_resumen", "/?rango=year", PHONE, 1500, "light", None),
@@ -157,7 +159,7 @@ WEB_PAGES = [
     ("m_inversiones", "/inversiones", PHONE, 1400, "light", None),
     ("m_inv_evolucion", "/inversiones/evolucion", PHONE, 1100, "dark", None),
     ("m_importar_preview", "{preview}", PHONE, 1300, "light", None),
-    ("m_mas", "/mas", PHONE, 1000, "light", None),
+    ("m_mas", "/mas", PHONE, 1500, "light", None),
     ("m_reglas", "/mas/reglas", PHONE, 1100, "light", None),
 ]
 SCALE = {WIDE: 1.5, PHONE: 2}
@@ -221,6 +223,12 @@ def capture_web(port: int = 8799) -> None:
 
     database.init_db()
     assert_isolated()
+    # Capture-only: the manual shows what an ordinary family member sees
+    # (Mi cuenta, Familia, invitations), so DEMO stands in for one here.
+    # The real app keeps DEMO away from those screens (403).
+    from app.web import deps
+    from app.web.routers import users as users_router
+    deps.is_family_member = users_router.is_family_member = lambda db, user: True
     browser = next((p for p in EDGE if p.exists()), None)
     if browser is None:
         print("  No se encontró Edge/Chrome: se omiten las capturas web.")
