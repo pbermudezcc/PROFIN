@@ -5,6 +5,67 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.R.0.8.2.md`  |  **Files:** 146  |  **Handler:** v1.0.0
+**Date:** 2026-10-30 22:32  |  **Type:** Release
+**Description:** Las reglas automáticas pueden limitarse a gastos o a ingresos, así un mismo texto como BIZUM va a una categoría cuando pagas y a otra cuando cobras; las reglas que se crean desde un movimiento ya lo hacen solas. Cada miembro puede descargar sus propios datos y cambiar su contraseña y su nombre desde el PC. Los movimientos de un mismo día aparecen en el orden del banco y el «Saldo en cuenta» toma el último movimiento del día. Además se corrigen varios detalles de la importación en el PC, el tema claro, la tarjeta «Inversión» y las ventanas emergentes de la web.
+
+### Antes de actualizar
+
+- La base de datos se actualiza automáticamente del esquema v6 al v8 la primera vez que se abre la aplicación. Antes se guarda una copia `profin.pre-migration-v8.<fecha>.db` junto a la base.
+
+### Novedades
+
+- **Reglas por tipo de movimiento**: al crear o editar una regla (en el PC y en la web) eliges si vale para cualquier movimiento, solo para gastos (cargos) o solo para ingresos (abonos). Un BIZUM que pagas y uno que recibes pueden ir a categorías distintas sin conflicto. «Crear una regla para los próximos gastos/ingresos» desde un movimiento usa su tipo automáticamente. La lista de reglas muestra la columna «Movimiento» y permite filtrar por ella; la exportación de categorías y reglas la conserva. Las reglas que ya tenías siguen como «Cualquiera» y funcionan igual que antes (`06a800c`)
+- **Descargar mis datos**: desde Ajustes en la web o «Exportar mis datos…» en el PC, cada miembro descarga, tras confirmar su contraseña, un archivo con sus movimientos, cuentas, categorías, reglas e inversiones en Excel y su biblioteca de categorías. Solo incluye los datos de quien lo pide (`ec8fda6`)
+- **Contraseña y nombre desde el PC**: «Cambiar contraseña» y «Cambiar nombre» también en la aplicación del PC; cambiar la contraseña cierra las sesiones abiertas en otros dispositivos (`1810a99`)
+
+### Correcciones
+
+- Los movimientos de un mismo día salían en orden inverso y el «Saldo en cuenta» (Resumen, Posición Global, Cuentas) tomaba el saldo del primer movimiento del día en lugar del último. Ahora se guarda el orden del banco y los movimientos ya importados se reordenan al actualizar (`eb54d16`)
+- En la web, seleccionar el texto de un campo arrastrando el ratón fuera de la ventana emergente la cerraba; ya no (`6608509`)
+- La tarjeta «Inversión» del Resumen cuenta los movimientos de las categorías de tipo inversión, que ya no se suman a gastos ni ingresos en esa pantalla (`3da1c37`)
+- En el tema claro, los títulos y etiquetas pintaban recuadros blancos o grises sobre las barras y tarjetas; ahora son transparentes (`4365185`)
+- En la vista previa de importación del PC, desmarcar una fila sin avisos no impedía importarla; ahora se respeta (`971e820`)
+
+### Interno
+
+- Registro de trabajo del agente actualizado con la ronda de mantenimiento, las correcciones de seguimiento y la versión 0.8.1 (`7693a7c`, `691d4a5`, `4fd746c`)
+- Manual de usuario con capturas nuevas y las funciones añadidas desde la 0.8.0 (`d16ac4d`)
+- Las pruebas del asistente de configuración de dispositivos ya no fallan de vez en cuando en Windows (`300e7dd`)
+
+### Áreas afectadas
+
+- **Base de datos y migraciones**: `app/db/database.py`, `app/db/models.py`
+- **Categorías y reglas**: `app/categorization/admin_service.py`, `app/categorization/library_io.py`, `app/categorization/rule_search.py`, `app/categorization/rules_engine.py`
+- **Importación de extractos**: `app/ingestion/importer.py`
+- **Informes y gráficos**: `app/analytics/dashboard_summary.py`, `app/analytics/period_summary.py`, `app/analytics/transaction_search.py`
+- **Configuración y copias de seguridad**: `app/settings/user_export.py`
+- **Usuarios y acceso**: `app/auth/account_service.py`
+- **Interfaz**: `app/gui/account_dialogs.py`, `app/gui/expenses_view.py`, `app/gui/library_dialog.py`, `app/gui/login_window.py`, `app/gui/main_window.py`, `app/gui/rules_view.py` y 2 más
+- **Tests**: `tests/test_account_dialogs.py`, `tests/test_backup_and_migrations.py`, `tests/test_category_manager.py`, `tests/test_dashboard_summary.py`, `tests/test_import_pipeline.py`, `tests/test_importer.py` y 6 más
+- **Herramientas de desarrollo y agentes**: `.claude/agents/familyfin-engineer.md`, `tools/demo/capture_screens.py`, `tools/web_preview.py`
+- **Documentación**: `docs/agent/agent_log.md`, `docs/agent/lessons_learned.md`, `docs/manual/img/m_gastos.png`, `docs/manual/img/m_inv_evolucion.png`, `docs/manual/img/m_inversiones.png`, `docs/manual/img/m_login.png` y 32 más
+
+<details><summary>Commits incluidos (13 desde v0.8.1)</summary>
+
+- `06a800c` feat(reglas): limit a rule to gastos or ingresos (schema v8)
+- `7693a7c` docs(agent_log): record the follow-up fixes (sheet selection, schema v7)
+- `eb54d16` fix(movimientos): same-day movements follow the bank's order (schema v7)
+- `6608509` fix(web): selecting the text of a field no longer closes the pop-up
+- `691d4a5` docs(agent_log): record the maintenance round after v0.8.1
+- `d16ac4d` docs(manual): new screenshots and the features since v0.8.0
+- `ec8fda6` feat(cuenta): «Descargar mis datos» — each member exports only their own data
+- `300e7dd` test(web): onboarding tests no longer fail now and then on Windows
+- `1810a99` feat(cuenta): change the password and the user name from the PC
+- `3da1c37` fix(resumen): «Inversión» counts the movements of investment categories
+- `4365185` fix(gui): labels no longer paint boxes over cards and bars in the light theme
+- `971e820` fix(importar): an unticked row in the PC preview is no longer imported
+- `4fd746c` docs(agent_log): record v0.8.1 release
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.8.1.md`  |  **Files:** 141  |  **Handler:** v1.0.0
 **Date:** 2026-10-28 23:23  |  **Type:** Release
 **Description:** Desde el móvil ya se puede invitar a alguien de la familia con un código de un solo uso y gestionar la propia cuenta: cambiar la contraseña, el nombre de usuario o borrarla con una copia de seguridad previa en el PC. Ahora se pueden importar varios extractos de CaixaBank a la vez, en la web y en el PC, sin duplicar movimientos aunque los periodos se solapen. Además, las cuentas son más seguras: reglas de contraseña comunes al PC y a la web y varias correcciones al borrar una cuenta.

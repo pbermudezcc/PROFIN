@@ -5,8 +5,8 @@ FAMILYFIN — Application configuration constants.
 """
 
 APP_NAME    = "FAMILYFIN"
-APP_VERSION = "0.8.1"
-APP_RELEASE_DATE = "2026-10-28"
+APP_VERSION = "0.8.2"
+APP_RELEASE_DATE = "2026-10-30"
 
 # Account for showing the app to visitors (tools/demo/install_demo_user.py).
 # It is kept apart from the family: it never sees, applies or creates the
