@@ -532,10 +532,15 @@ class TransactionsView(QWidget):
         # Only when no rule covers this movement yet (unticked as well).
         chk_rule = None
         if not transaction_has_rule(self._session, self._user.id, txn_id):
-            chk_rule = QCheckBox("Crear una regla para los próximos movimientos iguales")
+            # The rule only covers movements of this one's type (a BIZUM paid
+            # and a BIZUM received are categorized apart).
+            kind = {TransactionType.expense: "gastos",
+                    TransactionType.income: "ingresos"}.get(txn.type, "movimientos")
+            chk_rule = QCheckBox(f"Crear una regla para los próximos {kind} iguales")
             chk_rule.setToolTip(
-                f"Regla «coincidencia exacta» con «{txn.issuer_name or txn.concept}»: "
-                "se aplica ya a los movimientos sin categoría y a las próximas importaciones."
+                f"Regla «coincidencia exacta» con «{txn.issuer_name or txn.concept}», "
+                f"solo para {kind}: se aplica ya a los movimientos sin categoría "
+                "y a las próximas importaciones."
             )
             chk_rule.setStyleSheet(
                 f"color: {t['text_primary']}; font-size: 12px;"

@@ -58,6 +58,12 @@
         {% for value, label in match_types %}<option value="{{ value }}" {% if params.get('coincidencia') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
+    <label class="field"><span>Movimiento</span>
+      <select class="input" name="movimiento">
+        <option value="">Todos</option>
+        {% for value, label in movement_filters.items() %}<option value="{{ value }}" {% if params.get('movimiento') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
     <label class="field"><span>Ámbito</span>
       <select class="input" name="ambito">
         <option value="">Todos</option>
@@ -92,7 +98,7 @@
     <button class="body plain-btn" type="button" hx-get="/mas/reglas/{{ r.id }}" hx-target="#sheet-body" hx-push-url="false" data-open-sheet>
     {% else %}<div class="body">{% endif %}
       <div class="t">«{{ r.match_pattern }}»</div>
-      <div class="d"><span class="faint">{{ match_labels.get(r.match_type.value, r.match_type.value)|lower }} →</span> {{ ui.chip(names.get(r.category_id)) }}{% if r.user_id is none %}<span class="badge inv">global</span>{% endif %}<span class="faint num">{{ counts.get(r.id, 0) }} mov.</span></div>
+      <div class="d"><span class="faint">{{ match_labels.get(r.match_type.value, r.match_type.value)|lower }}{% if r.transaction_type %} · {{ movement_labels.get(r.transaction_type)|lower }}{% endif %} →</span> {{ ui.chip(names.get(r.category_id)) }}{% if r.user_id is none %}<span class="badge inv">global</span>{% endif %}<span class="faint num">{{ counts.get(r.id, 0) }} mov.</span></div>
     {% if r.user_id is not none %}</button>{% else %}</div>{% endif %}
     {{ move_buttons(r) }}
   </div>
@@ -103,7 +109,7 @@
   <div class="table-wrap">
     <table class="data">
       <thead><tr>
-        <th class="min">Prioridad</th><th>Texto a buscar</th><th>Coincidencia</th><th>Categoría</th>
+        <th class="min">Prioridad</th><th>Texto a buscar</th><th>Coincidencia</th><th>Movimiento</th><th>Categoría</th>
         <th class="r">Movimientos</th><th>Ámbito</th><th class="min"></th>
       </tr></thead>
       <tbody>
@@ -112,6 +118,7 @@
         <td class="min"><div class="wrap-gap nowrap"><span class="badge outline num">{{ r.priority }}</span>{{ move_buttons(r) }}</div></td>
         <td><b>«{{ r.match_pattern }}»</b></td>
         <td class="faint">{{ match_labels.get(r.match_type.value, r.match_type.value) }}</td>
+        <td{% if not r.transaction_type %} class="faint"{% endif %}>{{ movement_labels.get(r.transaction_type, "Cualquiera") }}</td>
         <td>{{ ui.chip(names.get(r.category_id)) }}</td>
         <td class="r num">{% if counts.get(r.id) %}{{ counts.get(r.id) }}{% else %}<span class="faint">0</span>{% endif %}</td>
         <td>{% if r.user_id is none %}<span class="badge inv">global</span>{% else %}<span class="badge">personal</span>{% endif %}</td>

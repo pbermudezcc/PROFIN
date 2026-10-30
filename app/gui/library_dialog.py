@@ -120,7 +120,8 @@ class LibraryImportDialog(QDialog):
         for title, items in (
             ("Tipos nuevos", plan.new_types),
             ("Categorías nuevas", plan.new_categories),
-            ("Reglas nuevas", [f"«{r.pattern}» ({r.match_type}, prioridad {r.priority}) → "
+            ("Reglas nuevas", [f"«{r.pattern}»{lio.movement_note(r.transaction_type)} "
+                               f"({r.match_type}, prioridad {r.priority}) → "
                                f"{r.type} › {r.category}"
                                + (" [global]" if r.scope == lio.SCOPE_GLOBAL else "")
                                for r in plan.new_rules]),

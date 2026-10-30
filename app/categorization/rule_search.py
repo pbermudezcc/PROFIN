@@ -14,8 +14,9 @@ Python: a family has at most a few hundred rules, so this is cheap.
 Free-text search: same behaviour as Movimientos — every word must appear in
 at least one field (AND across words, OR across fields), case- and
 accent-insensitive. Text fields match as substrings: pattern, match type
-(desktop and web labels and value), category, its parent type, scope
-(global / personal) and creation date (dd/mm/yyyy or ISO; only words containing "/" or "-",
+(desktop and web labels and value), movement type (gasto / ingreso /
+cualquiera), category, its parent type, scope (global / personal) and
+creation date (dd/mm/yyyy or ISO; only words containing "/" or "-",
 so plain numbers don't hit every year). Numbers match whole: a word equal
 to the priority or to the number of linked transactions.
 
@@ -33,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.analytics.transaction_search import fold_text, search_terms
 from app.categorization.rules_engine import _resolve_rule_categories, get_all_rules
-from app.db.models import AutoCategorizationRule, Category, MatchType
+from app.db.models import AutoCategorizationRule, Category, MatchType, TransactionType
 
 MATCH_TYPE_LABELS = {
     MatchType.contains: "Contiene",
@@ -46,6 +47,18 @@ MATCH_TYPE_SEARCH_WORDS = {
     MatchType.contains: "Contiene",
     MatchType.exact:    "Exacto Es exactamente",
     MatchType.regex:    "Regex Expresión regular",
+}
+# Movement type a rule is limited to (None = any). Filter values below.
+MOVEMENT_LABELS = {
+    None: "Cualquiera",
+    TransactionType.expense: "Gasto",
+    TransactionType.income: "Ingreso",
+}
+MOVEMENT_ANY = "any"
+MOVEMENT_FILTERS = {
+    TransactionType.expense.value: "Solo gastos",
+    TransactionType.income.value: "Solo ingresos",
+    MOVEMENT_ANY: "Cualquier movimiento",
 }
 SCOPE_GLOBAL = "global"
 SCOPE_PERSONAL = "personal"
@@ -66,6 +79,7 @@ class RuleRow:
     category_name: Optional[str]
     type_name:     Optional[str]      # parent type node (GASTO, INGRESO, ...)
     created_at:    Optional[datetime]
+    transaction_type: Optional[TransactionType] = None   # None = any movement
     matches:       Optional[int] = None    # transactions it wins today
     total:         Optional[float] = None  # their summed amount
     _haystack:     str = field(default="", repr=False)
@@ -84,6 +98,15 @@ class RuleRow:
     def match_label(self) -> str:
         return MATCH_TYPE_LABELS.get(self.match_type, str(self.match_type))
 
+    @property
+    def movement(self) -> str:
+        """Filter value: 'expense' | 'income' | MOVEMENT_ANY."""
+        return self.transaction_type.value if self.transaction_type else MOVEMENT_ANY
+
+    @property
+    def movement_label(self) -> str:
+        return MOVEMENT_LABELS.get(self.transaction_type, "Cualquiera")
+
 
 @dataclass
 class RuleFilters:
@@ -93,11 +116,13 @@ class RuleFilters:
     match_type:  Optional[MatchType] = None
     scope:       Optional[str] = None     # SCOPE_GLOBAL | SCOPE_PERSONAL
     usage:       Optional[str] = None     # USAGE_WITH | USAGE_WITHOUT
+    movement:    Optional[str] = None     # a MOVEMENT_FILTERS key
 
     def is_empty(self) -> bool:
         return not search_terms(self.text) and all(
             value is None for value in (
-                self.category_id, self.type_name, self.match_type, self.scope, self.usage)
+                self.category_id, self.type_name, self.match_type, self.scope, self.usage,
+                self.movement)
         )
 
 
@@ -108,7 +133,7 @@ def _index(row: RuleRow) -> RuleRow:
     texts = [
         row.pattern, MATCH_TYPE_SEARCH_WORDS.get(row.match_type, ""), row.match_type.value,
         row.category_name or "", row.type_name or "",
-        SCOPE_LABELS[row.scope],
+        SCOPE_LABELS[row.scope], row.movement_label,
     ]
     row._haystack = "\n".join(fold_text(t) for t in texts if t)
     numbers = [str(row.priority)]
@@ -155,6 +180,8 @@ def build_rule_rows(
             category_name=cat.name if cat is not None else None,
             type_name=parent.name if parent is not None else None,
             created_at=rule.created_at,
+            transaction_type=(TransactionType(rule.transaction_type)
+                              if rule.transaction_type else None),
             matches=(matches.get(rule.id, 0) if matches is not None else None),
             total=(round(totals.get(rule.id, 0.0), 2) if totals is not None else None),
         )))
@@ -184,6 +211,8 @@ def filter_rule_rows(rows: List[RuleRow], filters: RuleFilters) -> List[RuleRow]
         if filters.match_type is not None and row.match_type != filters.match_type:
             continue
         if filters.scope is not None and row.scope != filters.scope:
+            continue
+        if filters.movement is not None and row.movement != filters.movement:
             continue
         if filters.usage is not None and row.matches is not None:
             if (row.matches > 0) != (filters.usage == USAGE_WITH):

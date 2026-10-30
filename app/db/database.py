@@ -655,6 +655,21 @@ def _migration_7_bank_order(db_path: Path) -> None:
     logger.info("Migración 7: orden del banco dentro de cada día")
 
 
+def _migration_8_rule_transaction_type(db_path: Path) -> None:
+    """Add auto_categorization_rules.transaction_type (NULL = any type).
+
+    Existing rules keep NULL, so they match exactly what they matched
+    before; new rules made from a movement take its type. Idempotent.
+    """
+    with closing(sqlite3.connect(db_path)) as connection:
+        if not _column_exists(connection, "auto_categorization_rules", "transaction_type"):
+            connection.execute(
+                "ALTER TABLE auto_categorization_rules ADD COLUMN transaction_type VARCHAR(10)"
+            )
+        connection.commit()
+    logger.info("Migración 8: tipo de movimiento en las reglas")
+
+
 SCHEMA_MIGRATIONS = (
     (1, _migration_1_category_source),
     (2, _migration_2_indexes_and_cents),
@@ -663,6 +678,7 @@ SCHEMA_MIGRATIONS = (
     (5, _migration_5_broker_ref),
     (6, _migration_6_broker_cash),
     (7, _migration_7_bank_order),
+    (8, _migration_8_rule_transaction_type),
 )
 SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1][0]
 

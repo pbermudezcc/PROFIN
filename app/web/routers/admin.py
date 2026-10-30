@@ -38,13 +38,15 @@ from app.categorization.rule_search import (
     SCOPE_PERSONAL,
     USAGE_WITH,
     USAGE_WITHOUT,
+    MOVEMENT_FILTERS,
+    MOVEMENT_LABELS,
     RuleFilters,
     build_rule_rows,
     count_label,
     filter_options,
     filter_rule_rows,
 )
-from app.db.models import AuditAction, Category, CategoryLevel, MatchType, Transaction
+from app.db.models import AuditAction, Category, CategoryLevel, MatchType, Transaction, TransactionType
 from app.web.deps import DB, USER, WebUser, notify_change
 from app.web.render import audit, hx_trigger, is_htmx, parse_int, render
 
@@ -56,6 +58,12 @@ MATCH_TYPES = [
     (MatchType.regex.value, "Expresión regular"),
 ]
 MATCH_LABELS = dict(MATCH_TYPES)
+# Rule form: which movements the rule applies to ("" = any type).
+RULE_MOVEMENTS = [
+    ("", "Cualquiera"),
+    (TransactionType.expense.value, "Solo gastos"),
+    (TransactionType.income.value, "Solo ingresos"),
+]
 
 
 def _done(request: Request, message: str) -> Response:
@@ -207,13 +215,14 @@ def category_defaults(request: Request, user: WebUser = USER, db: Session = DB) 
 # Rules
 # ---------------------------------------------------------------------------
 
-RULE_FILTER_KEYS = ("q", "categoria", "tipo", "coincidencia", "ambito", "uso")
+RULE_FILTER_KEYS = ("q", "categoria", "tipo", "coincidencia", "movimiento", "ambito", "uso")
 
 
 def _rule_filters(params) -> RuleFilters:
     match_type = params.get("coincidencia")
     scope = params.get("ambito")
     usage = params.get("uso")
+    movement = params.get("movimiento")
     return RuleFilters(
         text=(params.get("q") or "")[:100],
         category_id=parse_int(params.get("categoria")),
@@ -221,6 +230,7 @@ def _rule_filters(params) -> RuleFilters:
         match_type=MatchType(match_type) if match_type in MatchType._value2member_map_ else None,
         scope=scope if scope in (SCOPE_GLOBAL, SCOPE_PERSONAL) else None,
         usage=usage if usage in (USAGE_WITH, USAGE_WITHOUT) else None,
+        movement=movement if movement in MOVEMENT_FILTERS else None,
     )
 
 
@@ -250,6 +260,7 @@ def rules(request: Request, user: WebUser = USER, db: Session = DB) -> Response:
         "params": request.query_params,
         "filter_categories": filter_categories, "filter_types": filter_types,
         "match_types": MATCH_TYPES,
+        "movement_labels": MOVEMENT_LABELS, "movement_filters": MOVEMENT_FILTERS,
         "show_filters": any(request.query_params.get(k) for k in RULE_FILTER_KEYS[1:]),
     }, user=user, active="reglas")
 
@@ -258,13 +269,22 @@ def _rule_form(request: Request, db: Session, user: WebUser, rule=None, values=N
     values = values or {}
     if rule is not None and not values:
         values = {"category_id": rule.category_id, "pattern": rule.match_pattern,
-                  "match_type": rule.match_type.value, "priority": rule.priority}
+                  "match_type": rule.match_type.value, "priority": rule.priority,
+                  "transaction_type": rule.transaction_type.value if rule.transaction_type else ""}
     values.setdefault("match_type", MatchType.contains.value)
+    values.setdefault("transaction_type", "")
     values.setdefault("priority", 100)
     return render(request, "partials/rule_form.html", {
         "rule": rule, "v": values, "groups": category_options(db, user.id),
-        "match_types": MATCH_TYPES, "error": error,
+        "match_types": MATCH_TYPES, "movements": RULE_MOVEMENTS, "error": error,
     }, user=user)
+
+
+def _rule_summary(rule) -> str:
+    """Audit text of a rule: «pattern» kind [movement] → cat id pN."""
+    movement = rule.transaction_type.value if rule.transaction_type else "any"
+    return (f"«{rule.match_pattern}» {rule.match_type.value} [{movement}] "
+            f"→ cat {rule.category_id} p{rule.priority}")
 
 
 @router.get("/mas/reglas/nueva")
@@ -275,8 +295,9 @@ def rule_new_form(request: Request, patron: str = "", categoria: Optional[int] =
 
 @router.get("/mas/reglas/probar")
 def rule_preview(request: Request, pattern: str = "", match_type: str = "contains",
-                 user: WebUser = USER, db: Session = DB) -> Response:
-    preview = preview_pattern(db, user.id, pattern[:200], match_type)
+                 transaction_type: str = "", user: WebUser = USER, db: Session = DB) -> Response:
+    preview = preview_pattern(db, user.id, pattern[:200], match_type,
+                              transaction_type=transaction_type[:16])
     return render(request, "partials/rule_preview.html", {"p": preview, "pattern": pattern}, user=user)
 
 
@@ -294,20 +315,22 @@ def rule_edit_form(request: Request, rule_id: int, user: WebUser = USER, db: Ses
 @router.post("/mas/reglas")
 def rule_save(request: Request, rule_id: str = Form(""), category_id: str = Form(""),
               pattern: str = Form("", max_length=400), match_type: str = Form("contains"),
-              priority: str = Form("100"), user: WebUser = USER, db: Session = DB) -> Response:
+              priority: str = Form("100"), transaction_type: str = Form("", max_length=16),
+              user: WebUser = USER, db: Session = DB) -> Response:
     values = {"category_id": parse_int(category_id), "pattern": pattern, "match_type": match_type,
-              "priority": priority}
+              "priority": priority, "transaction_type": transaction_type}
     existing = parse_int(rule_id)
     rule = None
     try:
         if existing is not None:
             rule = own_rule(db, user.id, existing)
-            before = f"«{rule.match_pattern}» {rule.match_type.value} → cat {rule.category_id} p{rule.priority}"
+            before = _rule_summary(rule)
             saved = edit_rule(db, user.id, existing, values["category_id"], pattern, match_type,
-                              parse_int(priority))
+                              parse_int(priority), transaction_type)
         else:
             before = None
-            saved = add_rule(db, user.id, values["category_id"], pattern, match_type, parse_int(priority))
+            saved = add_rule(db, user.id, values["category_id"], pattern, match_type, parse_int(priority),
+                             transaction_type)
     except NotFound:
         if rule is None and existing is not None:
             raise HTTPException(status_code=404)
@@ -316,7 +339,7 @@ def rule_save(request: Request, rule_id: str = Form(""), category_id: str = Form
         return _rule_form(request, db, user, rule=rule, values=values, error=str(exc))
     audit(db, request, user, "auto_categorization_rules", saved.id,
           AuditAction.update if existing else AuditAction.insert, old=before,
-          new=f"«{saved.match_pattern}» {saved.match_type.value} → cat {saved.category_id} p{saved.priority}")
+          new=_rule_summary(saved))
     notify_change(request, user, "transactions")
     return _done(request, "Regla guardada · aplica las reglas para usarla")
 

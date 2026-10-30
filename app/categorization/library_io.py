@@ -39,7 +39,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.categorization.admin_service import MAX_NAME, MAX_PATTERN, AdminError
-from app.categorization.rules_engine import rule_scope
+from app.categorization.rules_engine import RULE_TRANSACTION_TYPES, rule_scope
 from app.db.models import (
     AutoCategorizationRule,
     Category,
@@ -88,6 +88,9 @@ class LibRule:
     match_type: str
     priority: int
     scope: str
+    # Movement type the rule is limited to ("expense" / "income"); None =
+    # any. Optional in the file: files written before it existed mean any.
+    transaction_type: Optional[str] = None
 
 
 @dataclass
@@ -108,8 +111,19 @@ def _fold(text: str) -> str:
     return text.strip().casefold()
 
 
-def _rule_key(type_name: str, category: str, pattern: str, match_type: str) -> tuple:
-    return (_fold(type_name), _fold(category), _fold(pattern), match_type)
+def _rule_key(type_name: str, category: str, pattern: str, match_type: str,
+              transaction_type: Optional[str] = None) -> tuple:
+    return (_fold(type_name), _fold(category), _fold(pattern), match_type, transaction_type)
+
+
+def _txn_type_value(rule: AutoCategorizationRule) -> Optional[str]:
+    return rule.transaction_type.value if rule.transaction_type else None
+
+
+def movement_note(transaction_type: Optional[str]) -> str:
+    """" (solo gastos)" / " (solo ingresos)" for previews; "" for any type."""
+    return {TransactionType.expense.value: " (solo gastos)",
+            TransactionType.income.value: " (solo ingresos)"}.get(transaction_type or "", "")
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +175,8 @@ def export_library(session: Session, user_id: int, include_global: bool = False,
             continue
         type_node, cat = pair
         scope = SCOPE_GLOBAL if rule.user_id is None else SCOPE_PERSONAL
-        key = _rule_key(type_node.name, cat.name, rule.match_pattern, rule.match_type.value) + (scope,)
+        key = _rule_key(type_node.name, cat.name, rule.match_pattern, rule.match_type.value,
+                        _txn_type_value(rule)) + (scope,)
         if key in seen:
             continue
         seen.add(key)
@@ -170,11 +185,13 @@ def export_library(session: Session, user_id: int, include_global: bool = False,
             "category": cat.name,
             "pattern": rule.match_pattern,
             "match_type": rule.match_type.value,
+            "transaction_type": _txn_type_value(rule),
             "priority": rule.priority,
             "scope": scope,
         })
     rules.sort(key=lambda r: (r["priority"], _fold(r["type"]), _fold(r["category"]),
-                              _fold(r["pattern"]), r["match_type"], r["scope"]))
+                              _fold(r["pattern"]), r["match_type"], r["transaction_type"] or "",
+                              r["scope"]))
 
     return {
         "format": FORMAT_NAME,
@@ -327,7 +344,10 @@ def parse_library(raw: bytes) -> LibraryFile:
         scope = entry.get("scope", SCOPE_PERSONAL)
         if scope not in (SCOPE_PERSONAL, SCOPE_GLOBAL):
             raise LibraryError(f"Ámbito no válido en la regla «{pattern}».")
-        rules.append(LibRule(type_name, category, pattern, kind, priority, scope))
+        rule_tx = entry.get("transaction_type")
+        if rule_tx is not None and rule_tx not in {t.value for t in RULE_TRANSACTION_TYPES}:
+            raise LibraryError(f"Tipo de movimiento no válido en la regla «{pattern}».")
+        rules.append(LibRule(type_name, category, pattern, kind, priority, scope, rule_tx))
 
     def _meta(key: str) -> Optional[str]:
         value = payload.get(key)
@@ -390,7 +410,8 @@ def _load_state(session: Session, user_id: int) -> _State:
             if rule.user_id is not None:
                 stray.append(rule)
             continue
-        key = _rule_key(pair[0].name, pair[1].name, rule.match_pattern, rule.match_type.value)
+        key = _rule_key(pair[0].name, pair[1].name, rule.match_pattern, rule.match_type.value,
+                        _txn_type_value(rule))
         target = global_ if rule.user_id is None else personal
         target.setdefault(key, rule)
     return _State(types, categories, personal, global_, stray)
@@ -399,7 +420,7 @@ def _load_state(session: Session, user_id: int) -> _State:
 def _describe(rule: AutoCategorizationRule) -> str:
     pair = _type_and_category(rule.category)
     where = f"{pair[0].name} › {pair[1].name}" if pair else rule.category.name
-    return f"«{rule.match_pattern}» → {where}"
+    return f"«{rule.match_pattern}»{movement_note(_txn_type_value(rule))} → {where}"
 
 
 def plan_import(session: Session, user_id: int, lib: LibraryFile, mode: str = MODE_MERGE,
@@ -423,7 +444,7 @@ def plan_import(session: Session, user_id: int, lib: LibraryFile, mode: str = MO
     file_personal: Dict[tuple, LibRule] = {}
     file_global: set = set()
     for rule in lib.rules:
-        key = _rule_key(rule.type, rule.category, rule.pattern, rule.match_type)
+        key = _rule_key(rule.type, rule.category, rule.pattern, rule.match_type, rule.transaction_type)
         if rule.scope == SCOPE_GLOBAL:
             if not allow_global:
                 plan.skipped_global += 1
@@ -507,16 +528,18 @@ def apply_import(session: Session, user_id: int, lib: LibraryFile, mode: str = M
                 user_id=None if rule.scope == SCOPE_GLOBAL else user_id,
                 category_id=cat.id, match_pattern=rule.pattern,
                 match_type=MatchType(rule.match_type), priority=rule.priority, created_at=now,
+                transaction_type=TransactionType(rule.transaction_type) if rule.transaction_type else None,
             ))
             result.rules_created += 1
 
         for rule, _old in plan.priority_changes:
-            existing = state.personal[_rule_key(rule.type, rule.category, rule.pattern, rule.match_type)]
+            existing = state.personal[_rule_key(rule.type, rule.category, rule.pattern, rule.match_type,
+                                                rule.transaction_type)]
             existing.priority = rule.priority
             result.rules_updated += 1
 
         if mode == MODE_REPLACE:
-            keep = {_rule_key(r.type, r.category, r.pattern, r.match_type)
+            keep = {_rule_key(r.type, r.category, r.pattern, r.match_type, r.transaction_type)
                     for r in lib.rules if r.scope == SCOPE_PERSONAL}
             doomed = [r for k, r in state.personal.items() if k not in keep] + state.stray_personal
             for rule in doomed:

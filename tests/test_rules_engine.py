@@ -14,6 +14,7 @@ Covers:
   - R-08: Global rule applies when user_id=None
   - R-09: apply_rules_and_commit persists assignments
   - R-10: No match → unmatched list
+  - R-20..R-22: rules limited to a movement type (gasto / ingreso)
 """
 from __future__ import annotations
 
@@ -489,3 +490,49 @@ def test_r19_demo_account_never_sees_or_gets_global_rules(db_session, base_data)
     assert shares_global_rules(db_session, base_data["user_id"])
     assert get_all_rules(db_session, user_id=user_id) == []
     assert apply_rules(db_session, [txn.id], user_id).assigned == {}
+
+
+def test_r20_same_text_paid_and_received_goes_to_two_categories(db_session, base_data):
+    """R-20: a BIZUM paid and a BIZUM received each follow the rule of their
+    own movement type; equal pattern and priority is not a conflict."""
+    uid, acc = base_data["user_id"], base_data["account_id"]
+    paid = _make_txn(db_session, uid, acc, concept="BIZUM A JUAN", amount=-20.0)
+    received = _make_txn(db_session, uid, acc, concept="BIZUM DE JUAN", amount=20.0)
+    create_rule(db_session, base_data["cat_super"].id, "BIZUM", user_id=uid,
+                transaction_type=TransactionType.expense)
+    create_rule(db_session, base_data["cat_nomina"].id, "BIZUM", user_id=uid,
+                transaction_type=TransactionType.income)
+
+    result = apply_rules(db_session, [paid.id, received.id], uid)
+
+    assert result.assigned == {paid.id: base_data["cat_super"].id,
+                               received.id: base_data["cat_nomina"].id}
+    assert result.conflicts == {}
+
+
+def test_r21_rule_without_movement_type_matches_both(db_session, base_data):
+    """R-21: existing rules (transaction_type NULL) keep matching any type."""
+    uid, acc = base_data["user_id"], base_data["account_id"]
+    paid = _make_txn(db_session, uid, acc, concept="BIZUM A JUAN", amount=-20.0)
+    received = _make_txn(db_session, uid, acc, concept="BIZUM DE JUAN", amount=20.0)
+    rule = create_rule(db_session, base_data["cat_super"].id, "BIZUM", user_id=uid)
+
+    assert rule.transaction_type is None
+    result = apply_rules(db_session, [paid.id, received.id], uid)
+    assert set(result.assigned) == {paid.id, received.id}
+
+
+def test_r22_movement_type_validation_and_update(db_session, base_data):
+    """R-22: only gasto / ingreso / any; update_rule keeps the type unless
+    it is passed, and None sets it back to any."""
+    from app.categorization.rules_engine import update_rule
+
+    with pytest.raises(ValueError):
+        create_rule(db_session, base_data["cat_super"].id, "TRESSIS",
+                    transaction_type=TransactionType.investment)
+    rule = create_rule(db_session, base_data["cat_super"].id, "BIZUM",
+                       transaction_type=TransactionType.expense)
+
+    assert update_rule(db_session, rule.id, priority=5).transaction_type == TransactionType.expense
+    assert update_rule(db_session, rule.id, transaction_type="income").transaction_type == TransactionType.income
+    assert update_rule(db_session, rule.id, transaction_type=None).transaction_type is None

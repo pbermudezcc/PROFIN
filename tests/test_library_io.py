@@ -313,3 +313,35 @@ def test_failure_half_way_leaves_the_database_unchanged(session, beto, two_libra
 def test_suggested_filename_is_safe():
     name = lio.suggested_filename("Ana María/../x", when=date(2026, 10, 9))
     assert name == "profin-categorias-Ana_Mar_a_x-20261009.profin-cats.json"
+
+
+def test_rule_movement_type_survives_the_roundtrip(session, ana, beto):
+    seed_default_categories(session, ana)
+    seed_default_categories(session, beto)
+    ocio = _cat(session, ana, "GASTO", "Ocio, Eventos y Bodas")
+    aporte = _cat(session, ana, "INGRESO", "Aporte Comun Pedro")
+    for category, kind in ((ocio, TransactionType.expense), (aporte, TransactionType.income), (ocio, None)):
+        rule = _add_rule(session, ana, category, "BIZUM")
+        rule.transaction_type = kind
+    session.commit()
+
+    lib = _roundtrip(session, ana)
+    assert sorted((r.category, r.transaction_type or "") for r in lib.rules if r.pattern == "BIZUM") == [
+        ("Aporte Comun Pedro", "income"), ("Ocio, Eventos y Bodas", ""), ("Ocio, Eventos y Bodas", "expense")]
+    assert lio.apply_import(session, beto, lib).rules_created == 3
+    got = sorted((r.category.name, r.transaction_type.value if r.transaction_type else "")
+                 for r in session.query(AutoCategorizationRule).filter_by(user_id=beto, match_pattern="BIZUM"))
+    assert got == [("Aporte Comun Pedro", "income"), ("Ocio, Eventos y Bodas", ""),
+                   ("Ocio, Eventos y Bodas", "expense")]
+    # Importing again changes nothing: the movement type is part of the key.
+    assert not lio.plan_import(session, beto, lib).new_rules
+
+
+def test_rule_movement_type_is_optional_and_validated():
+    assert lio.parse_library(lio.dumps(_valid_payload())).rules[0].transaction_type is None
+    payload = _valid_payload()
+    payload["rules"][0]["transaction_type"] = "income"
+    assert lio.parse_library(lio.dumps(payload)).rules[0].transaction_type == "income"
+    payload["rules"][0]["transaction_type"] = "investment"
+    with pytest.raises(lio.LibraryError, match="movimiento"):
+        lio.parse_library(lio.dumps(payload))

@@ -483,7 +483,7 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
     <ul class="ticks read">
       <li><strong>Cambiar categoría</strong>: busca entre tus categorías y toca la que corresponda.</li>
       <li><strong>Aplicar también a los parecidos</strong>: la misma categoría para los movimientos sin categoría del mismo comercio.</li>
-      <li><strong>Crear una regla</strong>: para que los próximos de ese comercio se clasifiquen solos.</li>
+      <li><strong>Crear una regla</strong>: para que los próximos de ese comercio se clasifiquen solos. La regla vale solo para el mismo tipo de movimiento: un BIZUM que pagas y uno que recibes se categorizan por separado.</li>
     </ul>
   </section>
 
@@ -566,9 +566,10 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
         <h3>Reglas</h3>
         <p>Cada regla dice: si el concepto o el comercio <strong>contiene</strong> un texto (o es <strong>exactamente</strong> ese texto, o cumple una <strong>expresión regular</strong>), asigna esta categoría.</p>
         <ul class="ticks">
+          <li><strong>Movimiento</strong>: la regla puede valer para cualquier movimiento o solo para <strong>gastos</strong> (cargos) o solo para <strong>ingresos</strong> (abonos). Así un mismo texto, como <code>BIZUM</code>, va a una categoría cuando pagas y a otra cuando cobras. Las reglas anteriores siguen en «Cualquiera».</li>
           <li><strong>Prioridad</strong>: número más bajo, se comprueba antes. Así <code>RENFE VIAJEROS</code> (Viajes, 10) gana a <code>RENFE</code> (Transporte, 100). Las flechas la suben o bajan.</li>
           <li>Cada regla muestra cuántos movimientos ha clasificado.</li>
-          <li><strong>Buscar reglas</strong>: el buscador mira el texto, la coincidencia, la categoría, el tipo, el ámbito y la prioridad; los filtros acotan por categoría, tipo, coincidencia, ámbito (global o personal) y uso (con o sin movimientos). Arriba ves «Mostrando 37 de 412 reglas» y «Quitar filtros» lo deja todo como estaba.</li>
+          <li><strong>Buscar reglas</strong>: el buscador mira el texto, la coincidencia, el movimiento, la categoría, el tipo, el ámbito y la prioridad; los filtros acotan por categoría, tipo, coincidencia, movimiento (gastos, ingresos o cualquiera), ámbito (global o personal) y uso (con o sin movimientos). Arriba ves «Mostrando 37 de 412 reglas» y «Quitar filtros» lo deja todo como estaba.</li>
           <li><strong>Aplicar a sin categoría</strong> o <strong>Recalcular todos</strong>. Lo que categorizaste a mano nunca cambia.</li>
         </ul>
       </div>

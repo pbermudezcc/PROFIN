@@ -131,7 +131,8 @@ def _pending(request: Request, user: WebUser, token: str) -> PendingLibrary:
 
 
 def _rule_text(rule: library_io.LibRule) -> str:
-    return f"«{rule.pattern}» → {rule.type} › {rule.category} (prioridad {rule.priority})"
+    return (f"«{rule.pattern}»{library_io.movement_note(rule.transaction_type)} → "
+            f"{rule.type} › {rule.category} (prioridad {rule.priority})")
 
 
 def _mode(value: Optional[str]) -> str:

@@ -5,7 +5,8 @@ FAMILYFIN — Auto-Categorization Rules View (Fase 4b)
 
 Features:
   - List of all rules (global + user) ordered by priority
-  - Create new rule: pattern + match type + category + priority
+  - Create new rule: pattern + match type + movement type (gasto /
+    ingreso / cualquiera) + category + priority
   - Delete rule
   - Visual indicator for match type (contains/exact/regex)
   - Search box + filters (categoría, tipo, coincidencia, ámbito, uso) over
@@ -34,14 +35,14 @@ from sqlalchemy.orm import Session
 from app.config      import THEMES
 from app.db.models   import (
     AutoCategorizationRule, MatchType, User, Category, CategoryLevel,
-    Transaction,
+    Transaction, TransactionType,
 )
 from app.categorization.rules_engine  import (
     apply_rules, create_rule, delete_rule, get_all_rules, shares_global_rules, update_rule
 )
 from app.categorization.category_manager import get_all_categories
 from app.categorization.rule_search import (
-    MATCH_TYPE_LABELS, SCOPE_GLOBAL, SCOPE_PERSONAL, USAGE_WITH, USAGE_WITHOUT,
+    MATCH_TYPE_LABELS, MOVEMENT_FILTERS, SCOPE_GLOBAL, SCOPE_PERSONAL, USAGE_WITH, USAGE_WITHOUT,
     RuleFilters, RuleRow, build_rule_rows, count_label, filter_options,
     filter_rule_rows,
 )
@@ -53,6 +54,26 @@ logger = logging.getLogger(__name__)
 RULE_ID_ROLE = Qt.ItemDataRole.UserRole          # column 0: the rule id
 SORT_ROLE    = Qt.ItemDataRole.UserRole + 1      # typed sort key per cell
 SEARCH_DEBOUNCE_MS = 250
+
+
+def _movement_combo(current: TransactionType | None = None) -> QComboBox:
+    """Which movements a rule applies to (stored in transaction_type)."""
+    cmb = QComboBox()
+    cmb.setFixedHeight(38)
+    cmb.addItem("Cualquiera (gastos e ingresos)", None)
+    cmb.addItem("Solo gastos (cargos)", TransactionType.expense)
+    cmb.addItem("Solo ingresos (abonos)", TransactionType.income)
+    cmb.setToolTip(
+        "Un mismo texto (p. ej. BIZUM) puede ser un pago o un cobro:\n"
+        "limita la regla a un tipo para categorizar cada uno por separado."
+    )
+    cmb.setCurrentIndex(max(0, cmb.findData(current)))
+    return cmb
+
+
+def _category_label(cat: Category) -> str:
+    """Name plus its type: the same name can exist under GASTO and INGRESO."""
+    return f"{cat.name} ({cat.parent.name})" if cat.parent is not None else cat.name
 
 
 class RulesView(QWidget):
@@ -102,7 +123,7 @@ class RulesView(QWidget):
 
         self._model = QStandardItemModel()
         self._model.setHorizontalHeaderLabels([
-            "Prioridad", "Patrón", "Tipo match",
+            "Prioridad", "Patrón", "Tipo match", "Movimiento",
             "Categoría", "Ámbito", "Transacciones vinculadas",
             "Total (€)",
         ])
@@ -120,6 +141,7 @@ class RulesView(QWidget):
         hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
 
         root.addWidget(self._table)
 
@@ -212,8 +234,8 @@ class RulesView(QWidget):
         self._inp_search.setPlaceholderText("Buscar reglas…")
         self._inp_search.setClearButtonEnabled(True)
         self._inp_search.setToolTip(
-            "Busca cada palabra en el patrón, tipo de coincidencia, categoría,\n"
-            "tipo, ámbito, fecha de creación, prioridad y nº de movimientos.\n"
+            "Busca cada palabra en el patrón, tipo de coincidencia, movimiento,\n"
+            "categoría, tipo, ámbito, fecha de creación, prioridad y nº de movimientos.\n"
             "Sin distinguir mayúsculas ni acentos; todas las palabras deben aparecer."
         )
         self._inp_search.setFixedHeight(34)
@@ -244,6 +266,9 @@ class RulesView(QWidget):
         self._cmb_match = combo("Toda coincidencia", "Tipo de coincidencia")
         for mt, label in MATCH_TYPE_LABELS.items():
             self._cmb_match.addItem(label, mt)
+        self._cmb_movement = combo("Todo movimiento", "Movimientos a los que se aplica la regla")
+        for value, label in MOVEMENT_FILTERS.items():
+            self._cmb_movement.addItem(label, value)
         self._cmb_scope = combo("Todo ámbito", "Global (toda la familia) o personal")
         self._cmb_scope.addItem("Global", SCOPE_GLOBAL)
         self._cmb_scope.addItem("Personal", SCOPE_PERSONAL)
@@ -316,6 +341,7 @@ class RulesView(QWidget):
             match_type=self._cmb_match.currentData(),
             scope=self._cmb_scope.currentData(),
             usage=self._cmb_usage.currentData(),
+            movement=self._cmb_movement.currentData(),
         )
 
     def _populate(self) -> None:
@@ -352,6 +378,14 @@ class RulesView(QWidget):
             item_mt.setForeground(QColor(match_colors.get(row.match_type, t["text_primary"])))
             item_mt.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
 
+            item_mov = cell(row.movement_label, row.movement_label, center)
+            if row.transaction_type == TransactionType.income:
+                item_mov.setForeground(QColor(t["income"]))
+            elif row.transaction_type == TransactionType.expense:
+                item_mov.setForeground(QColor(t["expense"]))
+            else:
+                item_mov.setForeground(QColor(t["text_secondary"]))
+
             cat_name = row.category_name or "—"
             item_cat = cell(cat_name, fold_text(cat_name))
             if row.type_name:
@@ -375,7 +409,7 @@ class RulesView(QWidget):
             item_total = cell(_format_amount(total), total, right)
 
             self._model.appendRow([
-                item_pri, item_pat, item_mt, item_cat, item_scope,
+                item_pri, item_pat, item_mt, item_mov, item_cat, item_scope,
                 item_linked, item_total,
             ])
 
@@ -441,7 +475,7 @@ class RulesView(QWidget):
     def _clear_filters(self) -> None:
         self._search_timer.stop()
         widgets = (self._inp_search, self._cmb_cat, self._cmb_type,
-                   self._cmb_match, self._cmb_scope, self._cmb_usage)
+                   self._cmb_match, self._cmb_movement, self._cmb_scope, self._cmb_usage)
         for widget in widgets:
             widget.blockSignals(True)
         self._inp_search.clear()
@@ -497,11 +531,15 @@ class RulesView(QWidget):
         cmb_type.addItem("Regex (expresión regular)", MatchType.regex)
         form.addRow("Tipo de match:", cmb_type)
 
+        # Movement type
+        cmb_movement = _movement_combo()
+        form.addRow("Movimiento:", cmb_movement)
+
         # Category
         cmb_cat = QComboBox()
         cmb_cat.setFixedHeight(38)
         for cat in self._categories:
-            cmb_cat.addItem(cat.name, cat.id)
+            cmb_cat.addItem(_category_label(cat), cat.id)
         form.addRow("Categoría:", cmb_cat)
 
         # Priority
@@ -575,6 +613,7 @@ class RulesView(QWidget):
         cat_id   = cmb_cat.currentData()
         priority = spn_pri.value()
         scope    = cmb_scope.currentData()
+        movement = cmb_movement.currentData()
 
         if not pattern:
             QMessageBox.warning(
@@ -600,6 +639,7 @@ class RulesView(QWidget):
                 match_type    = mt,
                 priority      = priority,
                 user_id       = scope,
+                transaction_type = movement,
             )
             self.refresh()
         except Exception as exc:
@@ -710,11 +750,15 @@ class RulesView(QWidget):
         )
         form.addRow("Tipo de match:", cmb_type)
 
+        # Movement type — pre-selected
+        cmb_movement = _movement_combo(rule.transaction_type)
+        form.addRow("Movimiento:", cmb_movement)
+
         # Category — pre-selected
         cmb_cat = QComboBox()
         cmb_cat.setFixedHeight(38)
         for cat in self._categories:
-            cmb_cat.addItem(cat.name, cat.id)
+            cmb_cat.addItem(_category_label(cat), cat.id)
         # Select current category
         for i in range(cmb_cat.count()):
             if cmb_cat.itemData(i) == rule.category_id:
@@ -769,6 +813,7 @@ class RulesView(QWidget):
         mt       = cmb_type.currentData()
         cat_id   = cmb_cat.currentData()
         priority = spn_pri.value()
+        movement = cmb_movement.currentData()
 
         if not pattern:
             QMessageBox.warning(self, "Patrón vacío",
@@ -788,6 +833,7 @@ class RulesView(QWidget):
                 match_pattern = pattern,
                 match_type    = mt,
                 priority      = priority,
+                transaction_type = movement,
             )
             self.refresh()
             QMessageBox.information(

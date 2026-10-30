@@ -30,6 +30,7 @@ from app.categorization.category_manager import (
     update_category_name,
 )
 from app.categorization.rules_engine import (
+    RULE_TRANSACTION_TYPES,
     RulesEngineResult,
     apply_rules,
     apply_rules_and_commit,
@@ -45,6 +46,7 @@ from app.db.models import (
     CategoryLevel,
     MatchType,
     Transaction,
+    TransactionType,
     TRANSACTIONS_NEWEST_FIRST,
 )
 
@@ -187,6 +189,19 @@ def own_rule(session: Session, user_id: int, rule_id: int) -> AutoCategorization
     return rule
 
 
+def _clean_transaction_type(value: Optional[str]) -> Optional[TransactionType]:
+    """'' / None = any type; else expense or income."""
+    if not value:
+        return None
+    try:
+        kind = TransactionType(value)
+    except ValueError:
+        kind = None
+    if kind not in RULE_TRANSACTION_TYPES:
+        raise AdminError("Tipo de movimiento no válido.")
+    return kind
+
+
 def _clean_rule(session: Session, user_id: int, category_id: Optional[int], pattern: Optional[str],
                 match_type: Optional[str], priority: Optional[int]) -> tuple:
     if category_id is None:
@@ -216,10 +231,14 @@ def _clean_rule(session: Session, user_id: int, category_id: Optional[int], patt
 
 
 def add_rule(session: Session, user_id: int, category_id: Optional[int], pattern: Optional[str],
-             match_type: Optional[str] = None, priority: Optional[int] = None) -> AutoCategorizationRule:
-    """New personal rule (scope: only this user)."""
+             match_type: Optional[str] = None, priority: Optional[int] = None,
+             transaction_type: Optional[str] = None) -> AutoCategorizationRule:
+    """New personal rule (scope: only this user). transaction_type limits
+    it to expense or income movements; empty = any type."""
     cat_id, pattern, kind, priority = _clean_rule(session, user_id, category_id, pattern, match_type, priority)
-    return create_rule(session, cat_id, pattern, kind, priority, user_id=user_id)
+    txn_type = _clean_transaction_type(transaction_type)
+    return create_rule(session, cat_id, pattern, kind, priority, user_id=user_id,
+                       transaction_type=txn_type)
 
 
 def transaction_has_rule(session: Session, user_id: int, transaction_id: int) -> bool:
@@ -239,9 +258,10 @@ def add_rule_from_transaction(session: Session, user_id: int, transaction_id: in
                               category_id: int) -> Optional[RuleFromTransaction]:
     """
     "Crear regla" from the category picker: an exact rule on the merchant
-    (or, without one, the full concept) pointing at category_id, applied
-    right away to the user's uncategorized transactions — what the next
-    Movimientos refresh would do anyway.
+    (or, without one, the full concept) pointing at category_id, limited to
+    the movement's type (a BIZUM paid and a BIZUM received get separate
+    rules), applied right away to the user's uncategorized transactions —
+    what the next Movimientos refresh would do anyway.
 
     Returns None (and creates nothing) when a rule already matches the
     transaction. Raises NotFound for another user's transaction or category.
@@ -252,7 +272,9 @@ def add_rule_from_transaction(session: Session, user_id: int, transaction_id: in
     pattern = (txn.issuer_name or txn.concept or "").strip()
     if not pattern or len(pattern) > MAX_PATTERN or transaction_has_rule(session, user_id, transaction_id):
         return None
-    rule = add_rule(session, user_id, category_id, pattern, MatchType.exact.value)
+    txn_type = TransactionType(txn.type)
+    rule = add_rule(session, user_id, category_id, pattern, MatchType.exact.value,
+                    transaction_type=txn_type.value if txn_type in RULE_TRANSACTION_TYPES else None)
     ids = [row.id for row in session.query(Transaction.id).filter(
         Transaction.user_id == user_id, Transaction.category_id.is_(None))]
     result = apply_rules_and_commit(session, ids, user_id) if ids else RulesEngineResult()
@@ -261,11 +283,13 @@ def add_rule_from_transaction(session: Session, user_id: int, transaction_id: in
 
 def edit_rule(session: Session, user_id: int, rule_id: int, category_id: Optional[int],
               pattern: Optional[str], match_type: Optional[str],
-              priority: Optional[int]) -> AutoCategorizationRule:
+              priority: Optional[int], transaction_type: Optional[str] = None) -> AutoCategorizationRule:
+    """Save the whole rule form (an empty transaction_type = any type)."""
     rule = own_rule(session, user_id, rule_id)
     cat_id, pattern, kind, priority = _clean_rule(session, user_id, category_id, pattern, match_type, priority)
+    txn_type = _clean_transaction_type(transaction_type)
     return update_rule(session, rule.id, category_id=cat_id, match_pattern=pattern,
-                       match_type=kind, priority=priority)
+                       match_type=kind, priority=priority, transaction_type=txn_type)
 
 
 def remove_rule(session: Session, user_id: int, rule_id: int) -> None:
@@ -311,15 +335,18 @@ class PatternPreview:
 
 
 def preview_pattern(session: Session, user_id: int, pattern: Optional[str],
-                    match_type: Optional[str], limit: int = 8) -> PatternPreview:
-    """Transactions a pattern would match (issuer or concept), newest first."""
+                    match_type: Optional[str], limit: int = 8,
+                    transaction_type: Optional[str] = None) -> PatternPreview:
+    """Transactions a pattern would match (issuer or concept), newest
+    first; only expenses or incomes when transaction_type says so."""
     preview = PatternPreview()
     pattern = (pattern or "").strip()
     if not pattern or len(pattern) > MAX_PATTERN:
         return preview
     try:
         kind = MatchType(match_type or MatchType.contains.value)
-    except ValueError:
+        txn_type = _clean_transaction_type(transaction_type)
+    except ValueError:      # AdminError included
         return preview
     if kind == MatchType.regex:
         try:
@@ -339,6 +366,8 @@ def preview_pattern(session: Session, user_id: int, pattern: Optional[str],
         .filter(Transaction.user_id == user_id)
         .order_by(*TRANSACTIONS_NEWEST_FIRST)
     )
+    if txn_type is not None:
+        query = query.filter(Transaction.type == txn_type)
     if kind == MatchType.contains:
         like = f"%{pattern.lower()}%"
         query = query.filter(func.lower(Transaction.issuer_name).like(like)

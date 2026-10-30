@@ -11,6 +11,10 @@ Matching logic:
   - Fields checked (OR gate — match in EITHER field triggers the rule):
       * issuer_name
       * concept
+  - Movement type: a rule with transaction_type set (expense / income)
+    only matches movements of that type (Transaction.type, from the sign
+    of the amount); NULL matches any. The same text («BIZUM», a shop that
+    also refunds) can be a payment or a receipt with different categories.
   - Match types:
       contains : case-insensitive substring match
       exact    : case-insensitive full-string match
@@ -58,10 +62,19 @@ from app.db.models import (
     Category,
     MatchType,
     Transaction,
+    TransactionType,
     User,
 )
 
 logger = logging.getLogger(__name__)
+
+# The movement types a rule can be limited to. Transaction.type comes from
+# the sign of the amount, so it is never "investment": an investment
+# contribution is an expense movement filed under an INVERSION category.
+RULE_TRANSACTION_TYPES = (TransactionType.expense, TransactionType.income)
+
+# update_rule(): "leave transaction_type as it is" (None means "any type").
+_UNCHANGED = object()
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +250,7 @@ def create_rule(
     match_type:    MatchType  = MatchType.contains,
     priority:      int        = 100,
     user_id:       Optional[int] = None,
+    transaction_type: Optional[TransactionType] = None,
 ) -> AutoCategorizationRule:
     """
     Create and persist a new auto-categorization rule.
@@ -249,6 +263,8 @@ def create_rule(
     match_type    : contains | exact | regex.
     priority      : Lower = higher priority. Default 100.
     user_id       : None = global rule. User ID = per-user rule.
+    transaction_type : Only movements of this type match (expense /
+                       income). None = any type.
 
     Returns
     -------
@@ -256,10 +272,12 @@ def create_rule(
 
     Raises
     ------
-    ValueError : If match_pattern is empty or regex is invalid.
+    ValueError : If match_pattern is empty, regex is invalid or the
+                 movement type is not one of RULE_TRANSACTION_TYPES.
     """
     if not match_pattern or not match_pattern.strip():
         raise ValueError("El patrón de la regla no puede estar vacío.")
+    transaction_type = _check_transaction_type(transaction_type)
 
     if match_type == MatchType.regex:
         try:
@@ -275,14 +293,16 @@ def create_rule(
         match_pattern = match_pattern.strip(),
         match_type    = match_type,
         priority      = priority,
+        transaction_type = transaction_type,
     )
     session.add(rule)
     session.commit()
     session.refresh(rule)
     logger.info(
-        "Regla creada: id=%d pattern='%s' type=%s priority=%d user=%s",
+        "Regla creada: id=%d pattern='%s' type=%s priority=%d user=%s movimiento=%s",
         rule.id, rule.match_pattern, rule.match_type.value,
         rule.priority, user_id,
+        rule.transaction_type.value if rule.transaction_type else "cualquiera",
     )
     return rule
 
@@ -310,12 +330,14 @@ def update_rule(
     match_pattern: Optional[str]  = None,
     match_type:    Optional[MatchType] = None,
     priority:      Optional[int]  = None,
+    transaction_type = _UNCHANGED,
 ) -> AutoCategorizationRule:
     """
     Update one or more fields of an existing auto-categorization rule.
 
     Only non-None arguments are applied — omitted arguments keep their
-    current value.
+    current value. transaction_type is the exception, because None means
+    "any type": it is only changed when passed.
 
     Raises
     ------
@@ -347,6 +369,9 @@ def update_rule(
 
     if priority is not None:
         rule.priority = priority
+
+    if transaction_type is not _UNCHANGED:
+        rule.transaction_type = _check_transaction_type(transaction_type)
 
     session.commit()
     session.refresh(rule)
@@ -396,6 +421,19 @@ def get_all_rules(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _check_transaction_type(value) -> Optional[TransactionType]:
+    """None or one of RULE_TRANSACTION_TYPES (enum or its value)."""
+    if value is None:
+        return None
+    try:
+        value = TransactionType(value)
+    except ValueError:
+        value = None
+    if value not in RULE_TRANSACTION_TYPES:
+        raise ValueError("Tipo de movimiento de la regla no válido (gasto, ingreso o cualquiera).")
+    return value
+
 
 def _load_rules(
     session: Session,
@@ -545,6 +583,8 @@ def _process_transaction(
     concept_lower = txn.concept.lower() if txn.concept else None
 
     for rule in rules:
+        if rule.transaction_type is not None and rule.transaction_type != txn.type:
+            continue
         field_hit = _match_transaction(
             rule, txn, issuer_lower, concept_lower,
             pattern_lower_by_rule_id[rule.id],

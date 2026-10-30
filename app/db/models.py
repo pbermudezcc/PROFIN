@@ -390,6 +390,12 @@ class AutoCategorizationRule(Base):
     )
     # Lower number = higher priority
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    # Only movements of this type (Transaction.type: income / expense) match.
+    # NULL = any type. The same text (e.g. «BIZUM») can be a payment or a
+    # receipt, and each usually needs its own category. Added by migration 8.
+    transaction_type: Mapped[Optional[TransactionType]] = mapped_column(
+        Enum(TransactionType), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

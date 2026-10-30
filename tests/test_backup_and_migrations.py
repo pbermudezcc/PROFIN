@@ -483,3 +483,22 @@ def test_restore_rejects_archive_without_database(tmp_path):
         archive.writestr("metadata.json", "{}")
 
     assert SettingsManager().restore_all_data(str(archive_path)) is False
+
+
+def test_migration_8_adds_the_rules_movement_type_as_any(tmp_path):
+    from app.db.database import _migration_8_rule_transaction_type
+
+    db = tmp_path / "profin.db"
+    _make_legacy_db(db)
+    migrate_schema(db)
+    with closing(sqlite3.connect(db)) as conn:       # a v7 file
+        conn.execute("ALTER TABLE auto_categorization_rules DROP COLUMN transaction_type")
+        conn.execute("PRAGMA user_version = 7")
+        conn.commit()
+
+    assert migrate_schema(db) == 7
+    assert _user_version(db) == SCHEMA_VERSION
+    _migration_8_rule_transaction_type(db)            # idempotent
+    with closing(sqlite3.connect(db)) as conn:
+        rows = conn.execute("SELECT match_pattern, transaction_type FROM auto_categorization_rules").fetchall()
+    assert rows == [("MERCADONA", None)]              # existing rules: any type, as before

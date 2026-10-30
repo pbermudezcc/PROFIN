@@ -319,3 +319,29 @@ def test_web_rules_search_and_filters(app, family, factory):  # noqa: F811
     # client swaps #rules-results out of it (hx-select).
     response = client.get("/mas/reglas", params={"q": "mercado"}, headers=_hx(client))
     assert response.status_code == 200 and 'id="rules-results"' in response.text
+
+
+def test_rules_view_new_rule_dialog_sets_the_movement_type(rules_view, monkeypatch):
+    from PySide6.QtWidgets import QComboBox, QDialog, QLineEdit
+    from app.db.models import TransactionType
+
+    view, s, _ids, _cats = rules_view
+
+    def fill_and_accept(dialog):
+        dialog.findChild(QLineEdit).setText("BIZUM")
+        movement = next(c for c in dialog.findChildren(QComboBox)
+                        if c.findData(TransactionType.income) >= 0)
+        assert movement.currentData() is None                 # default: any type
+        movement.setCurrentIndex(movement.findData(TransactionType.income))
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(QDialog, "exec", fill_and_accept)
+    view._on_new_rule()
+
+    rule = s.query(AutoCategorizationRule).filter_by(match_pattern="BIZUM").one()
+    assert rule.transaction_type == TransactionType.income
+    view._cmb_movement.setCurrentIndex(view._cmb_movement.findData("income"))
+    assert _shown_patterns(view) == ["BIZUM"]
+    assert view._model.item(0, 3).text() == "Ingreso"
+    view._cmb_movement.setCurrentIndex(view._cmb_movement.findData("any"))
+    assert "BIZUM" not in _shown_patterns(view) and len(_shown_patterns(view)) == 5

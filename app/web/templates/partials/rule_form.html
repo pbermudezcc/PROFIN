@@ -16,6 +16,14 @@
         {% endfor %}
       </div>
     </div>
+    <div class="field"><span>…en movimientos de tipo</span>
+      <div class="seg" role="radiogroup" aria-label="Tipo de movimiento">
+        {% for value, label in movements %}
+        <label class="seg-opt"><input type="radio" name="transaction_type" value="{{ value }}" {% if v.transaction_type == value %}checked{% endif %}><span>{{ label }}</span></label>
+        {% endfor %}
+      </div>
+      <small class="help">Un mismo texto (p. ej. BIZUM) puede ser un pago o un cobro: limita la regla para categorizar cada uno aparte.</small>
+    </div>
     <label class="field"><span>Texto a buscar</span>
       <input class="input" id="rule-pattern" name="pattern" value="{{ v.pattern or '' }}" maxlength="200" required
              autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="p. ej. MERCADONA" {% if not rule %}autofocus{% endif %}>
@@ -36,7 +44,7 @@
       <small class="help">Número más bajo = se comprueba antes. Por defecto 100.</small>
     </label>
 
-    <div id="rule-preview" hx-get="/mas/reglas/probar" hx-target="this" hx-include="#rule-pattern, #rule-form [name=match_type]"
+    <div id="rule-preview" hx-get="/mas/reglas/probar" hx-target="this" hx-include="#rule-pattern, #rule-form [name=match_type], #rule-form [name=transaction_type]"
          hx-trigger="load, input from:#rule-pattern delay:400ms, change from:#rule-form" hx-swap="innerHTML" aria-live="polite"></div>
 
     <div class="sticky-actions">

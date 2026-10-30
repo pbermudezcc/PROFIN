@@ -2075,3 +2075,47 @@ def test_session_store_rotate_and_rename():
     assert store.revoke_user(1, keep=fresh.sid) == 1
     assert store.get(fresh.sid) is not None and store.get(other.sid) is not None
     assert store.rotate("no-existe") is None
+
+
+def test_rule_form_saves_the_movement_type_and_filters_by_it(app, family, factory):
+    client = logged_in(app)
+    headers = _hx(client)
+    assert 'name="transaction_type"' in client.get("/mas/reglas/nueva").text
+    response = client.post("/mas/reglas", data={"category_id": family["ana_cat"], "pattern": "BIZUM",
+                                                "match_type": "contains", "transaction_type": "expense"},
+                           headers=headers)
+    assert response.status_code == 204
+    response = client.post("/mas/reglas", data={"category_id": family["ana_cat"], "pattern": "X",
+                                                "transaction_type": "investment"}, headers=headers)
+    assert "Tipo de movimiento no válido" in response.text
+    db = factory()
+    try:
+        rule = db.query(AutoCategorizationRule).filter_by(user_id=family["ana"]).one()
+        assert rule.transaction_type == TransactionType.expense
+        rule_id = rule.id
+    finally:
+        db.close()
+    assert 'value="expense" checked' in client.get(f"/mas/reglas/{rule_id}").text
+
+    # The ana fixture movement «MERCADO ANA» is an expense: an income-only
+    # preview finds nothing.
+    preview = client.get("/mas/reglas/probar", params={"pattern": "MERCADO", "match_type": "contains",
+                                                       "transaction_type": "income"}).text
+    assert "MERCADO ANA" not in preview
+    preview = client.get("/mas/reglas/probar", params={"pattern": "MERCADO", "match_type": "contains",
+                                                       "transaction_type": "expense"}).text
+    assert "MERCADO ANA" in preview
+
+    assert "«BIZUM»" in client.get("/mas/reglas", params={"movimiento": "expense"}).text
+    assert "«BIZUM»" not in client.get("/mas/reglas", params={"movimiento": "any"}).text
+
+    # Saving the form without a type sets it back to any.
+    response = client.post("/mas/reglas", data={"rule_id": rule_id, "category_id": family["ana_cat"],
+                                                "pattern": "BIZUM", "match_type": "contains",
+                                                "transaction_type": ""}, headers=headers)
+    assert response.status_code == 204
+    db = factory()
+    try:
+        assert db.get(AutoCategorizationRule, rule_id).transaction_type is None
+    finally:
+        db.close()

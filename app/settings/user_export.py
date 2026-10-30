@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.analytics.transaction_search import SEARCH_TYPE_LABELS
 from app.categorization import library_io
+from app.categorization.rule_search import MOVEMENT_LABELS
 from app.db.models import (
     CATEGORY_SOURCE_MANUAL,
     CATEGORY_SOURCE_RULE,
@@ -206,7 +207,8 @@ def export_user_data(session: Session, user_id: int, when: Optional[datetime] = 
         .all()
     )
     rule_rows = [
-        [r.priority, r.match_pattern, _label(r.match_type, MATCH_LABELS), *category_pair(r.category_id), r.created_at]
+        [r.priority, r.match_pattern, _label(r.match_type, MATCH_LABELS),
+         MOVEMENT_LABELS.get(r.transaction_type, "Cualquiera"), *category_pair(r.category_id), r.created_at]
         for r in rules
     ]
 
@@ -248,7 +250,8 @@ def export_user_data(session: Session, user_id: int, when: Optional[datetime] = 
          movement_rows, (9, 10), (1, 2)),
         ("Cuentas", ["Cuenta", "Banco", "IBAN (últimos 4)", "Creada"], account_rows, (), ()),
         ("Categorías", ["Tipo", "Categoría", "Tipo de movimiento"], category_rows, (), ()),
-        ("Reglas", ["Prioridad", "Patrón", "Coincidencia", "Tipo", "Categoría", "Creada"], rule_rows, (), ()),
+        ("Reglas", ["Prioridad", "Patrón", "Coincidencia", "Movimiento", "Tipo", "Categoría", "Creada"],
+         rule_rows, (), ()),
         ("Operaciones",
          ["Fecha", "Bróker", "Operación", "Valor", "Símbolo", "ISIN", "Cantidad", "Precio", "Divisa",
           "Importe (EUR)", "Comisiones (EUR)", "Retención (EUR)", "Efectivo pagado (EUR)",

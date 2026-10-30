@@ -212,3 +212,37 @@ def test_rule_from_transaction_is_offered_once_and_fills_uncategorized(session, 
     pedro = create_user(session, "pedro", "clave-secreta-1").id
     with pytest.raises(NotFound):
         add_rule_from_transaction(session, pedro, other.id, cat.id)
+
+
+def test_rule_from_transaction_is_limited_to_the_movement_type(session, user_id):
+    """A rule made from a BIZUM paid only covers payments: a BIZUM received
+    stays uncategorized and can get its own rule to an income category."""
+    from app.categorization.admin_service import add_rule_from_transaction, transaction_has_rule
+
+    gasto = create_category(session, user_id, "GASTO", CategoryLevel.type)
+    ingreso = create_category(session, user_id, "INGRESO", CategoryLevel.type)
+    ocio = create_category(session, user_id, "Ocio", CategoryLevel.category, parent_id=gasto.id)
+    aporte = create_category(session, user_id, "Aporte", CategoryLevel.category, parent_id=ingreso.id)
+    account = Account(user_id=user_id, account_name="Cuenta")
+    session.add(account)
+    session.flush()
+
+    def bizum(amount):
+        kind = TransactionType.expense if amount < 0 else TransactionType.income
+        return Transaction(user_id=user_id, account_id=account.id, transaction_date=date(2026, 10, 1),
+                           amount=amount, type=kind, issuer_name="BIZUM")
+
+    paid, paid_later, received, received_later = txns = [bizum(a) for a in (-15.0, -8.0, 30.0, 12.0)]
+    session.add_all(txns)
+    session.commit()
+
+    created = add_rule_from_transaction(session, user_id, paid.id, ocio.id)
+    assert created.rule.transaction_type == TransactionType.expense
+    assert set(created.categorized_ids) == {paid.id, paid_later.id}
+    assert received.category_id is None and received_later.category_id is None
+
+    assert not transaction_has_rule(session, user_id, received.id)
+    created = add_rule_from_transaction(session, user_id, received.id, aporte.id)
+    assert created.rule.transaction_type == TransactionType.income
+    assert set(created.categorized_ids) == {received.id, received_later.id}
+    assert received_later.category_id == aporte.id

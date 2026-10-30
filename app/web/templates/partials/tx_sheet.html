@@ -46,8 +46,9 @@
         <label class="row">
           <input class="check-lg" type="checkbox" name="regla" value="1">
           <div class="body">
-            <div class="t">Crear una regla para los próximos</div>
-            <div class="d faint">Coincidencia exacta con «{{ row.description }}»: se aplica ya a los movimientos sin categoría y a las próximas importaciones.</div>
+            {% set kind = {"expense": "gastos", "income": "ingresos"}.get(row.txn_type.value, "movimientos") %}
+            <div class="t">Crear una regla para los próximos {{ kind }}</div>
+            <div class="d faint">Coincidencia exacta con «{{ row.description }}», solo para {{ kind }}: se aplica ya a los movimientos sin categoría y a las próximas importaciones.</div>
           </div>
         </label>
         {% endif %}

@@ -163,7 +163,9 @@ def set_category(
         if created is not None:
             rule = created.rule
             audit(db, request, user, "auto_categorization_rules", rule.id, AuditAction.insert,
-                  new=f"«{rule.match_pattern}» {rule.match_type.value} → cat {rule.category_id} p{rule.priority}"
+                  new=f"«{rule.match_pattern}» {rule.match_type.value} "
+                      f"[{rule.transaction_type.value if rule.transaction_type else 'any'}] "
+                      f"→ cat {rule.category_id} p{rule.priority}"
                       f" (desde un movimiento; {len(created.categorized_ids)} categorizados)")
     notify_change(request, user, "transactions")
     row = get_transaction_row(db, user.id, transaction_id)
