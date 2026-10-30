@@ -24,10 +24,11 @@ from PySide6.QtGui     import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QFrame, QStackedWidget, QSizePolicy,
-    QScrollArea, QApplication, QMessageBox,
+    QScrollArea, QApplication, QMessageBox, QDialog,
 )
 import qtawesome as qta
 
+from app.auth.account_rules import is_demo_name
 from app.config      import APP_NAME, APP_VERSION, THEMES, NAV_ITEMS, NAV_ITEMS_TOP, NAV_ITEMS_BOTTOM
 from app.db.models   import User
 from app.manual      import MANUAL_INDEX
@@ -861,6 +862,38 @@ class MainWindow(QWidget):
         sep.setStyleSheet(f"color: {t['border']};")
         layout.addWidget(sep)
 
+        # Password / name (same rules as the web «Mi cuenta»)
+        def _account_button(text: str, icon: str, slot) -> QPushButton:
+            btn = QPushButton(f"  {text}")
+            btn.setIcon(qta.icon(icon, color=t["text_primary"]))
+            btn.setFixedHeight(40)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {t["text_primary"]};
+                    border: 1px solid {t["border"]};
+                    border-radius: 8px;
+                    font-size: 13px;
+                    padding: 0 16px;
+                    text-align: left;
+                }}
+                QPushButton:hover {{ background-color: {t["bg_hover"]}; }}
+            """)
+
+            def _clicked() -> None:
+                dlg.accept()
+                slot()
+            btn.clicked.connect(_clicked)
+            layout.addWidget(btn)
+            return btn
+
+        self._btn_change_password = _account_button(
+            "Cambiar contraseña", "mdi.lock-reset", self._on_change_password)
+        if not is_demo_name(self._user.username):
+            _account_button("Cambiar nombre de usuario", "mdi.account-edit-outline",
+                            self._on_rename_account)
+
         # Delete account button
         btn_delete = QPushButton(
             "  Eliminar cuenta permanentemente"
@@ -933,6 +966,52 @@ class MainWindow(QWidget):
 
         btn_delete.clicked.connect(_on_delete_clicked)
         dlg.exec()
+
+    def _audit_account(self, new: str, old: Optional[str] = None) -> None:
+        from app.db.models import AuditAction, AuditLog
+        try:
+            self._session.add(AuditLog(
+                user_id=self._user.id, table_affected="users", record_id=self._user.id,
+                action=AuditAction.update, old_value=old, new_value=f"{new} [PC]",
+            ))
+            self._session.commit()
+        except Exception:
+            self._session.rollback()
+            logging.getLogger(__name__).exception("No se pudo escribir en audit_log")
+
+    def _on_change_password(self) -> None:
+        from app.gui.account_dialogs import ChangePasswordDialog
+        from app.web.server import get_web_server
+
+        dlg = ChangePasswordDialog(self._session, self._user.id, self._t, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        # Like the web: a new password ends the sessions opened with the old one.
+        closed = get_web_server().sessions.revoke_user(self._user.id)
+        self._audit_account(f"contraseña cambiada; {closed} sesiones web cerradas")
+        logging.getLogger(__name__).info(
+            "PC: '%s' cambió su contraseña (%d sesiones web cerradas)", self._user.username, closed)
+        message = "Tu contraseña se ha cambiado."
+        if closed:
+            message += (f"\n\nSe cerró la sesión en la web de {closed} dispositivo"
+                        f"{'s' if closed != 1 else ''}: vuelve a entrar con la nueva contraseña.")
+        QMessageBox.information(self, "Contraseña cambiada", message)
+
+    def _on_rename_account(self) -> None:
+        from app.gui.account_dialogs import RenameDialog
+        from app.web.server import get_web_server
+
+        dlg = RenameDialog(self._session, self._user.id, self._t, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted or dlg.names is None:
+            return
+        old, new = dlg.names
+        get_web_server().sessions.rename_user(self._user.id, new)
+        get_web_server().invites.rename_member(self._user.id, new)
+        self._audit_account(f"«{new}»", old=f"«{old}»")
+        self._refresh_username()
+        logging.getLogger(__name__).info("PC: '%s' se renombró a '%s'", old, new)
+        QMessageBox.information(self, "Nombre cambiado",
+                                f"Ahora tu usuario es «{new}». Úsalo para entrar en el PC y en la web.")
 
     def _confirm_delete_account(self) -> None:
         """
