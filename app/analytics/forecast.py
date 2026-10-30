@@ -494,7 +494,7 @@ def _build_transfers(fc: Forecast, transfers: Dict[int, TransferLine], window: L
 # Aportaciones: who sends what to whom
 # ---------------------------------------------------------------------------
 
-def _label_month(month: Month) -> str:
+def month_label(month: Month) -> str:
     return f"{MONTH_NAMES[month[1]][:3]} {str(month[0])[2:]}"
 
 
@@ -539,7 +539,7 @@ def contributions(lines: Sequence[TransferLine], window: List[Month], current: M
                 after = diffs[i + 1] if i + 1 < len(diffs) else 0.0
                 if abs(diff + before) < 1 or abs(diff + after) < 1:
                     continue                                   # crossed a month end
-                rows_note = (f"{_label_month(month)}: enviado {sent[pair].get(month, 0.0):,.2f} €, "
+                rows_note = (f"{month_label(month)}: enviado {sent[pair].get(month, 0.0):,.2f} €, "
                              f"recibido {received[pair].get(month, 0.0):,.2f} €")
                 row.mismatches.append(rows_note.replace(",", "X").replace(".", ",").replace("X", "."))
         rows.append(row)

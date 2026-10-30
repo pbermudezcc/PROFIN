@@ -41,6 +41,7 @@ from app.auth.auth_service import create_user
 from app.categorization.category_manager import create_category
 from app.categorization.rules_engine import create_rule
 from app.db.models import (
+    CATEGORY_NATURE_FIXED,
     Account, AssetType, Category, CategoryLevel, ImportBatch, InvestmentKind,
     InvestmentTransaction, MatchType, Security, Transaction, TransactionType,
 )
@@ -113,6 +114,10 @@ RULES = [  # (category, pattern[, match type]) — "contains" unless stated; iss
 ]
 # More specific rules first (RENFE VIAJEROS is a trip, not a commute).
 RULE_PRIORITY = {"RENFE VIAJEROS": 10, "PRESTAMO 9620": 10}
+
+# Marked Fijo, so Previsiones has something to show (recurring bills + salary).
+FIXED_CATEGORIES = {"Luz", "Gas", "Agua", "Teléfono & Internet", "Comunidad", "Seguros", "IBI & Tasas",
+                    "Suscripciones", "Hipoteca", "Nómina"}
 
 
 # ---------------------------------------------------------------------------
@@ -514,6 +519,9 @@ def populate(session, username: str, password: str, statements_dir: Path, offlin
         parent = create_category(session, user.id, type_name, CategoryLevel.type, transaction_type=tx_type)
         for name in names:
             by_name[name] = create_category(session, user.id, name, CategoryLevel.category, parent_id=parent.id)
+            if name in FIXED_CATEGORIES:
+                by_name[name].nature = CATEGORY_NATURE_FIXED
+    session.commit()
     for name, pattern, *match in RULES:
         create_rule(session, by_name[name].id, pattern, match[0] if match else MatchType.contains,
                     priority=RULE_PRIORITY.get(pattern, 100), user_id=user.id)

@@ -161,18 +161,25 @@ def suggested_natures(session: Session, user_id: int) -> Dict[int, str]:
     name looks like a recurring bill or an internal transfer (shown pre-ticked
     in Previsiones; nothing is changed until the user confirms)."""
     from app.analytics.transaction_search import fold_text   # accents/case
-    fixed_words = ("hipoteca", "luz", "agua", "gas", "ibi", "propietarios", "comunidad",
-                   "telefono", "internet", "seguro", "netflix", "spotify", "alquiler",
-                   "colegio", "guarderia", "gimnasio", "nomina", "prestamo", "basura")
+    # Whole words (an optional plural s): «Gas» yes, «Gasolina» no. «propie»
+    # is a prefix: the default tree says «Com. Propiertarios».
+    fixed = re.compile(
+        r"\b(?:(?:hipoteca|luz|agua|gas|ibi|comunidad|telefono|internet|seguro|netflix|spotify|hbo"
+        r"|icloud|alquiler|colegio|guarderia|gimnasio|nomina|prestamo|basura|cuota|asistenta)s?"
+        r"|suscripciones|propie\w*)\b")
+    from app.analytics.dashboard_summary import investment_category_ids
     transfer_words = ("aporte", "traspaso", "transferencia propia")
+    investments = investment_category_ids(session, user_id)       # «Aporte Broker» is no traspaso
     found: Dict[int, str] = {}
     for cat in session.query(Category).filter(
         Category.user_id == user_id, Category.level != CategoryLevel.type, Category.nature.is_(None),
     ):
+        if cat.id in investments:
+            continue
         name = fold_text(cat.name)
         if any(w in name for w in transfer_words):
             found[cat.id] = CATEGORY_NATURE_TRANSFER
-        elif any(re.search(rf"\b{w}", name) for w in fixed_words):
+        elif fixed.search(name):
             found[cat.id] = CATEGORY_NATURE_FIXED
     return found
 

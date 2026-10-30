@@ -24,6 +24,7 @@ NAV = [
     ("resumen", "Resumen", "/", "home"),
     ("movimientos", "Movimientos", "/movimientos", "list"),
     ("flujos", "Gastos e ingresos", "/gastos", "pie"),
+    ("prevision", "Previsión", "/prevision", "calendar"),
     ("inversiones", "Inversiones", "/inversiones", "trend"),
     ("mas", "Más", "/mas", "more"),
 ]
@@ -36,6 +37,9 @@ ADMIN_NAV = [
     ("cuentas", "Cuentas", "/mas/cuentas", "bank"),
 ]
 ADMIN_KEYS = {key for key, *_ in ADMIN_NAV}
+# Sidebar only: the phone tab bar keeps five tabs; on phones these pages
+# open from «Más» (and its tab is highlighted).
+SIDEBAR_ONLY = {"prevision"}
 
 
 def is_htmx(request: Request) -> bool:
@@ -57,7 +61,7 @@ def render(
         "admin_nav": ADMIN_NAV,
         "active": active,
         # The phone tab bar has no admin entries: they light up «Más».
-        "tab_active": "mas" if active in ADMIN_KEYS else active,
+        "tab_active": "mas" if active in ADMIN_KEYS | SIDEBAR_ONLY else active,
         "today": date.today(),
     }
     ctx.update(context or {})

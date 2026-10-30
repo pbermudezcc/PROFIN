@@ -446,6 +446,7 @@ class MainWindow(QWidget):
         from app.gui.categories_view   import CategoriesView
         from app.gui.rules_view        import RulesView
         from app.gui.expenses_view     import ExpensesView
+        from app.gui.forecast_view     import ForecastView
         from app.gui.incomes_window    import IncomesWindow
         from app.gui.investments_view  import InvestmentsView
         from app.gui.settings_view      import SettingsView
@@ -475,9 +476,8 @@ class MainWindow(QWidget):
             "rules":        lambda: RulesView(
                                 self._user, self._session, self._theme
                             ),
-            "forecast":     lambda: _PlaceholderView(
-                                "Previsiones",
-                                "mdi.calendar-clock-outline", self._t
+            "forecast":     lambda: ForecastView(
+                                self._user, self._session, self._theme
                             ),
             "export":       lambda: _PlaceholderView(
                                 "Exportar", "mdi.download-outline", self._t

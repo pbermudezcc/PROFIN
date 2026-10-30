@@ -73,7 +73,7 @@
 </div>
 
 <nav class="tabbar" aria-label="Secciones">
-  {% for key, label, href, icon_name in nav %}
+  {% for key, label, href, icon_name in nav if key != "prevision" %}
   <a href="{{ href }}" class="{{ 'on' if tab_active == key else '' }}" {% if tab_active == key %}aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}<span class="lbl">{{ label.split(' ')[0] if key == 'flujos' else label }}</span></a>
   {% endfor %}
 </nav>

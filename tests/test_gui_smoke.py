@@ -65,7 +65,7 @@ def test_main_window_builds_views_lazily_and_themes_them(qt_app, session, monkey
         window._navigate("dashboard")
         assert set(window._views) == {"dashboard"}
 
-        for key in ("expenses", "income", "investments", "transactions", "rules", "categories"):
+        for key in ("expenses", "income", "investments", "transactions", "rules", "categories", "forecast"):
             window._navigate(key)
             assert window._stack.currentWidget() is window._views[key]
 
@@ -115,3 +115,39 @@ def test_library_import_dialog_previews_merge_and_replace(qt_app, session):
     # Already up to date: nothing to import, the button is disabled.
     same = LibraryImportDialog(session, ana.id, lib, "ana.profin-cats.json")
     assert not same.plan.has_changes and not same._ok.isEnabled()
+
+
+def test_forecast_view_shows_the_household(qt_app):
+    """Previsiones on the test household of test_forecast: Mío for the joint
+    account (aportes + required contribution) and Familia."""
+    from unittest import mock
+
+    import tests.test_forecast as household
+    from app.gui.forecast_view import ForecastView
+    from tests.test_forecast import TODAY
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    sess = sessionmaker(bind=engine)()
+    try:
+        home = household.home.__wrapped__(sess)
+        real = household.user_forecast, household.family_forecast
+        with mock.patch("app.gui.forecast_view.user_forecast",
+                        lambda s, uid: real[0](s, uid, TODAY)), \
+             mock.patch("app.gui.forecast_view.family_forecast", lambda s: real[1](s, TODAY)):
+            view = ForecastView(home.users["COMUN"], sess, "light")
+            view.show()
+            qt_app.processEvents()
+            assert view._cards["needed"].isVisible()
+            assert view._tbl_aport.rowCount() == 2
+            assert view._tbl_this.rowCount() == 3
+            view._cmb_view.setCurrentIndex(1)                # Familia
+            qt_app.processEvents()
+            assert "COMUN, MARIA, PEDRO" in view._lbl_window.text()
+            assert not view._cards["needed"].isVisible()
+            assert "PEDRO" in view._lbl_warnings.text()
+            view.apply_theme("dark")
+            view.close()
+    finally:
+        sess.close()
+        engine.dispose()

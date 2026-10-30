@@ -43,6 +43,7 @@ from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.auth.auth_service import create_user  # noqa: E402
+from app.categorization.admin_service import set_natures, suggested_natures  # noqa: E402
 from app.categorization.category_manager import seed_default_categories, seed_default_rules  # noqa: E402
 from app.categorization.rules_engine import apply_rules_and_commit  # noqa: E402
 from app.db.models import (  # noqa: E402
@@ -106,6 +107,10 @@ def _seed_user(db, name: str, password: str) -> None:
     for txn in db.query(Transaction).filter_by(user_id=user.id, issuer_name="TRANSFERENCIA A DEGIRO"):
         txn.category_id, txn.category_source = broker.id, CATEGORY_SOURCE_MANUAL
     db.commit()
+    # Previsión: «familia» has its fixed categories marked; «demo» still sees
+    # the suggestions checklist.
+    if user.username == MEMBER:
+        set_natures(db, user.id, suggested_natures(db, user.id))
 
     # A small portfolio with manual (offline) prices, for the Inversiones pages.
     start = date.today() - timedelta(days=180)

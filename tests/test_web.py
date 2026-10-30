@@ -2174,3 +2174,90 @@ def test_movement_fixed_override_saves_and_filters(app, family, factory):
         assert db.query(AuditLog).filter_by(table_affected="transactions", record_id=txn).count() == 1
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Previsión
+# ---------------------------------------------------------------------------
+
+def _months_of_bills(factory, user_id, cat_id, n=6, amount=-80.0, issuer="IBERDROLA"):
+    """n monthly charges ending last month (enough complete months)."""
+    db = factory()
+    try:
+        account = db.query(Account).filter_by(user_id=user_id).first()
+        y, m = date.today().year, date.today().month
+        for _ in range(n):
+            y, m = (y - 1, 12) if m == 1 else (y, m - 1)
+            db.add(Transaction(user_id=user_id, account_id=account.id, transaction_date=date(y, m, 10),
+                               amount=amount, type=TransactionType.expense, issuer_name=issuer,
+                               category_id=cat_id))
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_prevision_page_mine_and_family(app, family, factory):
+    db = factory()
+    try:
+        luz = Category(user_id=family["ana"], parent_id=db.get(Category, family["ana_cat"]).parent_id,
+                       name="Luz", level=CategoryLevel.category, nature="fijo")
+        db.add(luz)
+        db.commit()
+        luz_id = luz.id
+    finally:
+        db.close()
+    _months_of_bills(factory, family["ana"], luz_id)
+
+    client = logged_in(app)
+    page = client.get("/prevision")
+    assert page.status_code == 200
+    assert "Gastos previstos" in page.text and "IBERDROLA" in page.text
+    assert "80,00" in page.text
+    family_page = client.get("/prevision?vista=familia")
+    assert family_page.status_code == 200
+    assert "ana, beto" in family_page.text
+    assert "MERCADO BETO" not in family_page.text               # never another member's movements
+    data = client.get("/api/prevision").json()
+    assert data["fixed_baseline"] == 80.0 and data["months"] == 6
+
+
+def test_prevision_family_view_is_closed_to_demo(app, factory):
+    db = factory()
+    try:
+        create_user(db, "DEMO", "clave-demo", enforce_policy=False)
+    finally:
+        db.close()
+    client = logged_in(app, "DEMO", "clave-demo")
+    page = client.get("/prevision")
+    assert page.status_code == 200 and "Familia" not in page.text
+    assert client.get("/prevision?vista=familia").status_code == 403
+    assert client.get("/api/prevision?vista=familia").status_code == 403
+
+
+def test_prevision_suggestions_mark_categories(app, family, factory):
+    db = factory()
+    try:
+        gasto_id = db.get(Category, family["ana_cat"]).parent_id
+        hipoteca = Category(user_id=family["ana"], parent_id=gasto_id, name="Hipoteca",
+                            level=CategoryLevel.category)
+        db.add(hipoteca)
+        db.commit()
+        hipoteca_id = hipoteca.id
+    finally:
+        db.close()
+    client = logged_in(app)
+    page = client.get("/prevision").text
+    assert "Marca tus gastos fijos" in page and f'name="cat_{hipoteca_id}"' in page
+    headers = {**ORIGIN, "X-CSRF-Token": csrf_of(client), "HX-Request": "true"}
+    response = client.post("/prevision/marcar", data={f"cat_{hipoteca_id}": "fijo",
+                                                      f"cat_{family['beto_cat']}": "fijo"}, headers=headers)
+    assert response.status_code == 404                           # another member's category
+    response = client.post("/prevision/marcar", data={f"cat_{hipoteca_id}": "fijo"}, headers=headers)
+    assert response.status_code == 204
+    db = factory()
+    try:
+        assert db.get(Category, hipoteca_id).nature == "fijo"
+        assert db.get(Category, family["beto_cat"]).nature is None
+    finally:
+        db.close()
+    assert "Marca tus gastos fijos" not in client.get("/prevision").text

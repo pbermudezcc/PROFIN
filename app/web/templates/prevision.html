@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Previsión{% endblock %}
+{% block content %}
+{% set familia = vista == "familia" %}
+{% call ui.large_title("Previsión", ("Toda la familia: " ~ fc.members|join(", ") if familia else "Gastos fijos y mes próximo")) %}{% endcall %}
+
+{% if views %}
+<div class="seg" role="tablist" aria-label="Vista">
+  {% for key, label in views %}
+  <a href="/prevision?vista={{ key }}" class="{{ 'on' if vista == key else '' }}" role="tab" aria-selected="{{ 'true' if vista == key else 'false' }}">{{ label }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if suggestions %}
+<section class="card section">
+  <h3>Marca tus gastos fijos</h3>
+  <p class="note">Estas categorías parecen recibos que se repiten o traspasos entre vosotros. Revisa la lista y confirma; luego puedes cambiar cualquiera en Categorías.</p>
+  <form hx-post="/prevision/marcar" hx-swap="none">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <div class="list">
+      {% for cid, name, nature in suggestions %}
+      <label class="row">
+        <input class="check-lg" type="checkbox" name="cat_{{ cid }}" value="{{ nature }}" checked>
+        <div class="body"><div class="t">{{ name }}</div></div>
+        <span class="badge {{ 'acc' if nature == 'fijo' else '' }}">{{ nature_labels[nature] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="wrap-gap section">
+      <button class="btn" type="submit">{{ ui.icon("check", "sm") }} Marcar las seleccionadas</button>
+      <a class="btn secondary" href="/mas/categorias">{{ ui.icon("tag", "sm") }} Ir a Categorías</a>
+    </div>
+  </form>
+</section>
+{% elif not familia and not has_categories %}
+<div class="card section">
+  {% call ui.empty("Sin categorías", "Para prever tus gastos fijos, primero necesitas categorías. Puedes importarlas de otro miembro (Exportar / importar).", "tag") %}
+  <a class="btn" href="/mas/categorias">{{ ui.icon("tag", "sm") }} Categorías</a>
+  {% endcall %}
+</div>
+{% endif %}
+
+{% if not fc.enough_data %}
+<div class="card section">
+  {% call ui.empty("Aún no hay datos suficientes", "Hacen falta al menos 3 meses completos de movimientos para calcular una media fiable.", "calendar") %}{% endcall %}
+</div>
+{% else %}
+
+<section class="hero fade-in" aria-label="Mes próximo">
+  <div class="lbl">Gastos previstos · {{ fc.next_month_label }}</div>
+  <div class="big num">{{ fc.next_expenses|eur }}</div>
+  <div class="row3">
+    <div><div class="k">Fijos</div><div class="v num">{{ (fc.next_fixed + fc.next_other_fixed)|eur }}</div></div>
+    <div><div class="k">Variables</div><div class="v num">{{ fc.variable_median|eur }}</div></div>
+    <div><div class="k">Ingresos</div><div class="v num">{{ fc.next_income|eur }}</div></div>
+  </div>
+</section>
+
+<div class="section-h"><h2>Media mensual</h2><span class="faint">{{ fc.months }} meses completos{% if fc.provisional %} · provisional{% endif %}</span></div>
+<div class="kpis">
+  {{ ui.kpi("Gasto fijo", fc.fixed_baseline|eur, "media por mes", "") }}
+  {{ ui.kpi("Gasto variable", fc.variable_median|eur, "mediana · media " ~ fc.variable_mean|eur, "expense") }}
+  {{ ui.kpi("Ingresos previstos", fc.next_income|eur, fc.next_month_label, "income") }}
+  {{ ui.kpi("Ahorro previsto", fc.next_saving|eur, "ingresos − gastos previstos", "", "neg" if fc.next_saving < 0 else "") }}
+  {% if fc.receives_transfers and not familia %}
+  {{ ui.kpi("Aportación necesaria", fc.required_contribution|eur, "para cubrir los gastos", "investment") }}
+  {{ ui.kpi("Aportaciones recibidas", fc.transfers_in_avg|eur, ("sobran " if fc.contribution_gap >= 0 else "faltan ") ~ (fc.contribution_gap|abs)|eur ~ " al mes", "investment") }}
+  {% elif fc.transfers_out_avg and not familia %}
+  {{ ui.kpi("Mis aportaciones", fc.transfers_out_avg|eur, "media por mes, fuera de los gastos", "investment") }}
+  {% endif %}
+  {% if fc.uncategorized %}
+  <a class="kpi" href="/movimientos?categoria=sin">
+    <div class="k"><i class="dot warning"></i>Sin categoría</div>
+    <div class="v num">{{ fc.uncategorized }}</div>
+    <div class="s">cuentan como variables · revisar →</div>
+  </a>
+  {% endif %}
+</div>
+
+{% for w in fc.warnings %}<div class="alert warn section" role="note">{{ ui.icon("alert", "sm") }}<span>{{ w }}</span></div>{% endfor %}
+
+<div class="grid g2">
+  <section class="section">
+    <div class="section-h"><h2>Este mes</h2><span class="faint">{{ fc.this_month_label }}{% if fc.pending_this_month %} · pendiente {{ fc.pending_this_month|eur }}{% endif %}</span></div>
+    {% if fc.this_month %}
+    <div class="list">
+      {% for i in fc.this_month %}
+      <div class="row">
+        <div class="ic {{ 'income' if i.kind == 'income' else 'expense' }}">{{ ui.icon("check" if i.status == "cargado" else "calendar", "sm") }}</div>
+        <div class="body">
+          <div class="t">{{ i.label }}</div>
+          <div class="d">{{ ui.chip(i.category) }}
+            {% if i.status == "cargado" %}<span class="badge pos">Cargado</span>{% else %}<span class="badge warn">Pendiente · hacia el {{ i.day }}</span>{% endif %}
+            {% if i.above_pct %}<span class="badge neg">+{{ i.above_pct }} % sobre lo habitual</span>{% endif %}
+          </div>
+        </div>
+        <div class="end num">{{ (i.actual if i.actual is not none else i.expected)|eur }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">{{ ui.empty("Nada previsto este mes", "Los recibos fijos aparecen aquí cuando tienen al menos dos cargos.", "receipt") }}</div>
+    {% endif %}
+  </section>
+
+  <section class="section">
+    <div class="section-h"><h2>Mes próximo</h2><span class="faint">{{ fc.next_month_label }}</span></div>
+    <div class="list">
+      {% for i in fc.next_month %}
+      <div class="row">
+        <div class="ic {{ 'income' if i.kind == 'income' else 'expense' }}">{{ i.day }}</div>
+        <div class="body"><div class="t">{{ i.label }}</div><div class="d">{{ ui.chip(i.category) }}<span class="faint">{{ i.period_label|lower }}</span></div></div>
+        <div class="end num {{ 'pos' if i.kind == 'income' else '' }}">{{ i.expected|eur }}</div>
+      </div>
+      {% endfor %}
+      {% if fc.next_other_fixed %}
+      <div class="row"><div class="ic expense">≈</div><div class="body"><div class="t">Otros fijos sin fecha fija</div><div class="d faint">media mensual</div></div><div class="end num">{{ fc.next_other_fixed|eur }}</div></div>
+      {% endif %}
+      <div class="row"><div class="ic expense">≈</div><div class="body"><div class="t">Gasto variable estimado</div><div class="d faint">mediana de los últimos 6 meses</div></div><div class="end num">{{ fc.variable_median|eur }}</div></div>
+      <div class="row"><div class="body"><div class="t"><b>Total gastos previstos</b></div></div><div class="end num"><b>{{ fc.next_expenses|eur }}</b></div></div>
+    </div>
+  </section>
+</div>
+
+<div class="grid g2">
+  <section class="card chart-card section">
+    <div class="head"><h3>Fijos y variables</h3><span class="faint">por mes</span></div>
+    {{ ui.chart("ch-split", charts.split, "Gasto fijo y variable por mes", "", legend=True) }}
+  </section>
+  <section class="card flush section">
+    <div class="card-h"><div><h3>Gasto fijo por categoría</h3><div class="sub">media por mes</div></div></div>
+    <div class="list flat">
+      {% for name, value in fc.fixed_by_category %}
+      <div class="row"><div class="ic"><i class="sw" data-swatch="{{ name }}"></i></div><div class="body"><div class="t">{{ name }}</div></div><div class="end num">{{ value|eur }}</div></div>
+      {% else %}
+      <div class="row faint">Ninguna categoría marcada como fija todavía.</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<div class="section-h"><h2>Recibos fijos</h2><span class="faint">{{ fc.series|length }}</span></div>
+{% if fc.series %}
+<div class="list">
+  {% for s in fc.series %}
+  <div class="row {{ 'faint' if not s.active else '' }}">
+    <div class="ic {{ 'income' if s.kind == 'income' else 'expense' }}">{{ ui.icon("receipt", "sm") }}</div>
+    <div class="body">
+      <div class="t">{{ s.label }}</div>
+      <div class="d">{{ ui.chip(s.category) }}<span class="faint">{{ s.period_label }} · {{ s.usual|eur }} por cargo{% if not s.active %} · sin cargos desde {{ s.last_date|sdate }}{% elif s.next_due %} · próximo hacia el {{ s.next_due|sdate }}{% endif %}</span></div>
+    </div>
+    <div class="end num">{{ s.monthly|eur }}<div class="faint t-sm">/ mes</div></div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ ui.empty("Sin recibos fijos", "Marca como Fijo las categorías de tus recibos (hipoteca, luz, seguros…) en Categorías o desde un movimiento.", "receipt") }}</div>
+{% endif %}
+
+{% if fc.contributions %}
+<div class="section-h"><h2>Aportaciones</h2><span class="faint">traspasos entre miembros · no cuentan como gasto ni ingreso</span></div>
+<div class="card flush">
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>De → a</th><th class="r">Este mes</th><th class="r">Mes pasado</th><th class="r">Media / mes</th><th class="r">Total {{ fc.months }} meses</th><th class="r">Parte</th></tr></thead>
+      <tbody>
+      {% for c in fc.contributions %}
+        <tr>
+          <td><b>{{ c.sender }}</b> → {{ c.receiver }}</td>
+          <td class="r num">{{ c.this_month|eur }}</td>
+          <td class="r num">{{ c.last_month|eur }}</td>
+          <td class="r num">{{ c.average|eur }}</td>
+          <td class="r num">{{ c.total|eur }}</td>
+          <td class="r num">{{ (c.share_pct|num(1) ~ " %") if c.share_pct is not none else "—" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% for c in fc.contributions if c.mismatches %}
+<div class="alert warn section" role="note">{{ ui.icon("alert", "sm") }}<span>{{ c.sender }} → {{ c.receiver }}: lo enviado y lo recibido no cuadra en {{ c.mismatches|join("; ") }}.</span></div>
+{% endfor %}
+{% if charts.aportes %}
+<section class="card chart-card section">
+  <div class="head"><h3>Aportaciones por mes</h3></div>
+  {{ ui.chart("ch-aportes", charts.aportes, "Aportaciones por mes", "", legend=True) }}
+</section>
+{% endif %}
+{% endif %}
+
+<p class="note section">Los fijos son los movimientos de categorías marcadas como Fijo (o marcados a mano). La media usa los últimos {{ fc.months }} meses completos: el mes en curso no cuenta. Los recibos que no llegan cada mes (agua, IBI, seguros) se reparten en la media y en la previsión solo aparecen el mes que tocan.{% if familia %} En Familia solo se ven totales: nunca los movimientos de otro miembro.{% endif %}</p>
+{% endif %}
+{% endblock %}

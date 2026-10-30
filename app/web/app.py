@@ -176,13 +176,13 @@ def create_app(
                         headers={"Service-Worker-Allowed": "/"})
 
     from app.web.routers import (
-        account, admin, auth, dashboard, flows, help, imports, investment_import, investments, library, more,
-        transactions, users,
+        account, admin, auth, dashboard, flows, forecast, help, imports, investment_import, investments, library,
+        more, transactions, users,
     )
 
     # library before admin: its /mas/categorias/exportar|biblioteca would hit /mas/categorias/{id}.
     # investment_import before imports: /importar/inversiones would hit /importar/{token}.
-    for router in (auth, help, dashboard, flows, transactions, investment_import, investments, library,
+    for router in (auth, help, dashboard, flows, forecast, transactions, investment_import, investments, library,
                    admin, imports, account, more, users):
         app.include_router(router.router)
     return app

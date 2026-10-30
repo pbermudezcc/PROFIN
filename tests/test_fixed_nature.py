@@ -186,13 +186,26 @@ def test_suggestions_only_for_still_variable_categories(db, home):
     }
     set_category_nature(db, comun.id, cats["luz"].id, CATEGORY_NATURE_FIXED)
     assert cats["luz"].id not in suggested_natures(db, comun.id)
-    # Words inside other words do not count («Gasolina» is not «gas»… but starts with it,
-    # so only word starts are matched: «Vegas» is not a bill).
-    vegas = Category(user_id=comun.id, parent_id=home["gasto"].id, name="Viaje Vegas",
-                     level=CategoryLevel.category)
-    db.add(vegas)
+    # Whole words only: «Gasolina» is not «gas»; the seed's «Com. Propiertarios»
+    # (sic) and plurals («Seguros») are bills; an investment «Aporte Broker»
+    # is no traspaso.
+    names = {"Gasolina": None, "Viaje Vegas": None, "Com. Propiertarios (Cuota)": CATEGORY_NATURE_FIXED,
+             "Seguros": CATEGORY_NATURE_FIXED, "Recibo MyBox - Cuota Agrupada": CATEGORY_NATURE_FIXED}
+    extra = {}
+    for name in names:
+        extra[name] = Category(user_id=comun.id, parent_id=home["gasto"].id, name=name,
+                               level=CategoryLevel.category)
+    inversion = Category(user_id=comun.id, name="INVERSION", level=CategoryLevel.type,
+                         transaction_type=TransactionType.investment)
+    db.add_all([*extra.values(), inversion])
+    db.flush()
+    broker = Category(user_id=comun.id, parent_id=inversion.id, name="Aporte Broker",
+                      level=CategoryLevel.category)
+    db.add(broker)
     db.commit()
-    assert vegas.id not in suggested_natures(db, comun.id)
+    found = suggested_natures(db, comun.id)
+    assert {name: found.get(cat.id) for name, cat in extra.items()} == names
+    assert broker.id not in found
 
 
 def test_library_carries_natures_but_not_the_peer(db, home):
