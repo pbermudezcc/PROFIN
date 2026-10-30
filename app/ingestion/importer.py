@@ -272,10 +272,11 @@ def commit_import(
     user_id        : Authenticated user ID.
     account_id     : Target account ID.
     user_decisions : {row_index: True/False}
-                     True  = user says "import this possible duplicate"
-                     False = user says "skip this possible duplicate"
+                     True  = user says "import this row"
+                     False = user says "skip this row"
                      Rows in needs_review that are NOT in this dict are
-                     skipped by default (conservative).
+                     skipped by default (conservative); clean rows that
+                     are NOT in it are imported.
 
     Returns
     -------
@@ -310,10 +311,13 @@ def commit_import(
         # -- Determine which rows to import ------------------------------
         # auto_skip → always skip
         # needs_review → import only if user_decisions[idx] is True
-        # clean → always import
+        # clean → import unless the user unticked it (user_decisions[idx] False)
         skip_indices = set(dup_result.auto_skip)
         for idx in dup_result.needs_review:
             if not user_decisions.get(idx, False):
+                skip_indices.add(idx)
+        for idx in dup_result.clean:
+            if user_decisions.get(idx, True) is False:
                 skip_indices.add(idx)
 
         import_indices = [

@@ -175,6 +175,32 @@ def test_overlapping_export_imports_only_new_rows(tmp_path, session, family):
     assert session.query(Transaction).count() == 4
 
 
+def test_unticked_clean_row_is_not_imported(tmp_path, session, family):
+    # ImportView lets the user untick any row; a clean row set to False
+    # used to be imported anyway.
+    user_id, account_id = family
+    path = tmp_path / "movimientos.xlsx"
+    _write_export(path, EXPORT_ROWS)
+
+    _, summary = _import(path, session, user_id, account_id, decisions={2: False})
+
+    assert summary.rows_imported == 4 and summary.rows_skipped == 1
+    assert "PANADERIA LOLA" not in {t.issuer_name for t in session.query(Transaction).all()}
+    assert session.query(ImportBatch).one().rows_skipped == 1
+
+
+def test_clean_rows_missing_from_the_decisions_are_imported(tmp_path, session, family):
+    # The web sends decisions for the rows under review only.
+    user_id, account_id = family
+    path = tmp_path / "movimientos.xlsx"
+    _write_export(path, EXPORT_ROWS)
+    preview = prepare_import([path], session, user_id, account_id)
+
+    summary = commit_import(preview, session, user_id, account_id, {})
+
+    assert summary.rows_imported == 5
+
+
 def test_file_with_two_accounts_is_rejected_before_any_write(tmp_path, session, family):
     user_id, account_id = family
     path = tmp_path / "mezcla.xlsx"
