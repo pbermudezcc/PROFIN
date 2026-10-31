@@ -80,6 +80,8 @@ code { background: var(--code-bg); padding: .1em .38em; border-radius: 5px; }
 .toc::-webkit-scrollbar { display: none; }
 .toc a { color: var(--navy-ink); text-decoration: none; font-size: 14px; font-weight: 500; padding: 6px 10px; border-radius: 8px; white-space: nowrap; }
 .toc a:hover { background: rgba(255,255,255,.1); color: #fff; }
+.pdf-dl { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--navy-ink); text-decoration: none; font-size: 13px; font-weight: 600; padding: 5px 10px; border: 1px solid rgba(255,255,255,.22); border-radius: 8px; white-space: nowrap; }
+.pdf-dl:hover { background: rgba(255,255,255,.1); color: #fff; }
 
 /* Page */
 .wrap {
@@ -229,7 +231,7 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
   body { font-size: 10.5pt; line-height: 1.5; }
   body::before { display: none; }
   .top { position: static; }
-  .toc { display: none; }
+  .toc, .pdf-dl { display: none; }
   .hero { padding-block: 24px 8px; }
   section { break-before: page; padding-block: 0 8px; gap: 14px; border-top: 0; }
   h2 { font-size: 20pt; }
@@ -289,6 +291,7 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
       <a href="#demo">La demo</a>
       <a href="#faq">Dudas</a>
     </nav>
+    <a class="pdf-dl" href="FAMILYFIN_Manual_de_usuario.pdf" download title="Descargar el manual en PDF" aria-label="Descargar el manual en PDF"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3zM5 19h14v2H5z"/></svg>PDF</a>
   </div>
 </header>
 

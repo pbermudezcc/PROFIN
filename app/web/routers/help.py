@@ -2,7 +2,9 @@
 
 * GET /ayuda/               the manual page
 * GET /ayuda/img/{name}     its screenshots
-* GET /ayuda/manual.pdf     the same manual as a PDF
+* GET /ayuda/manual.pdf     the same manual as a PDF (also under its file
+                            name, which the page's «PDF» link uses so it
+                            works from the desktop's file:// too)
 
 Public on purpose (also linked from /login): the manual only shows the
 demo data. The page is a self-contained document with an inline <style>
@@ -29,11 +31,15 @@ _SCRIPT = re.compile(r"<script>(.*?)</script>", re.S)
 _BRAND = '<div class="brand">'
 # The manual's header logo leads back to the app.
 _BRAND_LINK = '<a class="brand" href="/" title="Volver a FAMILYFIN" style="text-decoration:none">'
+# The header's download link, dropped when no PDF has been printed.
+_PDF_LINK = re.compile(r'\s*<a class="pdf-dl"[^>]*>.*?</a>', re.S)
 
 
 @lru_cache(maxsize=1)
-def _manual(mtime: float) -> tuple[bytes, str]:
+def _manual(mtime: float, has_pdf: bool) -> tuple[bytes, str]:
     html = MANUAL_INDEX.read_text(encoding="utf-8")
+    if not has_pdf:
+        html = _PDF_LINK.sub("", html, count=1)
     head, sep, tail = html.partition(_BRAND)
     if sep:
         html = head + _BRAND_LINK + tail.replace("</div>", "</a>", 1)
@@ -66,7 +72,7 @@ def help_redirect() -> Response:
 def help_page() -> Response:
     if not MANUAL_INDEX.is_file():
         raise HTTPException(status_code=404)
-    body, csp = _manual(MANUAL_INDEX.stat().st_mtime)
+    body, csp = _manual(MANUAL_INDEX.stat().st_mtime, MANUAL_PDF.is_file())
     return Response(body, media_type="text/html; charset=utf-8",
                     headers={"Content-Security-Policy": csp})
 
@@ -80,6 +86,7 @@ def help_image(name: str) -> Response:
 
 
 @router.get("/ayuda/manual.pdf")
+@router.get(f"/ayuda/{MANUAL_PDF.name}", include_in_schema=False)
 def help_pdf() -> Response:
     if not MANUAL_PDF.is_file():
         raise HTTPException(status_code=404)

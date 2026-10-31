@@ -1129,6 +1129,26 @@ def test_manual_is_public_with_its_own_csp(app):
     assert client.get("/ayuda/manual.pdf").headers["content-type"] == "application/pdf"
 
 
+def test_manual_offers_the_pdf_only_when_it_exists(app, monkeypatch, tmp_path):
+    """The header's «PDF» link points at the file's own name (so it also works
+    from the desktop's file://) and disappears when no PDF was printed."""
+    from app.web.routers import help as help_router
+
+    pdf = tmp_path / "FAMILYFIN_Manual_de_usuario.pdf"
+    monkeypatch.setattr(help_router, "MANUAL_PDF", pdf)
+    client = client_for(app)
+
+    assert 'class="pdf-dl"' not in client.get("/ayuda/").text
+    assert client.get("/ayuda/FAMILYFIN_Manual_de_usuario.pdf").status_code == 404
+
+    pdf.write_bytes(b"%PDF-1.4 manual")
+    page = client.get("/ayuda/").text
+    assert '<a class="pdf-dl" href="FAMILYFIN_Manual_de_usuario.pdf" download' in page
+    response = client.get("/ayuda/FAMILYFIN_Manual_de_usuario.pdf")
+    assert response.content == b"%PDF-1.4 manual"
+    assert "attachment" in response.headers["content-disposition"]
+
+
 def test_manual_images_reject_other_files(app):
     client = client_for(app)
     for name in ("..%2Findex.html", "..%2F..%2F..%2Fapp%2Fconfig.py", "nope.png", "index.html"):
