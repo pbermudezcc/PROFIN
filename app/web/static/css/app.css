@@ -309,6 +309,7 @@ svg.i.xs { width: 14px; height: 14px; }
 /* ── Layout helpers ───────────────────────────────────────────────── */
 .stack > * + * { margin-top: var(--s-3); }
 .section { margin-top: var(--s-5); }
+.range-form { margin-bottom: var(--s-5); }   /* Resumen «Personalizado»: space before the hero */
 .split { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); }
 .wrap-gap { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
 .grid { display: grid; gap: var(--s-4); grid-template-columns: minmax(0, 1fr); margin-top: var(--s-5); }

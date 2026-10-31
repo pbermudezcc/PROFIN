@@ -13,7 +13,7 @@
   <a href="#" class="{{ 'on' if rango == 'custom' else '' }}" role="tab" aria-selected="{{ 'true' if rango == 'custom' else 'false' }}" aria-controls="custom-range" data-toggle="#custom-range">Personalizado</a>
 </div>
 
-<form id="custom-range" class="card form-grid two section" style="margin-bottom: var(--s-5)" action="/" method="get" {% if rango != 'custom' %}hidden{% endif %}>
+<form id="custom-range" class="card form-grid two section range-form" action="/" method="get" {% if rango != 'custom' %}hidden{% endif %}>
   <input type="hidden" name="rango" value="custom">
   <label class="field"><span>Desde</span><input class="input" type="date" name="desde" value="{{ s.date_from }}" required></label>
   <label class="field"><span>Hasta</span><input class="input" type="date" name="hasta" value="{{ s.date_to }}" required></label>
