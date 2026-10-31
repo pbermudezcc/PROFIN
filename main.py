@@ -64,6 +64,7 @@ def _setup_logging() -> None:
     logging.getLogger(__name__).info(
         "Logging iniciado — consola: INFO | fichero DEBUG: %s", log_file
     )
+    
 
 
 def _show_fatal_error(message: str, detailed: str | None = None) -> None:
