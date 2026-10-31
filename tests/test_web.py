@@ -2305,3 +2305,34 @@ def test_prevision_lists_income_apart_from_expenses(app, family, factory):
     data = logged_in(app).get("/api/prevision").json()["next_month"]
     assert [i["label"] for i in data["income"]["items"]] == ["EMPRESA SA"]
     assert [i["label"] for i in data["expenses"]["items"]] == ["IBERDROLA"]
+
+
+# ---------------------------------------------------------------------------
+# Resumen: custom range
+# ---------------------------------------------------------------------------
+
+def test_resumen_custom_range(app, family, factory):
+    db = factory()
+    try:
+        account = db.query(Account).filter_by(user_id=family["ana"]).first()
+        db.add(Transaction(user_id=family["ana"], account_id=account.id, transaction_date=date(2025, 3, 15),
+                           amount=-300.0, type=TransactionType.expense, issuer_name="VIAJE MARZO"))
+        db.commit()
+    finally:
+        db.close()
+    client = logged_in(app)
+
+    page = client.get("/?rango=custom&desde=2025-03-01&hasta=2025-03-31")
+    assert page.status_code == 200
+    form_tag = re.search(r'<form id="custom-range"[^>]*>', page.text).group(0)
+    assert "hidden" not in form_tag                                   # the dates stay visible
+    assert "hidden" in re.search(r'<form id="custom-range"[^>]*>', client.get("/").text).group(0)
+    assert "01/03/2025" in page.text and "31/03/2025" in page.text
+    data = client.get("/api/resumen?rango=custom&desde=2025-03-31&hasta=2025-03-01").json()   # any order
+    assert (data["date_from"], data["date_to"]) == ("2025-03-01", "2025-03-31")
+    assert data["expense"] == 300.0 and data["income"] == 0
+    # Without both dates it falls back to the month.
+    month = client.get("/api/resumen?rango=custom&desde=2025-03-01").json()
+    assert month["date_from"] == date.today().replace(day=1).isoformat()
+    assert month["expense"] == 42.5
+    assert "Personalizado" in client.get("/").text

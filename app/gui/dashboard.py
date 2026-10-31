@@ -20,14 +20,14 @@ import math
 from datetime    import date, datetime
 from typing      import List, Optional, Tuple
 
-from PySide6.QtCore    import Qt, QRectF, QPointF
+from PySide6.QtCore    import Qt, QRectF, QPointF, QDate
 from PySide6.QtGui     import (
     QFont, QColor, QPainter, QPen, QBrush,
     QPainterPath, QFontMetrics,
 )
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QFrame, QScrollArea, QComboBox, QPushButton,
+    QFrame, QScrollArea, QComboBox, QPushButton, QDateEdit,
     QSizePolicy, QGridLayout, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView,
 )
@@ -718,6 +718,7 @@ class DashboardView(QWidget):
         ("Mes actual",    "month"),
         ("Año actual",    "year"),
         ("Todo",          "all"),
+        ("Personalizado", "custom"),     # desde / hasta, with the date pickers
     ]
 
     def __init__(self, user: User, session: Session,
@@ -770,6 +771,24 @@ class DashboardView(QWidget):
             self._cmb_range.addItem(label, key)
         self._cmb_range.currentIndexChanged.connect(self._on_range_changed)
         tbl.addWidget(self._cmb_range)
+
+        # Custom range: shown only with «Personalizado»
+        today = QDate.currentDate()
+        self._date_edits = []
+        for text, initial in (("Desde", QDate(today.year(), today.month(), 1)), ("Hasta", today)):
+            lbl = QLabel(text)
+            lbl.setObjectName("dashRangeLabel")
+            edit = QDateEdit(initial)
+            edit.setCalendarPopup(True)
+            edit.setDisplayFormat("dd/MM/yyyy")
+            edit.setFixedHeight(32)
+            edit.setObjectName("dashDate")
+            edit.dateChanged.connect(self._on_custom_dates_changed)
+            tbl.addSpacing(8)
+            tbl.addWidget(lbl)
+            tbl.addWidget(edit)
+            self._date_edits.append((lbl, edit))
+        self._show_custom_dates(False)
 
         tbl.addSpacing(8)
 
@@ -939,7 +958,19 @@ class DashboardView(QWidget):
     def _get_date_range(
         self, today: date
     ) -> tuple[date, date]:
+        if self._range == "custom":
+            start, end = (edit.date().toPython() for _lbl, edit in self._date_edits)
+            return tuple(sorted((start, end)))
         return range_bounds(self._range, today)
+
+    def _show_custom_dates(self, visible: bool) -> None:
+        for lbl, edit in self._date_edits:
+            lbl.setVisible(visible)
+            edit.setVisible(visible)
+
+    def _on_custom_dates_changed(self, _date) -> None:
+        if self._range == "custom":
+            self.refresh_data()
 
     def _period_label(self, d_from: date, d_to: date) -> str:
         return f"{d_from.strftime('%d %b')} – {d_to.strftime('%d %b %Y')}"
@@ -952,6 +983,7 @@ class DashboardView(QWidget):
 
     def _on_range_changed(self, index: int) -> None:
         self._range = self._cmb_range.currentData()
+        self._show_custom_dates(self._range == "custom")
         self.refresh_data()
 
     def _apply_theme(self) -> None:
@@ -1002,6 +1034,14 @@ class DashboardView(QWidget):
                 color: {t["text_primary"]};
                 font-size: 12px;
                 min-width: 130px;
+            }}
+            QDateEdit#dashDate {{
+                background-color: {t["bg_secondary"]};
+                border: 1px solid {t["border"]};
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: {t["text_primary"]};
+                font-size: 12px;
             }}
             QComboBox#dashCombo::drop-down {{
                 border: none;

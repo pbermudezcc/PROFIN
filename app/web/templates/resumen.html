@@ -10,7 +10,15 @@
   {% for key, label in ranges %}
   <a href="/?rango={{ key }}" class="{{ 'on' if rango == key else '' }}" role="tab" aria-selected="{{ 'true' if rango == key else 'false' }}">{{ label }}</a>
   {% endfor %}
+  <a href="#" class="{{ 'on' if rango == 'custom' else '' }}" role="tab" aria-selected="{{ 'true' if rango == 'custom' else 'false' }}" aria-controls="custom-range" data-toggle="#custom-range">Personalizado</a>
 </div>
+
+<form id="custom-range" class="card form-grid two section" style="margin-bottom: var(--s-5)" action="/" method="get" {% if rango != 'custom' %}hidden{% endif %}>
+  <input type="hidden" name="rango" value="custom">
+  <label class="field"><span>Desde</span><input class="input" type="date" name="desde" value="{{ s.date_from }}" required></label>
+  <label class="field"><span>Hasta</span><input class="input" type="date" name="hasta" value="{{ s.date_to }}" required></label>
+  <button class="btn block" type="submit">Aplicar</button>
+</form>
 
 <section class="hero fade-in" aria-label="Saldo">
   <div class="lbl">Saldo en cuenta</div>
@@ -22,7 +30,7 @@
   </div>
 </section>
 
-<div class="section-h"><h2>Este periodo</h2><span class="faint">{{ s.date_from|sdate }} – {{ s.date_to|sdate }}</span></div>
+<div class="section-h"><h2>Este periodo</h2><span class="faint">{% if rango == 'custom' %}{{ s.date_from|fdate }} – {{ s.date_to|fdate }}{% else %}{{ s.date_from|sdate }} – {{ s.date_to|sdate }}{% endif %}</span></div>
 <div class="kpis">
   {{ ui.kpi("Ingresos", s.income|eur, "", "income") }}
   {{ ui.kpi("Gastos", s.expense|eur, "", "expense") }}

@@ -156,3 +156,37 @@ def test_forecast_view_shows_the_household(qt_app):
     finally:
         sess.close()
         engine.dispose()
+
+
+def test_dashboard_custom_range(qt_app, session):
+    """Posición Global «Personalizado»: the two date pickers appear and the
+    summary uses their range (in any order)."""
+    from PySide6.QtCore import QDate
+
+    from app.gui.dashboard import DashboardView
+
+    user = create_user(session, "ana", "clave-secreta-1")
+    account = Account(user_id=user.id, account_name="Cuenta")
+    session.add(account)
+    session.flush()
+    session.add(Transaction(user_id=user.id, account_id=account.id, transaction_date=date(2025, 3, 15),
+                            amount=-300.0, type=TransactionType.expense, issuer_name="VIAJE"))
+    session.commit()
+    view = DashboardView(user, session, "light")
+    view.show()
+    qt_app.processEvents()
+    try:
+        _lbl, desde = view._date_edits[0]
+        _lbl, hasta = view._date_edits[1]
+        assert not desde.isVisible()
+        view._cmb_range.setCurrentIndex(view._cmb_range.findData("custom"))
+        qt_app.processEvents()
+        assert desde.isVisible() and hasta.isVisible()
+        desde.setDate(QDate(2025, 3, 31))
+        hasta.setDate(QDate(2025, 3, 1))
+        assert view._get_date_range(date.today()) == (date(2025, 3, 1), date(2025, 3, 31))
+        view._cmb_range.setCurrentIndex(view._cmb_range.findData("month"))
+        qt_app.processEvents()
+        assert not desde.isVisible()
+    finally:
+        view.close()
