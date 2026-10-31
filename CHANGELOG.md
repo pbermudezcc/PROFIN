@@ -5,6 +5,61 @@
 
 ---
 
+**Snapshot:** `FAMILYFIN.B.0.8.3-beta.1.md`  |  **Files:** 153  |  **Handler:** v1.0.0
+**Date:** 2026-10-31 09:26  |  **Type:** Beta
+**Description:** Llega Previsiones: marca como Fijo lo que se repite (hipoteca, luz, seguros, nómina, alquiler) y FAMILYFIN te dice cuánto gastas de media en fijos, qué recibos y cobros tocan este mes y qué ingresos y gastos esperar el mes próximo, siempre por separado. Las categorías también pueden marcarse como Traspaso interno, para ver cuánto aporta cada miembro a la cuenta común sin contar dos veces el mismo dinero. El Resumen (y la Posición Global del PC) admite ahora un periodo Personalizado con las fechas que elijas. Es una versión de prueba.
+
+### Antes de actualizar
+
+- La base de datos se actualiza automáticamente del esquema v8 al v9 la primera vez que se abre la aplicación. Antes se guarda una copia `profin.pre-migration-v9.<fecha>.db` junto a la base.
+
+### Novedades
+
+- **Fijo, Variable o Traspaso interno**: en Categorías (PC y web) cada categoría puede marcarse como Fijo (recibos e ingresos que se repiten) o como Traspaso interno (dinero entre miembros de la familia), indicando en «Con» quién está al otro lado. Un movimiento concreto puede salirse de su categoría («Gasto fijo»: según categoría, fijo o variable) y en Movimientos se puede filtrar por fijos, variables o traspasos. Las marcas viajan en la exportación de categorías y aparecen en «Descargar mis datos» (`008a504`)
+- **Previsiones** (PC, en la barra lateral; web, en el menú y en «Más» del iPhone):
+  - Muestra el ahorro previsto del mes próximo, con los ingresos previstos y los gastos previstos en dos listas separadas, cada una con su total.
+  - Incluye los cobros y recibos de este mes, marcados como cobrados, cargados o pendientes; un recibo un 20 % por encima de lo habitual se señala.
+  - Calcula la media mensual de ingresos y gastos fijos y variables, con una gráfica de ingresos y gastos por mes.
+  - Los recibos que no llegan cada mes (agua, IBI, seguros) se reparten en la media y solo aparecen en la previsión el mes que tocan.
+  - La vista Familia suma a todos los miembros solo con totales, sin mostrar movimientos de nadie.
+  - Con los traspasos marcados, la sección Aportaciones muestra cuánto envía cada uno a la cuenta común, avisa si lo enviado y lo recibido no cuadran y estima la aportación de cada miembro del mes próximo.
+  - La primera vez propone qué categorías marcar como fijas (`cbea941`, `cfcff2b`, `a72baec`)
+- **Periodo Personalizado en el Resumen**: junto a Mes, Año y Todo, elige las fechas «desde» y «hasta» y todas las cifras del periodo las usan. En el PC, «Personalizado» en el Periodo de Posición Global muestra dos calendarios (`c58eb70`)
+
+### Interno
+
+- Pruebas automáticas nuevas para las pantallas del PC que apenas se probaban (acceso, importación, configuración, categorías, acceso web y la ficha de movimientos): la cobertura pasa del 81 % al 87 % y son 724 pruebas. De paso se corrige el formulario del periodo Personalizado de la web, que usaba un estilo no permitido por la política de seguridad (`70e2429`)
+- Manual de usuario con la nueva sección «Previsión» y las marcas Fijo / Traspaso en «Categorías y reglas» (`54fe3d7`)
+- Registro de trabajo del agente: la publicación de la 0.8.2, el manual y la fusión única de reglas y categorías entre MARIA, COMUN y PEDRO (`dba0547`, `9feb8d7`)
+
+### Áreas afectadas
+
+- **Base de datos y migraciones**: `app/db/database.py`, `app/db/models.py`
+- **Categorías y reglas**: `app/categorization/admin_service.py`, `app/categorization/library_io.py`
+- **Informes y gráficos**: `app/analytics/forecast.py`, `app/analytics/transaction_search.py`
+- **Configuración y copias de seguridad**: `app/settings/user_export.py`
+- **Usuarios y acceso**: `app/auth/account_service.py`
+- **Interfaz**: `app/gui/categories_view.py`, `app/gui/dashboard.py`, `app/gui/forecast_view.py`, `app/gui/library_dialog.py`, `app/gui/main_window.py`, `app/gui/transactions_view.py`
+- **Tests**: `tests/test_backup_and_migrations.py`, `tests/test_fixed_nature.py`, `tests/test_forecast.py`, `tests/test_gui_smoke.py`, `tests/test_gui_views.py`, `tests/test_periods_and_session.py` y 1 más
+- **Herramientas de desarrollo y agentes**: `tools/demo/capture_screens.py`, `tools/demo/demo_data.py`, `tools/web_preview.py`
+- **Documentación**: `docs/agent/agent_log.md`, `docs/manual/img/m_prevision.png`, `docs/manual/img/w_prevision.png`, `docs/manual/index.html`
+
+<details><summary>Commits incluidos (9 desde v0.8.2)</summary>
+
+- `70e2429` test: cover the desktop screens the suite barely reached
+- `c58eb70` feat(resumen): «Personalizado» period with desde / hasta
+- `9feb8d7` docs(agent_log): manual Previsión and the one-off rules/categories merge
+- `54fe3d7` docs(manual): Previsión section, Fijo/Traspaso in Categorías y reglas
+- `a72baec` fix(prevision): show ingresos and gastos apart
+- `cfcff2b` feat(prevision): Previsiones on the desktop and /prevision on the web
+- `cbea941` feat(prevision): forecast engine — fixed baseline, bills due, aportes
+- `008a504` feat(categorias): mark categories Fijo or Traspaso, movements can override (schema v9)
+- `dba0547` docs(agent_log): record v0.8.2 release
+
+</details>
+
+---
+
 **Snapshot:** `FAMILYFIN.R.0.8.2.md`  |  **Files:** 146  |  **Handler:** v1.0.0
 **Date:** 2026-10-30 22:32  |  **Type:** Release
 **Description:** Las reglas automáticas pueden limitarse a gastos o a ingresos, así un mismo texto como BIZUM va a una categoría cuando pagas y a otra cuando cobras; las reglas que se crean desde un movimiento ya lo hacen solas. Cada miembro puede descargar sus propios datos y cambiar su contraseña y su nombre desde el PC. Los movimientos de un mismo día aparecen en el orden del banco y el «Saldo en cuenta» toma el último movimiento del día. Además se corrigen varios detalles de la importación en el PC, el tema claro, la tarjeta «Inversión» y las ventanas emergentes de la web.
