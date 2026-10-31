@@ -329,3 +329,58 @@ def test_family_aportes_reconcile_both_sides(db, home):
     assert len(maria.mismatches) == 1 and maria.mismatches[0].startswith("jun 26")
     assert "700,00" in maria.mismatches[0] and "600,00" in maria.mismatches[0]
     assert rows[("PEDRO", "COMUN")].share_pct + maria.share_pct == pytest.approx(100, abs=0.2)
+
+
+# ---------------------------------------------------------------------------
+# Ingresos and gastos never mixed
+# ---------------------------------------------------------------------------
+
+def test_income_and_expense_lists_never_mix(db, home):
+    for name in ("COMUN", "MARIA"):
+        fc = user_forecast(db, home.users[name].id, TODAY)
+        assert all(i.kind == "income" for i in fc.this_month_income + fc.next_month_income)
+        assert all(i.kind == "expense" for i in fc.this_month_expenses + fc.next_month_expenses)
+        assert all(s.kind == "income" for s in fc.income_series)
+        assert all(s.kind == "expense" for s in fc.expense_series)
+    maria = user_forecast(db, home.users["MARIA"].id, TODAY)
+    assert [i.label for i in maria.next_month_income] == ["NOMINA ACME"]
+    assert maria.next_month_expenses == []
+    assert maria.next_fixed_income == 2000
+    assert maria.next_income == 2000 and maria.next_expenses == 100     # Zara, variable
+    assert maria.this_month_income[0].status == STATUS_CHARGED
+    assert all(s.income == 2000 for s in maria.monthly_split)
+
+
+def test_joint_account_expects_each_members_aporte(db, home):
+    fc = user_forecast(db, home.users["COMUN"].id, TODAY)
+    expected = {i.label: i.expected for i in fc.next_transfers_in}
+    # Median of the last 6 months: June's 600 does not move MARIA's 700.
+    assert expected == {"Aportación de MARIA": 700, "Aportación de PEDRO": 500}
+    assert fc.next_transfers_out == []
+    assert fc.next_income == 0                                   # no income of its own
+    assert fc.next_income_with_transfers == 1200
+    assert fc.next_saving_with_transfers == pytest.approx(1200 - fc.next_expenses, abs=0.01)
+
+
+def test_parent_expects_their_aporte_as_money_out(db, home):
+    fc = user_forecast(db, home.users["MARIA"].id, TODAY)
+    assert [(i.label, i.expected) for i in fc.next_transfers_out] == [("Aportación a COMUN", 700)]
+    assert fc.next_expenses_with_transfers == 800
+    assert fc.next_saving == 1900 and fc.next_saving_with_transfers == 1200
+
+
+def test_family_has_no_expected_aportes(db, home):
+    fam = family_forecast(db, TODAY)
+    assert fam.next_transfers == []
+    assert fam.next_saving == fam.next_saving_with_transfers
+    assert fam.next_income == pytest.approx(2000)               # MARIA's salary only
+    assert all(s.income == 2000 for s in fam.monthly_split)
+
+
+def test_unlinked_traspaso_keeps_its_category_name(db, home):
+    maria = home.users["MARIA"]
+    aporte = db.query(Category).filter_by(user_id=maria.id, name="Aporte común").one()
+    aporte.transfer_peer_user_id = None
+    db.commit()
+    fc = user_forecast(db, maria.id, TODAY)
+    assert [i.label for i in fc.next_transfers_out] == ["Aporte común"]

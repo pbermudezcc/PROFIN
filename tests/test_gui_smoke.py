@@ -140,7 +140,12 @@ def test_forecast_view_shows_the_household(qt_app):
             qt_app.processEvents()
             assert view._cards["needed"].isVisible()
             assert view._tbl_aport.rowCount() == 2
-            assert view._tbl_this.rowCount() == 3
+            assert view._tbl_this_out.rowCount() == 3            # gas, internet, hipoteca
+            income_rows = [view._tbl_next_in.item(r, 1).text() for r in range(view._tbl_next_in.rowCount())]
+            expense_rows = [view._tbl_next_out.item(r, 1).text() for r in range(view._tbl_next_out.rowCount())]
+            assert "Aportación de MARIA" in income_rows and "Aportación de PEDRO" in income_rows
+            assert not any("Aportación" in r or r.startswith("NOMINA") for r in expense_rows)
+            assert "PRESTAMO 0012345" in expense_rows and "PRESTAMO 0012345" not in income_rows
             view._cmb_view.setCurrentIndex(1)                # Familia
             qt_app.processEvents()
             assert "COMUN, MARIA, PEDRO" in view._lbl_window.text()

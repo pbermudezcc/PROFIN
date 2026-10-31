@@ -125,8 +125,9 @@ class ForecastItem:
 class MonthSplit:
     year:     int
     month:    int
-    fixed:    float
-    variable: float
+    fixed:    float                     # gastos fijos
+    variable: float                     # gastos variables
+    income:   float = 0.0               # ingresos (fijos + variables, sin traspasos)
 
     @property
     def label(self) -> str:
@@ -178,7 +179,11 @@ class Forecast:
     next_month:         List[ForecastItem] = field(default_factory=list)
     next_fixed:         float = 0.0
     next_other_fixed:   float = 0.0                 # irregular fixed bills (average)
-    next_income:        float = 0.0
+    next_other_income:  float = 0.0                 # irregular fixed income (average)
+    next_income:        float = 0.0                 # all expected income, without traspasos
+    # Expected traspasos next month, one per member (own view only; empty in
+    # Familia, where they cancel out): kind "transfer_in" / "transfer_out".
+    next_transfers:     List[ForecastItem] = field(default_factory=list)
     # Transfers (traspaso) — outside every total above
     transfers:          List[TransferLine] = field(default_factory=list)
     transfers_in_avg:   float = 0.0
@@ -240,8 +245,62 @@ class Forecast:
 
     @property
     def pending_this_month(self) -> float:
-        return round(sum(i.expected for i in self.this_month
-                         if i.status == STATUS_PENDING and i.kind == "expense"), 2)
+        """Bills still to be charged this month."""
+        return round(sum(i.expected for i in self.this_month_expenses if i.status == STATUS_PENDING), 2)
+
+    @property
+    def pending_income_this_month(self) -> float:
+        """Fixed income still to come in this month."""
+        return round(sum(i.expected for i in self.this_month_income if i.status == STATUS_PENDING), 2)
+
+    # ---- the two sides, never mixed ---------------------------------------
+    @property
+    def this_month_income(self) -> List[ForecastItem]:
+        return [i for i in self.this_month if i.kind == "income"]
+
+    @property
+    def this_month_expenses(self) -> List[ForecastItem]:
+        return [i for i in self.this_month if i.kind == "expense"]
+
+    @property
+    def next_month_income(self) -> List[ForecastItem]:
+        return [i for i in self.next_month if i.kind == "income"]
+
+    @property
+    def next_month_expenses(self) -> List[ForecastItem]:
+        return [i for i in self.next_month if i.kind == "expense"]
+
+    @property
+    def income_series(self) -> List[Series]:
+        return [s for s in self.series if s.kind == "income"]
+
+    @property
+    def expense_series(self) -> List[Series]:
+        return [s for s in self.series if s.kind == "expense"]
+
+    @property
+    def next_fixed_income(self) -> float:
+        return round(sum(i.expected for i in self.next_month_income), 2)
+
+    @property
+    def next_transfers_in(self) -> List[ForecastItem]:
+        return [i for i in self.next_transfers if i.kind == "transfer_in"]
+
+    @property
+    def next_transfers_out(self) -> List[ForecastItem]:
+        return [i for i in self.next_transfers if i.kind == "transfer_out"]
+
+    @property
+    def next_income_with_transfers(self) -> float:
+        return round(self.next_income + sum(i.expected for i in self.next_transfers_in), 2)
+
+    @property
+    def next_expenses_with_transfers(self) -> float:
+        return round(self.next_expenses + sum(i.expected for i in self.next_transfers_out), 2)
+
+    @property
+    def next_saving_with_transfers(self) -> float:
+        return round(self.next_income_with_transfers - self.next_expenses_with_transfers, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +462,9 @@ def user_forecast(session: Session, user_id: int, today: Optional[date] = None) 
         fc.variable_mean = _r(sum(variable_by_month.get(m, 0.0) for m in recent) / len(recent))
         fc.income_variable = _r(median(var_income_by_month.get(m, 0.0) for m in recent))
     fc.monthly_split = [MonthSplit(y, m, _r(fixed_by_month.get((y, m), 0.0)),
-                                   _r(variable_by_month.get((y, m), 0.0))) for y, m in window]
+                                   _r(variable_by_month.get((y, m), 0.0)),
+                                   _r(fixed_income_by_month.get((y, m), 0.0)
+                                      + var_income_by_month.get((y, m), 0.0))) for y, m in window]
 
     _build_series(fc, cats, charges, window_set, current, today)
     _build_transfers(fc, transfers, window, current)
@@ -464,11 +525,12 @@ def _build_series(fc: Forecast, cats: Dict[int, _Cat], charges, window_set: Set[
         elif not period and kind == "expense":
             fc.next_other_fixed += series.monthly          # irregular: its average
         elif not period:
-            fc.next_income += series.monthly
+            fc.next_other_income += series.monthly         # irregular fixed income: its average
 
     fc.next_other_fixed = _r(fc.next_other_fixed)
     fc.next_fixed = _r(sum(i.expected for i in fc.next_month if i.kind == "expense"))
-    fc.next_income = _r(fc.next_income + fc.income_variable
+    fc.next_other_income = _r(fc.next_other_income)
+    fc.next_income = _r(fc.next_other_income + fc.income_variable
                         + sum(i.expected for i in fc.next_month if i.kind == "income"))
     fc.series.sort(key=lambda s: (s.kind != "expense", not s.active, -s.monthly, s.label))
     fc.this_month.sort(key=lambda i: (i.kind != "expense", i.status != STATUS_PENDING, i.day or 0))
@@ -488,6 +550,36 @@ def _build_transfers(fc: Forecast, transfers: Dict[int, TransferLine], window: L
     fc.transfers_in_avg = _r(fc.transfers_in_avg)
     fc.transfers_out_avg = _r(fc.transfers_out_avg)
     fc.contributions = contributions(fc.transfers, window, current)
+    fc.next_transfers = expected_transfers(fc.transfers, window)
+
+
+def expected_transfers(lines: Sequence[TransferLine], window: List[Month]) -> List[ForecastItem]:
+    """Next month's aportes, one per member and direction: the median of
+    what that member sent / received over the last VARIABLE_MONTHS complete
+    months (a missed or doubled month does not move it)."""
+    recent = window[-VARIABLE_MONTHS:]
+    grouped: Dict[Tuple[str, str], Dict[Month, float]] = defaultdict(lambda: defaultdict(float))
+    categories: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+    linked: Set[Tuple[str, str]] = set()
+    for line in lines:
+        key = (line.direction, line.peer or line.category)
+        if line.peer:
+            linked.add(key)
+        categories[key].append(line.category)
+        for month, amount in line.by_month.items():
+            grouped[key][month] += amount
+    items: List[ForecastItem] = []
+    for (direction, who), by_month in sorted(grouped.items()):
+        expected = _r(median(by_month.get(m, 0.0) for m in recent)) if recent else 0.0
+        if expected <= 0:
+            continue
+        if (direction, who) not in linked:
+            label = who                                   # no «Con» yet: the category's name
+        else:
+            label = f"Aportación de {who}" if direction == "in" else f"Aportación a {who}"
+        items.append(ForecastItem(label, ", ".join(sorted(set(categories[(direction, who)]))),
+                                  "transfer_in" if direction == "in" else "transfer_out", expected))
+    return items
 
 
 # ---------------------------------------------------------------------------
@@ -591,20 +683,22 @@ def family_forecast(session: Session, today: Optional[date] = None) -> Forecast:
     fam.variable_mean = _r(sum(p.variable_mean for p in parts))
     fam.income_fixed = _r(sum(p.income_fixed for p in parts))
     fam.income_variable = _r(sum(p.income_variable for p in parts))
-    split: Dict[Month, List[float]] = defaultdict(lambda: [0.0, 0.0])
+    split: Dict[Month, List[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
     for p in parts:
         for s in p.monthly_split:
             split[(s.year, s.month)][0] += s.fixed
             split[(s.year, s.month)][1] += s.variable
-    fam.monthly_split = [MonthSplit(y, m, _r(split[(y, m)][0]), _r(split[(y, m)][1]))
-                         for y, m in window_months]
+            split[(s.year, s.month)][2] += s.income
+    fam.monthly_split = [MonthSplit(y, m, *(_r(v) for v in split[(y, m)])) for y, m in window_months]
     fam.this_month = sorted((i for p in parts for i in p.this_month),
                             key=lambda i: (i.kind != "expense", i.status != STATUS_PENDING, i.day or 0))
     fam.next_month = sorted((i for p in parts for i in p.next_month),
                             key=lambda i: (i.kind != "expense", i.day or 0))
     fam.next_fixed = _r(sum(p.next_fixed for p in parts))
     fam.next_other_fixed = _r(sum(p.next_other_fixed for p in parts))
+    fam.next_other_income = _r(sum(p.next_other_income for p in parts))
     fam.next_income = _r(sum(p.next_income for p in parts))
+    # next_transfers stays empty: between members they cancel out.
     fam.uncategorized = sum(p.uncategorized for p in parts)
     lines = [line for p in parts for line in p.transfers]
     fam.contributions = contributions(lines, window_months, _month_of(today))

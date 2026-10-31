@@ -41,24 +41,25 @@ def _eur(value: Optional[float]) -> str:
 
 
 class _SplitChart(QFrame):
-    """Fixed vs variable spending per month — stacked bars (QPainter)."""
+    """Per month: an income bar (green) beside a stacked fixed + variable
+    spending bar (QPainter). Traspasos are in neither."""
 
     def __init__(self, theme: dict) -> None:
         super().__init__()
         self._t = theme
-        self._data: List[tuple] = []          # (label, fixed, variable)
+        self._data: List[tuple] = []          # (label, income, fixed, variable)
         self.setObjectName("chartCard")
         self.setMinimumHeight(250)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 14, 20, 14)
         hdr = QHBoxLayout()
-        title = QLabel("Fijos y variables por mes")
+        title = QLabel("Ingresos y gastos por mes")
         title.setObjectName("chartTitle")
         hdr.addWidget(title)
         hdr.addStretch()
         self._legend: List[QLabel] = []
-        for key, text in (("accent", "Fijos"), ("expense", "Variables")):
+        for key, text in (("income", "Ingresos"), ("accent", "Gastos fijos"), ("expense", "Gastos variables")):
             dot = QLabel("●")
             dot.setProperty("colorKey", key)
             self._legend.append(dot)
@@ -92,7 +93,7 @@ class _SplitChart(QFrame):
             return
         pad_l, pad_b, pad_t = 44, 22, 6
         w, h = rect.width() - pad_l - 8, rect.height() - pad_b - pad_t
-        top = max((f + v for _, f, v in self._data), default=1.0) or 1.0
+        top = max((max(inc, f + v) for _, inc, f, v in self._data), default=1.0) or 1.0
         painter.setFont(QFont("Segoe UI", 7))
         for step in (0.25, 0.5, 0.75, 1.0):
             gy = rect.y() + pad_t + h * (1 - step)
@@ -103,18 +104,22 @@ class _SplitChart(QFrame):
             painter.setPen(QPen(QColor(t["border"]), 0.5, Qt.PenStyle.DashLine))
             painter.drawLine(QPointF(rect.x() + pad_l, gy), QPointF(rect.right() - 8, gy))
         slot = w / len(self._data)
-        bar = max(6.0, slot * 0.5)
-        for i, (label, fixed, variable) in enumerate(self._data):
-            x = rect.x() + pad_l + i * slot + (slot - bar) / 2
-            base = rect.y() + pad_t + h
+        bar = max(4.0, slot * 0.3)
+        floor = rect.y() + pad_t + h
+        for i, (label, income, fixed, variable) in enumerate(self._data):
+            center = rect.x() + pad_l + i * slot + slot / 2
             painter.setPen(Qt.PenStyle.NoPen)
+            bh = h * max(0.0, income) / top                      # ingresos, left
+            painter.setBrush(QBrush(QColor(t["income"])))
+            painter.drawRoundedRect(QRectF(center - bar - 1, floor - bh, bar, bh), 2, 2)
+            base = floor                                          # gastos, right (stacked)
             for value, key in ((fixed, "accent"), (variable, "expense")):
                 bh = h * max(0.0, value) / top
                 painter.setBrush(QBrush(QColor(t[key])))
-                painter.drawRoundedRect(QRectF(x, base - bh, bar, bh), 2, 2)
+                painter.drawRoundedRect(QRectF(center + 1, base - bh, bar, bh), 2, 2)
                 base -= bh
             painter.setPen(QColor(t["text_secondary"]))
-            painter.drawText(QRectF(x - slot / 2, rect.y() + pad_t + h + 4, bar + slot, 16),
+            painter.drawText(QRectF(center - slot / 2, floor + 4, slot, 16),
                              Qt.AlignmentFlag.AlignHCenter, label)
 
 
@@ -223,11 +228,12 @@ class ForecastView(QWidget):
         grid.setSpacing(12)
         t = self._t
         specs = [
-            ("next", "Gastos previstos", "mdi.calendar-arrow-right", t["accent"]),
-            ("fixed", "Gasto fijo medio", "mdi.pin", t["accent"]),
-            ("variable", "Gasto variable", "mdi.cart-outline", t["expense"]),
             ("income", "Ingresos previstos", "mdi.trending-up", t["income"]),
-            ("saving", "Ahorro previsto", "mdi.piggy-bank-outline", t["income"]),
+            ("next", "Gastos previstos", "mdi.trending-down", t["expense"]),
+            ("saving", "Ahorro previsto", "mdi.piggy-bank-outline", t["accent"]),
+            ("income_fixed", "Ingreso fijo medio", "mdi.cash-plus", t["income"]),
+            ("fixed", "Gasto fijo medio", "mdi.pin", t["expense"]),
+            ("variable", "Gasto variable", "mdi.cart-outline", t["expense"]),
             ("needed", "Aportación necesaria", "mdi.swap-horizontal", t["investment"]),
             ("received", "Aportaciones recibidas", "mdi.account-cash-outline", t["investment"]),
         ]
@@ -243,17 +249,29 @@ class ForecastView(QWidget):
         self._lbl_warnings.setWordWrap(True)
         self._body.addWidget(self._lbl_warnings)
 
-        # This month / next month
-        months = QHBoxLayout()
-        months.setSpacing(14)
-        self._lbl_this, self._tbl_this = self._table_box(months, ["Recibo", "Categoría", "Estado", "Importe"])
-        self._lbl_next, self._tbl_next = self._table_box(months, ["Día", "Recibo", "Categoría", "Importe"],
-                                                         wide_col=1)
-        self._body.addLayout(months)
+        # Next month: ingresos | gastos
+        nxt = QHBoxLayout()
+        nxt.setSpacing(14)
+        self._lbl_next_in, self._tbl_next_in = self._table_box(
+            nxt, ["Día", "Ingreso", "Categoría", "Importe"], wide_col=1)
+        self._lbl_next_out, self._tbl_next_out = self._table_box(
+            nxt, ["Día", "Gasto", "Categoría", "Importe"], wide_col=1)
+        self._body.addLayout(nxt)
+
+        # This month: cobros | recibos
+        this = QHBoxLayout()
+        this.setSpacing(14)
+        self._lbl_this_in, self._tbl_this_in = self._table_box(this, ["Cobro", "Categoría", "Estado", "Importe"])
+        self._lbl_this_out, self._tbl_this_out = self._table_box(this, ["Recibo", "Categoría", "Estado", "Importe"])
+        self._body.addLayout(this)
 
         self._chart = _SplitChart(self._t)
         self._body.addWidget(self._chart)
 
+        income_row = QHBoxLayout()
+        self._lbl_series_in, self._tbl_series_in = self._table_box(
+            income_row, ["Ingreso", "Categoría", "Frecuencia", "Por cobro", "Media / mes", "Próximo"])
+        self._body.addLayout(income_row)
         series_row = QHBoxLayout()
         series_row.setSpacing(14)
         self._lbl_series, self._tbl_series = self._table_box(
@@ -351,9 +369,10 @@ class ForecastView(QWidget):
     def _show(self, fc: Forecast, familia: bool) -> None:
         enough = fc.enough_data
         self._lbl_empty.setVisible(not enough)
-        for widget in (self._cards_box, self._tbl_this.parentWidget(), self._tbl_next.parentWidget(),
-                       self._chart, self._tbl_series.parentWidget(), self._tbl_cats.parentWidget(),
-                       self._lbl_foot):
+        for widget in (self._cards_box, self._chart, self._lbl_foot,
+                       *(tbl.parentWidget() for tbl in (
+                           self._tbl_next_in, self._tbl_next_out, self._tbl_this_in, self._tbl_this_out,
+                           self._tbl_series_in, self._tbl_series, self._tbl_cats))):
             widget.setVisible(enough)
         self._lbl_window.setText(
             (f"{fc.months} meses completos" + (" · provisional" if fc.provisional else "")
@@ -365,11 +384,17 @@ class ForecastView(QWidget):
             return
 
         c = self._cards
-        c["next"].set_value(_eur(fc.next_expenses), fc.next_month_label)
-        c["fixed"].set_value(_eur(fc.fixed_baseline), "por mes, no mensuales repartidos")
+        with_transfers = not familia and bool(fc.next_transfers)
+        income_total = fc.next_income_with_transfers if with_transfers else fc.next_income
+        expense_total = fc.next_expenses_with_transfers if with_transfers else fc.next_expenses
+        saving = fc.next_saving_with_transfers if with_transfers else fc.next_saving
+        note = " · con aportaciones" if with_transfers else ""
+        c["income"].set_value("+" + _eur(income_total), fc.next_month_label + note)
+        c["next"].set_value("−" + _eur(expense_total), fc.next_month_label + note)
+        c["saving"].set_value(("+" if saving >= 0 else "−") + _eur(abs(saving)), "ingresos − gastos previstos")
+        c["income_fixed"].set_value(_eur(fc.income_fixed), "media por mes")
+        c["fixed"].set_value(_eur(fc.fixed_baseline), "media por mes, no mensuales repartidos")
         c["variable"].set_value(_eur(fc.variable_median), f"mediana · media {_eur(fc.variable_mean)}")
-        c["income"].set_value(_eur(fc.next_income), fc.next_month_label)
-        c["saving"].set_value(_eur(fc.next_saving), "ingresos − gastos previstos")
         receives = fc.receives_transfers and not familia
         c["needed"].setVisible(receives)
         c["received"].setVisible(receives)
@@ -389,34 +414,70 @@ class ForecastView(QWidget):
         self._lbl_warnings.setText("\n".join(f"⚠ {w}" for w in warnings))
         self._lbl_warnings.setVisible(bool(warnings))
 
-        pending = f" · pendiente {_eur(fc.pending_this_month)}" if fc.pending_this_month else ""
-        self._lbl_this.setText(f"Este mes · {fc.this_month_label}{pending}")
-        rows = []
-        for i in fc.this_month:
-            status = ("Cargado" if i.status == STATUS_CHARGED else f"Pendiente · hacia el {i.day}")
-            if i.above_pct:
-                status += f" · +{i.above_pct:.0f} % sobre lo habitual"
-            rows.append([i.label, i.category, status, _eur(i.actual if i.actual is not None else i.expected)])
-        self._fill(self._tbl_this, rows or [["Nada previsto este mes", "", "", ""]])
+        # Mes próximo — ingresos | gastos, never mixed
+        self._lbl_next_in.setText(f"Ingresos previstos · {fc.next_month_label}")
+        rows = [[str(i.day or ""), i.label, i.category, "+" + _eur(i.expected)] for i in fc.next_month_income]
+        if fc.next_other_income:
+            rows.append(["≈", "Otros ingresos fijos", "media mensual", "+" + _eur(fc.next_other_income)])
+        rows.append(["≈", "Ingresos variables estimados", "mediana 6 meses", "+" + _eur(fc.income_variable)])
+        if with_transfers:
+            rows += [["⇄", i.label, "traspaso · mediana 6 meses", "+" + _eur(i.expected)]
+                     for i in fc.next_transfers_in]
+        rows.append(["", "Total ingresos previstos", "", "+" + _eur(income_total)])
+        self._fill(self._tbl_next_in, rows, bold_last=True, color=self._t["income"])
 
-        self._lbl_next.setText(f"Mes próximo · {fc.next_month_label}")
-        rows = [[str(i.day or ""), i.label, i.category, _eur(i.expected)] for i in fc.next_month]
+        self._lbl_next_out.setText(f"Gastos previstos · {fc.next_month_label}")
+        rows = [[str(i.day or ""), i.label, i.category, "−" + _eur(i.expected)] for i in fc.next_month_expenses]
         if fc.next_other_fixed:
-            rows.append(["≈", "Otros fijos sin fecha fija", "media mensual", _eur(fc.next_other_fixed)])
-        rows.append(["≈", "Gasto variable estimado", "mediana 6 meses", _eur(fc.variable_median)])
-        rows.append(["", "Total gastos previstos", "", _eur(fc.next_expenses)])
-        self._fill(self._tbl_next, rows, bold_last=True)
+            rows.append(["≈", "Otros gastos fijos", "media mensual", "−" + _eur(fc.next_other_fixed)])
+        rows.append(["≈", "Gasto variable estimado", "mediana 6 meses", "−" + _eur(fc.variable_median)])
+        if with_transfers:
+            rows += [["⇄", i.label, "traspaso · mediana 6 meses", "−" + _eur(i.expected)]
+                     for i in fc.next_transfers_out]
+        rows.append(["", "Total gastos previstos", "", "−" + _eur(expense_total)])
+        self._fill(self._tbl_next_out, rows, bold_last=True, color=self._t["expense"])
 
-        self._chart.set_data([(s.label, s.fixed, s.variable) for s in fc.monthly_split])
+        # Este mes — cobros | recibos
+        def checklist(items, income: bool) -> List[list]:
+            out = []
+            for i in items:
+                done = "Cobrado" if income else "Cargado"
+                status = done if i.status == STATUS_CHARGED else f"Pendiente · hacia el {i.day}"
+                if i.above_pct:
+                    status += f" · +{i.above_pct:.0f} % sobre lo habitual"
+                amount = i.actual if i.actual is not None else i.expected
+                out.append([i.label, i.category, status, ("+" if income else "−") + _eur(amount)])
+            return out
 
-        self._lbl_series.setText(f"Recibos fijos · {len(fc.series)}")
-        self._fill(self._tbl_series, [
-            [s.label, s.category, s.period_label, _eur(s.usual), _eur(s.monthly),
-             (s.next_due.strftime("%d/%m/%Y") if s.active and s.next_due
-              else ("sin cargos desde " + s.last_date.strftime("%d/%m/%Y") if not s.active else "—"))]
-            for s in fc.series])
+        pend_in = f" · pendiente {_eur(fc.pending_income_this_month)}" if fc.pending_income_this_month else ""
+        pend_out = f" · pendiente {_eur(fc.pending_this_month)}" if fc.pending_this_month else ""
+        self._lbl_this_in.setText(f"Cobros de {fc.this_month_label}{pend_in}")
+        self._fill(self._tbl_this_in, checklist(fc.this_month_income, True)
+                   or [["Ningún ingreso fijo previsto este mes", "", "", ""]], color=self._t["income"])
+        self._lbl_this_out.setText(f"Recibos de {fc.this_month_label}{pend_out}")
+        self._fill(self._tbl_this_out, checklist(fc.this_month_expenses, False)
+                   or [["Ningún recibo fijo previsto este mes", "", "", ""]], color=self._t["expense"])
+
+        self._chart.set_data([(s.label, s.income, s.fixed, s.variable) for s in fc.monthly_split])
+
+        def series_rows(series, income: bool) -> List[list]:
+            sign, word = ("+", "cobros") if income else ("−", "cargos")
+            return [[s.label, s.category, s.period_label, _eur(s.usual), sign + _eur(s.monthly),
+                     (s.next_due.strftime("%d/%m/%Y") if s.active and s.next_due
+                      else (f"sin {word} desde " + s.last_date.strftime("%d/%m/%Y") if not s.active else "—"))]
+                    for s in series]
+
+        self._lbl_series_in.setText(f"Ingresos fijos (nóminas, alquileres…) · {len(fc.income_series)}")
+        self._fill(self._tbl_series_in, series_rows(fc.income_series, True)
+                   or [["Ninguna categoría de ingreso marcada como fija", "", "", "", "", ""]],
+                   color=self._t["income"])
+        self._lbl_series.setText(f"Gastos fijos (recibos) · {len(fc.expense_series)}")
+        self._fill(self._tbl_series, series_rows(fc.expense_series, False)
+                   or [["Ninguna categoría de gasto marcada como fija", "", "", "", "", ""]],
+                   color=self._t["expense"])
         self._lbl_cats.setText("Gasto fijo por categoría")
-        self._fill(self._tbl_cats, [[name, _eur(value)] for name, value in fc.fixed_by_category])
+        self._fill(self._tbl_cats, [[name, "−" + _eur(value)] for name, value in fc.fixed_by_category],
+                   color=self._t["expense"])
 
         has_aport = bool(fc.contributions)
         self._tbl_aport.parentWidget().setVisible(has_aport)
@@ -436,13 +497,21 @@ class ForecastView(QWidget):
             "llegan cada mes se reparten en la media y en la previsión solo aparecen el mes que tocan."
             + (" En Familia solo se ven totales." if familia else ""))
 
-    def _fill(self, table: QTableWidget, rows: List[list], bold_last: bool = False) -> None:
+    def _fill(self, table: QTableWidget, rows: List[list], bold_last: bool = False,
+              color: Optional[str] = None) -> None:
+        """Rows of text; amounts right-aligned, and signed amounts (+ / −) in
+        ``color`` (green for ingresos, red for gastos)."""
+        table.clearSpans()
         table.setRowCount(len(rows))
         for r, values in enumerate(rows):
+            if len(values) > 1 and not any(values[1:]):       # a message row: across the table
+                table.setSpan(r, 0, 1, table.columnCount())
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if value.endswith("€") or value.endswith("%"):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    if color and value[:1] in "+−":
+                        item.setForeground(QColor(color))
                 if bold_last and r == len(rows) - 1:
                     font = item.font()
                     font.setBold(True)

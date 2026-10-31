@@ -2261,3 +2261,47 @@ def test_prevision_suggestions_mark_categories(app, family, factory):
     finally:
         db.close()
     assert "Marca tus gastos fijos" not in client.get("/prevision").text
+
+
+def test_prevision_lists_income_apart_from_expenses(app, family, factory):
+    db = factory()
+    try:
+        gasto_id = db.get(Category, family["ana_cat"]).parent_id
+        ingreso = Category(user_id=family["ana"], name="INGRESO", level=CategoryLevel.type,
+                           transaction_type=TransactionType.income)
+        db.add(ingreso)
+        db.flush()
+        nomina = Category(user_id=family["ana"], parent_id=ingreso.id, name="Nómina",
+                          level=CategoryLevel.category, nature="fijo")
+        luz = Category(user_id=family["ana"], parent_id=gasto_id, name="Luz",
+                       level=CategoryLevel.category, nature="fijo")
+        db.add_all([nomina, luz])
+        db.commit()
+        nomina_id, luz_id = nomina.id, luz.id
+    finally:
+        db.close()
+    _months_of_bills(factory, family["ana"], luz_id, amount=-80.0, issuer="IBERDROLA")
+    _months_of_bills(factory, family["ana"], nomina_id, amount=2100.0, issuer="EMPRESA SA")
+    db = factory()
+    try:
+        account = db.query(Account).filter_by(user_id=family["ana"]).first()
+        for cat_id, amount, issuer in ((luz_id, -80.0, "IBERDROLA"), (nomina_id, 2100.0, "EMPRESA SA")):
+            db.add(Transaction(user_id=family["ana"], account_id=account.id, transaction_date=date.today(),
+                               amount=amount, type=TransactionType.expense, issuer_name=issuer,
+                               category_id=cat_id))       # this month's, so both are still active
+        db.flush()
+        for t in db.query(Transaction).filter_by(issuer_name="EMPRESA SA"):
+            t.type = TransactionType.income                # the salary rows are income
+        db.commit()
+    finally:
+        db.close()
+
+    page = logged_in(app).get("/prevision").text
+    incomes = page[page.index('aria-label="Ingresos previstos"'):page.index("Total ingresos previstos")]
+    expenses = page[page.index('aria-label="Gastos previstos"'):page.index("Total gastos previstos")]
+    assert "EMPRESA SA" in incomes and "EMPRESA SA" not in expenses
+    assert "IBERDROLA" in expenses and "IBERDROLA" not in incomes
+    assert "+2.100,00" in incomes
+    data = logged_in(app).get("/api/prevision").json()["next_month"]
+    assert [i["label"] for i in data["income"]["items"]] == ["EMPRESA SA"]
+    assert [i["label"] for i in data["expenses"]["items"]] == ["IBERDROLA"]

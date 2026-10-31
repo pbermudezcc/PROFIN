@@ -30,11 +30,12 @@ def _forecast(db: Session, user: WebUser, vista: str) -> Forecast:
 def _charts(fc: Forecast) -> Dict[str, Any]:
     charts: Dict[str, Any] = {
         "split": {
-            "type": "stacked",
+            "type": "bar",
             "labels": [s.label for s in fc.monthly_split],
             "series": [
-                {"name": "Fijos", "color": "accent", "values": [s.fixed for s in fc.monthly_split]},
-                {"name": "Variables", "color": "expense", "values": [s.variable for s in fc.monthly_split]},
+                {"name": "Ingresos", "color": "income", "values": [s.income for s in fc.monthly_split]},
+                {"name": "Gastos fijos", "color": "accent", "values": [s.fixed for s in fc.monthly_split]},
+                {"name": "Gastos variables", "color": "expense", "values": [s.variable for s in fc.monthly_split]},
             ],
         },
     }
@@ -102,6 +103,10 @@ async def mark_suggested(request: Request, user: WebUser = USER, db: Session = D
     return response
 
 
+def _item(i) -> Dict[str, Any]:
+    return {"label": i.label, "category": i.category, "kind": i.kind, "expected": i.expected, "day": i.day}
+
+
 @router.get("/api/prevision")
 def forecast_api(vista: str = "mio", user: WebUser = USER, db: Session = DB) -> JSONResponse:
     fc = _forecast(db, user, vista if vista in dict(VIEWS) else "mio")
@@ -112,13 +117,23 @@ def forecast_api(vista: str = "mio", user: WebUser = USER, db: Session = DB) -> 
         "variable_median": fc.variable_median,
         "next_month": {
             "label": fc.next_month_label,
-            "fixed": fc.next_fixed,
-            "other_fixed": fc.next_other_fixed,
-            "expenses": fc.next_expenses,
-            "income": fc.next_income,
+            "income": {
+                "total": fc.next_income,
+                "fixed": fc.next_fixed_income,
+                "other_fixed": fc.next_other_income,
+                "variable": fc.income_variable,
+                "items": [_item(i) for i in fc.next_month_income],
+            },
+            "expenses": {
+                "total": fc.next_expenses,
+                "fixed": fc.next_fixed,
+                "other_fixed": fc.next_other_fixed,
+                "variable": fc.variable_median,
+                "items": [_item(i) for i in fc.next_month_expenses],
+            },
             "saving": fc.next_saving,
-            "items": [{"label": i.label, "category": i.category, "kind": i.kind, "expected": i.expected,
-                       "day": i.day} for i in fc.next_month],
+            "transfers": [_item(i) for i in fc.next_transfers],
+            "saving_with_transfers": fc.next_saving_with_transfers,
         },
         "this_month": [{"label": i.label, "category": i.category, "kind": i.kind, "status": i.status,
                         "expected": i.expected, "actual": i.actual, "day": i.day, "above_pct": i.above_pct}
