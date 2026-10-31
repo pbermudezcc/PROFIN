@@ -150,6 +150,7 @@ WEB_PAGES = [
     ("w_cuenta_datos", "/mas", WIDE, 900, "light", '[hx-get="/mas/cuenta/datos"]'),
     ("w_invitacion", "/mas", WIDE, 900, "light", '[hx-post="/mas/invitaciones"]'),
     ("w_cuentas", "/mas/cuentas", WIDE, 820, "light", None),
+    ("w_prevision", "/prevision", WIDE, 2350, "light", None),
     ("m_login", "/login", PHONE, 844, "light", None),
     ("m_resumen", "/?rango=year", PHONE, 1500, "light", None),
     ("m_resumen_dark", "/?rango=year", PHONE, 1500, "dark", None),
@@ -161,6 +162,7 @@ WEB_PAGES = [
     ("m_importar_preview", "{preview}", PHONE, 1300, "light", None),
     ("m_mas", "/mas", PHONE, 1500, "light", None),
     ("m_reglas", "/mas/reglas", PHONE, 1100, "light", None),
+    ("m_prevision", "/prevision", PHONE, 1500, "light", None),
 ]
 SCALE = {WIDE: 1.5, PHONE: 2}
 
@@ -205,7 +207,7 @@ def _self_signed(folder: Path) -> tuple[Path, Path]:
     return cert_path, key_path
 
 
-def capture_web(port: int = 8799) -> None:
+def capture_web(port: int = 8799, only: tuple = ()) -> None:
     import json
     from urllib.parse import quote
 
@@ -291,6 +293,8 @@ def capture_web(port: int = 8799) -> None:
     try:
         qt = QGuiApplication.instance() or QGuiApplication(sys.argv)  # noqa: F841  (QImage needs it)
         for name, path, w, h, theme, click in WEB_PAGES:
+            if only and not name.startswith(only):
+                continue
             out = OUT / f"{name}.png"
             out.unlink(missing_ok=True)
             scale = SCALE[w]
@@ -322,6 +326,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--desktop", action="store_true")
     parser.add_argument("--web", action="store_true")
+    parser.add_argument("--only", nargs="*", default=[], metavar="NOMBRE",
+                        help="web: only the pictures whose name starts with one of these (e.g. w_prevision)")
     args = parser.parse_args()
     if not (DATA_DIR / "profin.db").exists():
         sys.exit("Primero: python tools/demo/build_demo.py")
@@ -331,7 +337,7 @@ def main() -> None:
         capture_desktop()
     if args.web or not args.desktop:
         print("Capturas web:")
-        capture_web()
+        capture_web(only=tuple(args.only))
 
 
 if __name__ == "__main__":

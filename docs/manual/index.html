@@ -280,6 +280,7 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
       <a href="#panel">Resumen</a>
       <a href="#movimientos">Movimientos</a>
       <a href="#gastos">Gastos</a>
+      <a href="#prevision">Previsión</a>
       <a href="#importar">Importar</a>
       <a href="#categorias">Categorías y reglas</a>
       <a href="#inversiones">Inversiones</a>
@@ -513,6 +514,56 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
     </figure>
   </section>
 
+  <!-- ─────────────────────────────── PREVISIÓN ─────────────────────────────── -->
+  <section id="prevision">
+    <span class="eyebrow">Previsión</span>
+    <h2>Lo que entrará y saldrá el mes que viene</h2>
+    <p class="lede read">Marca como <strong>Fijo</strong> lo que se repite (hipoteca, luz, seguros, nómina, alquiler) y FAMILYFIN calcula tu gasto fijo medio, detecta cada cuánto llega cada recibo y te dice qué esperar el mes próximo. Ingresos y gastos siempre por separado: los ingresos con <strong>+</strong> en verde, los gastos con <strong>−</strong> en rojo.</p>
+    <figure class="win">
+      <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span class="url"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#16A34A" d="M6 10V7a6 6 0 1 1 12 0v3h1v12H5V10zm2 0h8V7a4 4 0 0 0-8 0z"/></svg>https://192.168.1.20:8765/prevision</span></div>
+      <img src="img/w_prevision.png" alt="Previsión: ahorro previsto del mes próximo, ingresos previstos y gastos previstos por separado, media mensual, cobros y recibos de este mes y gráfica de ingresos y gastos por mes" width="2049" height="3525" loading="lazy">
+      <figcaption>Previsión del usuario de demostración: la nómina en Ingresos previstos y cada recibo, con su día, en Gastos previstos.</figcaption>
+    </figure>
+    <div class="split rev">
+      <div class="stack read">
+        <h3>Qué ves</h3>
+        <ul class="ticks">
+          <li><strong>Ahorro previsto</strong> del mes próximo: ingresos previstos menos gastos previstos.</li>
+          <li><strong>Mes próximo</strong>, en dos listas. <em>Ingresos previstos</em>: los ingresos fijos que tocan (con su día), los ingresos variables estimados y el total. <em>Gastos previstos</em>: los recibos que tocan, los fijos sin fecha fija, el gasto variable estimado y el total.</li>
+          <li><strong>Media mensual</strong>: ingreso fijo, ingreso variable, gasto fijo y gasto variable.</li>
+          <li><strong>Este mes</strong>: <em>Cobros</em> y <em>Recibos</em>, cada uno marcado como cobrado o cargado, o pendiente con el día aproximado. Un recibo más de un 20 % por encima de lo habitual se señala («+22 % sobre lo habitual»).</li>
+          <li><strong>Ingresos y gastos por mes</strong> (gráfica), el <strong>gasto fijo por categoría</strong> y la lista de <strong>ingresos fijos</strong> y <strong>gastos fijos</strong> con su frecuencia, lo que suele costar cada cargo y la fecha del próximo.</li>
+        </ul>
+        <h3>Cómo calcula</h3>
+        <ul class="ticks">
+          <li>Usa los últimos <strong>12 meses completos</strong>; el mes en curso nunca entra en la media. Con menos de 12 meses la cifra se marca como provisional, y con menos de 3 no se calcula.</li>
+          <li>Los recibos que no llegan cada mes (agua bimestral, IBI, seguro anual) se <strong>reparten</strong> en la media —un seguro de 600 € al año suma 50 € al mes— pero en la previsión solo aparecen <strong>el mes que tocan</strong>.</li>
+          <li>El gasto y el ingreso variables son la <strong>mediana</strong> de los últimos 6 meses: un mes de vacaciones no dispara la previsión.</li>
+          <li>Una devolución dentro de una categoría de gasto la reduce. Las inversiones y los traspasos entre vosotros no son ni ingreso ni gasto.</li>
+        </ul>
+      </div>
+      <div class="phone"><div class="scr"><img src="img/m_prevision.png" alt="Previsión en el iPhone" loading="lazy"></div><p><strong>En el iPhone</strong>Previsión se abre desde «Más».</p></div>
+    </div>
+    <div class="split rev">
+      <div class="stack read">
+        <h3>Mío y Familia</h3>
+        <p><strong>Mío</strong> muestra tus cuentas. <strong>Familia</strong> suma a todos los miembros, pero solo con totales por categoría y por recibo: nunca se ven los movimientos de otra persona. La cuenta de demostración no tiene vista Familia.</p>
+        <h3>Aportaciones a la cuenta común</h3>
+        <p>Marca como <strong>Traspaso interno</strong> las categorías del dinero que os pasáis (por ejemplo «Aporte Comun María» en la cuenta común y la categoría de aportes de cada uno) y, en <strong>Con</strong>, indica el otro miembro. Entonces:</p>
+        <ul class="ticks">
+          <li>La sección <strong>Aportaciones</strong> muestra cuánto envía cada uno (este mes, el anterior, la media, el total y su parte en %) y avisa si lo enviado y lo recibido no cuadran en algún mes. Una transferencia hecha el día 31 que llega el 1 no cuenta como descuadre.</li>
+          <li>En la vista Mío de la cuenta común, los ingresos previstos incluyen <strong>«Aportación de …»</strong> por cada miembro, según lo que suele aportar. En tu vista, tus gastos previstos incluyen <strong>«Aportación a …»</strong>. También ves la <strong>aportación necesaria</strong> para cubrir los gastos de la cuenta común.</li>
+          <li>En <strong>Familia</strong> los traspasos no cuentan: el mismo dinero no se suma dos veces. Si un aporte está marcado como traspaso solo en uno de los dos lados, Familia te avisa.</li>
+        </ul>
+      </div>
+      <div class="stack read">
+        <h3>Primer uso</h3>
+        <p>La primera vez, Previsión te propone las categorías que parecen recibos o traspasos (Hipoteca, Luz, Agua, IBI, Seguros, Nómina, Aporte…), ya marcadas. Revisa la lista y pulsa «Marcar las seleccionadas»; después puedes cambiar cualquiera en <em>Categorías</em>.</p>
+        <p>En el PC, la misma información está en <em>Previsiones</em>, en la barra lateral.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- ─────────────────────────────── IMPORTAR ─────────────────────────────── -->
   <section id="importar">
     <span class="eyebrow">Importar extractos</span>
@@ -550,7 +601,9 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
       <div class="stack read">
         <h3>Categorías</h3>
         <p>Agrupadas por tipo: GASTO, INGRESO, SERV. BANCARIO e INVERSION. Cada categoría muestra cuántos movimientos tiene. Toca una para renombrarla o borrarla; con <strong>+</strong> creas otra.</p>
-        <p><strong>Exportar / importar</strong> guarda y recupera la biblioteca completa de categorías y reglas, útil para pasarla a otro usuario o PC.</p>
+        <p><strong>Tipo de gasto</strong>: al tocar una categoría eliges <em>Variable</em>, <em>Fijo</em> (recibos e ingresos que se repiten; cuentan en <a href="#prevision">Previsión</a>) o <em>Traspaso interno</em> (dinero entre miembros de la familia, con el campo <strong>Con</strong> para indicar quién). Se guarda al tocar. En la lista, las fijas llevan la etiqueta «Fijo».</p>
+        <p>Un movimiento concreto puede salirse de su categoría: en su ficha, «Gasto fijo» tiene <em>Según categoría</em>, <em>Fijo</em> o <em>Variable</em>. En Movimientos puedes filtrar por fijos, variables o traspasos.</p>
+        <p><strong>Exportar / importar</strong> guarda y recupera la biblioteca completa de categorías y reglas, útil para pasarla a otro usuario o PC. Las marcas de Fijo y Traspaso viajan con ella; el campo «Con» no.</p>
       </div>
       <figure class="win">
         <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -635,6 +688,7 @@ footer { padding-block: 36px 56px; border-top: 1px solid var(--line); color: var
       <div class="phone"><div class="scr"><img src="img/m_movimientos.png" alt="Movimientos" loading="lazy"></div><p><strong>Movimientos</strong>Agrupados por día.</p></div>
       <div class="phone"><div class="scr"><img src="img/m_movimiento_ficha.png" alt="Ficha de movimiento" loading="lazy"></div><p><strong>Ficha</strong>Cambiar categoría o crear regla.</p></div>
       <div class="phone"><div class="scr"><img src="img/m_gastos.png" alt="Gastos" loading="lazy"></div><p><strong>Gastos e ingresos</strong>Por mes, trimestre, año o 12 meses.</p></div>
+      <div class="phone"><div class="scr"><img src="img/m_prevision.png" alt="Previsión" loading="lazy"></div><p><strong>Previsión</strong>Ingresos y gastos del mes próximo.</p></div>
       <div class="phone"><div class="scr"><img src="img/m_importar_preview.png" alt="Revisar importación" loading="lazy"></div><p><strong>Importar</strong>Desde Archivos del iPhone.</p></div>
       <div class="phone"><div class="scr"><img src="img/m_inversiones.png" alt="Inversiones" loading="lazy"></div><p><strong>Inversiones</strong>Cartera y posiciones.</p></div>
       <div class="phone"><div class="scr"><img src="img/m_inv_evolucion.png" alt="Evolución, tema oscuro" loading="lazy"></div><p><strong>Evolución</strong>Frente a un índice.</p></div>
